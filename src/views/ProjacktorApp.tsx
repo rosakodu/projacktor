@@ -177,8 +177,8 @@ export const ProjacktorApp: FC = () => {
     >
       <style>{PROJACKTOR_STYLES}</style>
 
-      {/* Нативный заголовок в стиле Deck-Shelves */}
-      <Header onBack={handleBack} />
+      {/* Нативный заголовок */}
+      <Header />
 
       {/* Нативные вкладки SteamOS GamepadUI */}
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>

@@ -52,7 +52,6 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
         onSelectMovie={onSelectMovie}
         loading={searchLoading}
       />
-      <div style={{ minHeight: 320, width: "100%", flexShrink: 0 }} aria-hidden="true" />
     </div>
   );
 });

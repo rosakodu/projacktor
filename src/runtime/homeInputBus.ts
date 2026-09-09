@@ -95,6 +95,6 @@ export function dispatchHomeKey(ev: KeyEvent): void {
 export function isModalOpen(): boolean {
   if (typeof document === "undefined") return false;
   return !!document.querySelector(
-    ".projacktor-modal-root, .projacktor-player-fullscreen, [class*='ModalOverlay'], [class*='ModalPosition']"
+    ".projacktor-modal-root, .projacktor-player-fullscreen, .projacktor-magicblack-overlay"
   );
 }

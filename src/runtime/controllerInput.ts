@@ -7,14 +7,24 @@
 import { dispatchHomeKey } from "./homeInputBus";
 
 export const RawButton = {
-  DPAD_UP: 20,
-  DPAD_DOWN: 21,
-  DPAD_LEFT: 22,
-  DPAD_RIGHT: 23,
   A: 0,
   B: 1,
   X: 2,
   Y: 3,
+  DPAD_UP: 4,
+  DPAD_RIGHT: 5,
+  DPAD_DOWN: 6,
+  DPAD_LEFT: 7,
+  MENU: 8,
+  VIEW: 9,
+  LEFTPAD_UP: 10,
+  LEFTPAD_DOWN: 11,
+  LEFTPAD_LEFT: 12,
+  LEFTPAD_RIGHT: 13,
+  LEFTSTICK_UP: 20,
+  LEFTSTICK_DOWN: 21,
+  LEFTSTICK_LEFT: 22,
+  LEFTSTICK_RIGHT: 23,
   L1: 30,
   R1: 31,
   L2: 28,
@@ -25,8 +35,6 @@ export const RawButton = {
   R4: 45,
   L5: 32,
   R5: 33,
-  VIEW: 35,
-  MENU: 36,
 } as const;
 
 export interface ControllerEvent {

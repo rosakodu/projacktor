@@ -50,7 +50,17 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
 
     const triggerPrevSection = useCallback(() => {
       if (isModalOpen()) return;
-      if (!hasPrevSection || !onPrevSection) return;
+      if (!hasPrevSection) {
+        // Return focus to active tab in the tabs bar when pressing UP on the top shelf
+        const activeTab = document.querySelector<HTMLElement>(
+          '[class*="TabRowTabs"] [class*="Active"], [class*="GamepadTabbedPage"] [class*="Active"], [class*="Tab"].active, .gpfocus[class*="Tab"]'
+        );
+        if (activeTab) {
+          activeTab.focus();
+        }
+        return;
+      }
+      if (!onPrevSection) return;
       const now = Date.now();
       if (now - lastSectionChangeAtRef.current < SECTION_COOLDOWN_MS) return;
       lastSectionChangeAtRef.current = now;
@@ -81,9 +91,19 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
     useEffect(() => {
       const un = subscribeControllerInput((e) => {
         if (!e.pressed) return;
-        if (e.button === RawButton.DPAD_UP) {
+        if (
+          e.button === RawButton.DPAD_UP ||
+          e.button === RawButton.LEFTSTICK_UP ||
+          e.button === 4 ||
+          e.button === 20
+        ) {
           triggerPrevSection();
-        } else if (e.button === RawButton.DPAD_DOWN) {
+        } else if (
+          e.button === RawButton.DPAD_DOWN ||
+          e.button === RawButton.LEFTSTICK_DOWN ||
+          e.button === 6 ||
+          e.button === 21
+        ) {
           triggerNextSection();
         }
       });
@@ -93,9 +113,19 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
     // Подписка на шину Focusable Decky
     useEffect(() => {
       const un = subscribeHomeButton((e) => {
-        if (e.button === DeckyButton.DPAD_UP || e.button === 9 || e.button === 12) {
+        if (
+          e.button === DeckyButton.DPAD_UP ||
+          e.button === 9 ||
+          e.button === 4 ||
+          e.button === 20
+        ) {
           triggerPrevSection();
-        } else if (e.button === DeckyButton.DPAD_DOWN || e.button === 10 || e.button === 13) {
+        } else if (
+          e.button === DeckyButton.DPAD_DOWN ||
+          e.button === 10 ||
+          e.button === 6 ||
+          e.button === 21
+        ) {
           triggerNextSection();
         }
       });
@@ -180,12 +210,10 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
           onGamepadDirection={(evt: any) => {
             dispatchHomeDirection(evt);
             const dir = evt?.detail?.button;
-            if (dir === DeckyButton.DPAD_UP || dir === 9 || dir === 12) {
-              if (hasPrevSection) {
-                absorb(evt);
-                triggerPrevSection();
-              }
-            } else if (dir === DeckyButton.DPAD_DOWN || dir === 10 || dir === 13) {
+            if (dir === DeckyButton.DPAD_UP || dir === 9 || dir === 4 || dir === 20) {
+              absorb(evt);
+              triggerPrevSection();
+            } else if (dir === DeckyButton.DPAD_DOWN || dir === 10 || dir === 6 || dir === 21) {
               if (hasNextSection) {
                 absorb(evt);
                 triggerNextSection();
@@ -195,12 +223,10 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
           onButtonDown={(evt: any) => {
             dispatchHomeButtonDown(evt);
             const btn = evt?.detail?.button;
-            if (btn === DeckyButton.DPAD_UP || btn === 9 || btn === 12) {
-              if (hasPrevSection) {
-                absorb(evt);
-                triggerPrevSection();
-              }
-            } else if (btn === DeckyButton.DPAD_DOWN || btn === 10 || btn === 13) {
+            if (btn === DeckyButton.DPAD_UP || btn === 9 || btn === 4 || btn === 20) {
+              absorb(evt);
+              triggerPrevSection();
+            } else if (btn === DeckyButton.DPAD_DOWN || btn === 10 || btn === 6 || btn === 21) {
               if (hasNextSection) {
                 absorb(evt);
                 triggerNextSection();

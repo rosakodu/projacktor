@@ -64,50 +64,109 @@ export const PROJACKTOR_STYLES = `
   z-index: 10;
 }
 
-/* ───── Page Header (Exact Deck Shelves Spec) ───── */
+/* ───── Page Header (Clean, Aligned to Content) ───── */
 .ds-page-header {
   display: flex;
   align-items: center;
-  padding: calc(env(safe-area-inset-top, 0px) + 48px) 24px 6px 24px;
+  padding: calc(env(safe-area-inset-top, 0px) + 36px) 56px 4px 56px !important;
   flex-shrink: 0 !important;
   background: #0e141b;
   position: relative !important;
   z-index: 200 !important;
   outline: none;
-  contain: layout paint !important;
 }
 
 .ds-page-title {
   margin: 0;
-  font-size: clamp(20px, 2.4vw, 24px);
-  font-weight: 700;
+  font-size: clamp(22px, 2.6vw, 26px);
+  font-weight: 800;
   color: #fff;
-  letter-spacing: 0.2px;
+  letter-spacing: 0.3px;
 }
 
-/* ───── Native Decky Tabs Styling (Match Steam Big Picture) ───── */
+/* ───── Native Decky Tabs Styling (Match Steam Big Picture, Zero Jitter) ───── */
+/* Container wrappers */
+[class*="TabHeaderRowWrapper"],
+[class*="_2JobstxtZVYF3078DblN2M"],
+[class*="_19z_50-qWZWxcgXfWNtSWb"] {
+  width: 100% !important;
+  max-width: 100% !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+}
+
+/* Hide overflow arrows that cause twitching / jerky horizontal shifts */
+[class*="Arrows"],
+[class*="_1ZEndHxHIsAbRv81gklwjO"],
+[class*="N-f57Rtxa8zZD5y8vbm25"] {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Hide spacers that waste horizontal space */
+[class*="TabRowSpacer"],
+[class*="dCYlnZ6rohlL85gziA5ZY"] {
+  display: none !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: 0 !important;
+}
+
+/* Tab row container - fixed, full width, non-scrolling */
+[class*="TabsRowScroll"],
+[class*="_2VQFn3BjndH_ZmCBTJY7eZ"],
+[class*="TabRow"],
+[class*="_26cOWHMMjKvxQ-UyuikavV"],
 [class*="TabRowTabs"],
-[class*="GamepadTabbedPage"] [class*="TabRow"] {
+[class*="_1CJeU7emnRNSJ8Xk3Leavm"] {
   outline: none !important;
   border: none !important;
   background: transparent !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow: visible !important;
+  overflow-x: hidden !important;
+  scroll-behavior: auto !important;
+  justify-content: flex-start !important;
+  padding-left: 56px !important;
+  padding-right: 56px !important;
+  box-sizing: border-box !important;
+  transition: none !important;
+  animation: none !important;
 }
 
+/* Individual tab items */
 [class*="TabRowTabs"] [class*="Tab"],
-[class*="GamepadTabbedPage"] [class*="Tab"] {
+[class*="GamepadTabbedPage"] [class*="Tab"],
+[class*="KFGEkx9yKpW3Mu7w_6vzn"] {
   outline: none !important;
   box-shadow: none !important;
   border-radius: 0px !important;
   border: none !important;
   border-bottom: 2.5px solid transparent !important;
   background: transparent !important;
-  transition: border-bottom-color 0.15s ease, color 0.15s ease, background 0.15s ease !important;
+  flex: 0 0 auto !important;
+  padding: 6px 12px !important;
+  margin: 0 !important;
+  min-width: 0 !important;
+  white-space: nowrap !important;
+  font-size: 13px !important;
+  letter-spacing: 0.2px !important;
+  transition: border-bottom-color 0.15s ease, background 0.15s ease !important;
 }
 
 [class*="TabRowTabs"] [class*="Tab"]:focus,
 [class*="TabRowTabs"] [class*="Tab"].gpfocus,
 [class*="GamepadTabbedPage"] [class*="Tab"]:focus,
-[class*="GamepadTabbedPage"] [class*="Tab"].gpfocus {
+[class*="GamepadTabbedPage"] [class*="Tab"].gpfocus,
+[class*="KFGEkx9yKpW3Mu7w_6vzn"]:focus,
+[class*="KFGEkx9yKpW3Mu7w_6vzn"].gpfocus {
   outline: none !important;
   box-shadow: none !important;
   border: none !important;
@@ -120,7 +179,8 @@ export const PROJACKTOR_STYLES = `
 [class*="TabRowTabs"] [class*="Tab"].active,
 [class*="GamepadTabbedPage"] [class*="Tab"][class*="Active"],
 [class*="GamepadTabbedPage"] [class*="Tab"][class*="Selected"],
-[class*="GamepadTabbedPage"] [class*="Tab"].active {
+[class*="GamepadTabbedPage"] [class*="Tab"].active,
+[class*="KFGEkx9yKpW3Mu7w_6vzn"][class*="_3Gp1bACHx__POxmy6Gd3kG"] {
   border: none !important;
   border-bottom: 2.5px solid #1a9fff !important;
   background: rgba(255, 255, 255, 0.08) !important;
@@ -240,7 +300,7 @@ export const PROJACKTOR_STYLES = `
   max-width: 1280px;
   min-height: 100%;
   overflow: visible;
-  padding: 14px 24px 200px 24px !important;
+  padding: 14px 56px 200px 56px !important;
   box-sizing: border-box;
   margin: 0 auto;
 }
