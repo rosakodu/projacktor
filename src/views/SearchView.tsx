@@ -28,7 +28,7 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
     <div className="projacktor-content">
       <Focusable
         noFocusRing
-        style={{ display: "flex", gap: 12, marginBottom: 20, alignItems: "center" }}
+        style={{ display: "flex", gap: 12, marginBottom: 20, alignItems: "center", padding: "0 52px" }}
       >
         <div style={{ flex: 1 }}>
           <TextField

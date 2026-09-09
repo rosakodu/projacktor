@@ -28,8 +28,8 @@ export const LibraryView: FC<LibraryViewProps> = memo(
     } = useLibrary(onPlayVideo);
 
     return (
-      <div className="projacktor-content">
-        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Библиотека</div>
+      <div className="projacktor-content" style={{ padding: "0 52px 200px 52px" }}>
+        <div style={{ fontSize: 19, fontWeight: 700, color: "#ffffff", marginBottom: 16 }}>Библиотека</div>
 
         {library.length === 0 ? (
           <Focusable

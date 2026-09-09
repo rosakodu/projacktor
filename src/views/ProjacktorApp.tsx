@@ -1,17 +1,26 @@
-import { FC, useState, useCallback, useMemo, useEffect } from "react";
-import { Navigation, Focusable, Tabs, showModal } from "@decky/ui";
+import { FC, useState, useCallback, useEffect } from "react";
+import { Navigation, Focusable, showModal } from "@decky/ui";
 import { PROJACKTOR_STYLES } from "../styles";
 import { MediaItem } from "../types";
-import { Header } from "../components/Header";
-import { MovieModal } from "../components/MovieModal";
-import { PlayerModal } from "../components/PlayerModal";
-import { MagicBlackOverlay } from "../components/MagicBlackOverlay";
+import { Header, TabBar, MovieModal, PlayerModal, MagicBlackOverlay } from "../components";
 import { CatalogView } from "./CatalogView";
 import { SearchView } from "./SearchView";
 import { LibraryView } from "./LibraryView";
 import { SettingsView } from "./SettingsView";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
 import { isModalOpen } from "../runtime/homeInputBus";
+
+const TABS_CONFIG = [
+  { id: "movies", title: "Главная" },
+  { id: "tv", title: "Сериалы" },
+  { id: "cartoons", title: "Мультфильмы" },
+  { id: "anime", title: "Аниме" },
+  { id: "search", title: "Поиск" },
+  { id: "library", title: "Библиотека" },
+  { id: "settings", title: "Настройки" },
+];
+
+const TAB_IDS = TABS_CONFIG.map((t) => t.id);
 
 export const ProjacktorApp: FC = () => {
   const [activeTab, setActiveTab] = useState<string>("movies");
@@ -78,69 +87,21 @@ export const ProjacktorApp: FC = () => {
     } catch {}
   }, []);
 
-  const tabs = useMemo(
-    () => [
-      {
-        id: "movies",
-        title: "Главная",
-        content: <CatalogView key="movies" category="movie" onSelectMovie={handleOpenMovie} />,
-      },
-      {
-        id: "tv",
-        title: "Сериалы",
-        content: <CatalogView key="tv" category="tv" onSelectMovie={handleOpenMovie} />,
-      },
-      {
-        id: "cartoons",
-        title: "Мультфильмы",
-        content: <CatalogView key="cartoons" category="cartoon" onSelectMovie={handleOpenMovie} />,
-      },
-      {
-        id: "anime",
-        title: "Аниме",
-        content: <CatalogView key="anime" category="anime" onSelectMovie={handleOpenMovie} />,
-      },
-      {
-        id: "search",
-        title: "Поиск",
-        content: <SearchView onSelectMovie={handleOpenMovie} />,
-      },
-      {
-        id: "library",
-        title: "Библиотека",
-        content: (
-          <LibraryView
-            onPlayVideo={handlePlayVideo}
-            onActivateMagicBlack={() => setMagicBlackActive(true)}
-          />
-        ),
-      },
-      {
-        id: "settings",
-        title: "Настройки",
-        content: <SettingsView />,
-      },
-    ],
-    [handleOpenMovie, handlePlayVideo]
-  );
-
-  const tabIds = useMemo(() => tabs.map((t) => t.id), [tabs]);
-
   const prevTab = useCallback(() => {
     setActiveTab((cur) => {
-      const idx = tabIds.indexOf(cur);
-      const prevIdx = idx > 0 ? idx - 1 : tabIds.length - 1;
-      return tabIds[prevIdx];
+      const idx = TAB_IDS.indexOf(cur);
+      const prevIdx = idx > 0 ? idx - 1 : TAB_IDS.length - 1;
+      return TAB_IDS[prevIdx];
     });
-  }, [tabIds]);
+  }, []);
 
   const nextTab = useCallback(() => {
     setActiveTab((cur) => {
-      const idx = tabIds.indexOf(cur);
-      const nextIdx = idx < tabIds.length - 1 ? idx + 1 : 0;
-      return tabIds[nextIdx];
+      const idx = TAB_IDS.indexOf(cur);
+      const nextIdx = idx < TAB_IDS.length - 1 ? idx + 1 : 0;
+      return TAB_IDS[nextIdx];
     });
-  }, [tabIds]);
+  }, []);
 
   // Зацикленное переключение вкладок через L1/R1 в любой момент
   useEffect(() => {
@@ -177,16 +138,44 @@ export const ProjacktorApp: FC = () => {
     >
       <style>{PROJACKTOR_STYLES}</style>
 
-      {/* Нативный заголовок */}
+      {/* Заголовок Projacktor */}
       <Header />
 
-      {/* Нативные вкладки SteamOS GamepadUI */}
-      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-        <Tabs
-          activeTab={activeTab}
-          onShowTab={(tabId: string) => setActiveTab(tabId)}
-          tabs={tabs}
-        />
+      {/* Панель вкладок: [ L1 ] [ Вкладки ] [ R1 ] */}
+      <TabBar
+        tabs={TABS_CONFIG}
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        onPrevTab={prevTab}
+        onNextTab={nextTab}
+      />
+
+      {/* Контент текущей вкладки */}
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        {activeTab === "movies" && (
+          <CatalogView key="movies" category="movie" onSelectMovie={handleOpenMovie} />
+        )}
+        {activeTab === "tv" && (
+          <CatalogView key="tv" category="tv" onSelectMovie={handleOpenMovie} />
+        )}
+        {activeTab === "cartoons" && (
+          <CatalogView key="cartoons" category="cartoon" onSelectMovie={handleOpenMovie} />
+        )}
+        {activeTab === "anime" && (
+          <CatalogView key="anime" category="anime" onSelectMovie={handleOpenMovie} />
+        )}
+        {activeTab === "search" && (
+          <SearchView onSelectMovie={handleOpenMovie} />
+        )}
+        {activeTab === "library" && (
+          <LibraryView
+            onPlayVideo={handlePlayVideo}
+            onActivateMagicBlack={() => setMagicBlackActive(true)}
+          />
+        )}
+        {activeTab === "settings" && (
+          <SettingsView />
+        )}
       </div>
 
       {/* OLED режим фоновой загрузки */}

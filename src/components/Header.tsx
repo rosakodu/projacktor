@@ -5,24 +5,24 @@ interface HeaderProps {
   onBack?: () => void;
 }
 
-export const Header: FC<HeaderProps> = memo(({ title = "Projecktor" }) => {
+export const Header: FC<HeaderProps> = memo(({ title = "Projacktor" }) => {
   return (
     <div
-      className="ds-page-header"
+      className="projacktor-top-header"
       style={{
         display: "flex",
         alignItems: "center",
-        padding: "calc(env(safe-area-inset-top, 0px) + 36px) 56px 8px 56px",
+        padding: "calc(env(safe-area-inset-top, 0px) + 24px) 52px 12px 52px",
         flexShrink: 0,
       }}
     >
       <h1
         style={{
           margin: 0,
-          fontSize: "clamp(22px, 2.6vw, 26px)",
+          fontSize: "26px",
           fontWeight: 800,
-          color: "var(--ds-text, #fff)",
-          letterSpacing: 0.3,
+          color: "#ffffff",
+          letterSpacing: 0.2,
         }}
       >
         {title}

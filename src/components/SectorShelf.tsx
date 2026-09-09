@@ -53,7 +53,7 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
       if (!hasPrevSection) {
         // Return focus to active tab in the tabs bar when pressing UP on the top shelf
         const activeTab = document.querySelector<HTMLElement>(
-          '[class*="TabRowTabs"] [class*="Active"], [class*="GamepadTabbedPage"] [class*="Active"], [class*="Tab"].active, .gpfocus[class*="Tab"]'
+          '.projacktor-tab-item.active, [role="tab"][aria-selected="true"]'
         );
         if (activeTab) {
           activeTab.focus();
@@ -91,6 +91,12 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
     useEffect(() => {
       const un = subscribeControllerInput((e) => {
         if (!e.pressed) return;
+        if (isModalOpen()) return;
+
+        const active = document.activeElement;
+        const inTabs = document.querySelector(".projacktor-nav-bar")?.contains(active);
+        if (inTabs) return;
+
         if (
           e.button === RawButton.DPAD_UP ||
           e.button === RawButton.LEFTSTICK_UP ||
@@ -113,6 +119,12 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
     // Подписка на шину Focusable Decky
     useEffect(() => {
       const un = subscribeHomeButton((e) => {
+        if (isModalOpen()) return;
+
+        const active = document.activeElement;
+        const inTabs = document.querySelector(".projacktor-nav-bar")?.contains(active);
+        if (inTabs) return;
+
         if (
           e.button === DeckyButton.DPAD_UP ||
           e.button === 9 ||

@@ -56,7 +56,7 @@ export const PROJACKTOR_STYLES = `
   height: 100vh !important;
   display: flex;
   flex-direction: column;
-  background: #0e141b;
+  background: #0b1016 !important;
   color: var(--ds-text);
   box-sizing: border-box;
   overflow: hidden !important;
@@ -64,127 +64,108 @@ export const PROJACKTOR_STYLES = `
   z-index: 10;
 }
 
-/* ───── Page Header (Clean, Aligned to Content) ───── */
-.ds-page-header {
-  display: flex;
-  align-items: center;
-  padding: calc(env(safe-area-inset-top, 0px) + 36px) 56px 4px 56px !important;
+/* ───── Projacktor Top Header ───── */
+.projacktor-top-header {
+  display: flex !important;
+  align-items: center !important;
+  padding: calc(env(safe-area-inset-top, 0px) + 24px) 52px 12px 52px !important;
   flex-shrink: 0 !important;
-  background: #0e141b;
-  position: relative !important;
-  z-index: 200 !important;
-  outline: none;
-}
-
-.ds-page-title {
-  margin: 0;
-  font-size: clamp(22px, 2.6vw, 26px);
-  font-weight: 800;
-  color: #fff;
-  letter-spacing: 0.3px;
-}
-
-/* ───── Native Decky Tabs Styling (Match Steam Big Picture, Zero Jitter) ───── */
-/* Container wrappers */
-[class*="TabHeaderRowWrapper"],
-[class*="_2JobstxtZVYF3078DblN2M"],
-[class*="_19z_50-qWZWxcgXfWNtSWb"] {
-  width: 100% !important;
-  max-width: 100% !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  overflow: hidden !important;
-}
-
-/* Hide overflow arrows that cause twitching / jerky horizontal shifts */
-[class*="Arrows"],
-[class*="_1ZEndHxHIsAbRv81gklwjO"],
-[class*="N-f57Rtxa8zZD5y8vbm25"] {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  opacity: 0 !important;
-  pointer-events: none !important;
-}
-
-/* Hide spacers that waste horizontal space */
-[class*="TabRowSpacer"],
-[class*="dCYlnZ6rohlL85gziA5ZY"] {
-  display: none !important;
-  width: 0 !important;
-  min-width: 0 !important;
-  max-width: 0 !important;
-}
-
-/* Tab row container - fixed, full width, non-scrolling */
-[class*="TabsRowScroll"],
-[class*="_2VQFn3BjndH_ZmCBTJY7eZ"],
-[class*="TabRow"],
-[class*="_26cOWHMMjKvxQ-UyuikavV"],
-[class*="TabRowTabs"],
-[class*="_1CJeU7emnRNSJ8Xk3Leavm"] {
-  outline: none !important;
-  border: none !important;
   background: transparent !important;
-  width: 100% !important;
-  max-width: 100% !important;
-  overflow: visible !important;
-  overflow-x: hidden !important;
-  scroll-behavior: auto !important;
-  justify-content: flex-start !important;
-  padding-left: 56px !important;
-  padding-right: 56px !important;
-  box-sizing: border-box !important;
-  transition: none !important;
-  animation: none !important;
+  user-select: none !important;
 }
 
-/* Individual tab items */
-[class*="TabRowTabs"] [class*="Tab"],
-[class*="GamepadTabbedPage"] [class*="Tab"],
-[class*="KFGEkx9yKpW3Mu7w_6vzn"] {
-  outline: none !important;
-  box-shadow: none !important;
-  border-radius: 0px !important;
-  border: none !important;
-  border-bottom: 2.5px solid transparent !important;
-  background: transparent !important;
-  flex: 0 0 auto !important;
-  padding: 6px 12px !important;
+.projacktor-top-header h1 {
   margin: 0 !important;
-  min-width: 0 !important;
-  white-space: nowrap !important;
-  font-size: 13px !important;
-  letter-spacing: 0.2px !important;
-  transition: border-bottom-color 0.15s ease, background 0.15s ease !important;
-}
-
-[class*="TabRowTabs"] [class*="Tab"]:focus,
-[class*="TabRowTabs"] [class*="Tab"].gpfocus,
-[class*="GamepadTabbedPage"] [class*="Tab"]:focus,
-[class*="GamepadTabbedPage"] [class*="Tab"].gpfocus,
-[class*="KFGEkx9yKpW3Mu7w_6vzn"]:focus,
-[class*="KFGEkx9yKpW3Mu7w_6vzn"].gpfocus {
-  outline: none !important;
-  box-shadow: none !important;
-  border: none !important;
-  border-bottom: 2.5px solid transparent !important;
-  background: rgba(255, 255, 255, 0.08) !important;
-}
-
-[class*="TabRowTabs"] [class*="Tab"][class*="Active"],
-[class*="TabRowTabs"] [class*="Tab"][class*="Selected"],
-[class*="TabRowTabs"] [class*="Tab"].active,
-[class*="GamepadTabbedPage"] [class*="Tab"][class*="Active"],
-[class*="GamepadTabbedPage"] [class*="Tab"][class*="Selected"],
-[class*="GamepadTabbedPage"] [class*="Tab"].active,
-[class*="KFGEkx9yKpW3Mu7w_6vzn"][class*="_3Gp1bACHx__POxmy6Gd3kG"] {
-  border: none !important;
-  border-bottom: 2.5px solid #1a9fff !important;
-  background: rgba(255, 255, 255, 0.08) !important;
+  font-size: 26px !important;
+  font-weight: 800 !important;
   color: #ffffff !important;
+  letter-spacing: 0.2px !important;
+}
+
+/* ───── Projacktor Nav Bar (L1 / Tabs / R1) ───── */
+.projacktor-nav-bar {
+  display: flex !important;
+  align-items: center !important;
+  padding: 0 52px 14px 52px !important;
+  gap: 10px !important;
+  flex-shrink: 0 !important;
+  user-select: none !important;
+  outline: none !important;
+  border: none !important;
+  background: transparent !important;
+}
+
+.projacktor-bumper-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: #ffffff !important;
+  color: #0b1016 !important;
+  font-weight: 800 !important;
+  font-size: 11px !important;
+  padding: 2px 7px !important;
+  border-radius: 4px !important;
+  line-height: 1 !important;
+  cursor: pointer !important;
+  user-select: none !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4) !important;
+  flex-shrink: 0 !important;
+}
+
+.projacktor-tabs-track {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  flex-shrink: 0 !important;
+  outline: none !important;
+}
+
+.projacktor-tab-item {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 30px !important;
+  padding: 0 14px !important;
+  font-size: 13.5px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.2px !important;
+  color: #8b929a !important;
+  background: transparent !important;
+  border: none !important;
+  border-bottom: 2.5px solid transparent !important;
+  border-radius: 3px 3px 0 0 !important;
+  cursor: pointer !important;
+  outline: none !important;
+  box-shadow: none !important;
+  transition: all 0.12s ease !important;
+  white-space: nowrap !important;
+  user-select: none !important;
+  box-sizing: border-box !important;
+}
+
+.projacktor-tab-item:hover,
+.projacktor-tab-item:focus,
+.projacktor-tab-item.gpfocus {
+  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.projacktor-tab-item.active {
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-bottom: 2.5px solid #1a9fff !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.projacktor-tab-item.active:focus,
+.projacktor-tab-item.active.gpfocus {
+  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.12) !important;
+  border-bottom: 2.5px solid #1a9fff !important;
   outline: none !important;
   box-shadow: none !important;
 }
@@ -296,13 +277,14 @@ export const PROJACKTOR_STYLES = `
 
 /* ───── Page Body ───── */
 .projacktor-content {
-  width: 100%;
-  max-width: 1280px;
-  min-height: 100%;
-  overflow: visible;
-  padding: 14px 56px 200px 56px !important;
-  box-sizing: border-box;
-  margin: 0 auto;
+  width: 100% !important;
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
 }
 
 /* ───── Посекторная навигация (Sector Architecture) ───── */
@@ -419,29 +401,24 @@ export const PROJACKTOR_STYLES = `
 
 /* ───── Shelves ───── */
 .projacktor-shelf {
-  height: auto !important;
-  min-height: 0 !important;
-  max-height: none !important;
+  width: 100% !important;
   display: flex !important;
   flex-direction: column !important;
-  justify-content: flex-start !important;
+  padding: 4px 0 24px 0 !important;
+  margin: 0 !important;
   box-sizing: border-box !important;
-  padding: 2px 0 6px 0 !important;
-  margin-bottom: 24px !important;
-  scroll-margin-top: 14px !important;
-  scroll-margin-bottom: 120px !important;
 }
 
 .projacktor-shelf-title {
-  font-size: 16px;
-  font-weight: 700;
-  color: #fff;
-  letter-spacing: 0.3px;
-  margin-bottom: 6px;
-  padding-left: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  font-size: 19px !important;
+  font-weight: 700 !important;
+  color: #ffffff !important;
+  letter-spacing: 0.2px !important;
+  padding: 0 52px !important;
+  margin: 0 0 14px 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
 }
 
 .projacktor-shelf-row {
@@ -449,11 +426,11 @@ export const PROJACKTOR_STYLES = `
   display: flex !important;
   flex-direction: row !important;
   flex-wrap: nowrap !important;
-  gap: 12px !important;
+  gap: 14px !important;
   overflow-x: auto !important;
   overflow-y: hidden !important;
-  padding: 4px 56px 10px 56px !important;
-  scroll-padding: 0 56px !important;
+  padding: 4px 52px 20px 52px !important;
+  scroll-padding: 0 52px !important;
   margin: 0 !important;
   scroll-behavior: auto !important;
   outline: none !important;
@@ -462,19 +439,15 @@ export const PROJACKTOR_STYLES = `
   mask-image: linear-gradient(
     to right,
     transparent 0px,
-    transparent 40px,
-    black 56px,
-    black calc(100% - 56px),
-    transparent calc(100% - 40px),
+    black 40px,
+    black calc(100% - 60px),
     transparent 100%
   ) !important;
   -webkit-mask-image: linear-gradient(
     to right,
     transparent 0px,
-    transparent 40px,
-    black 56px,
-    black calc(100% - 56px),
-    transparent calc(100% - 40px),
+    black 40px,
+    black calc(100% - 60px),
     transparent 100%
   ) !important;
 }
@@ -486,24 +459,24 @@ export const PROJACKTOR_STYLES = `
 
 /* ───── Sharp Movie Capsule Card (Deck-Shelves Native Spec) ───── */
 .projacktor-card {
-  width: 120px !important;
-  min-width: 120px !important;
-  max-width: 120px !important;
-  flex: 0 0 120px !important;
-  height: 222px;
-  display: flex;
-  flex-direction: column;
-  background: var(--ds-surface-card);
-  border: 1px solid var(--ds-border);
+  width: 140px !important;
+  min-width: 140px !important;
+  max-width: 140px !important;
+  flex: 0 0 140px !important;
+  height: 246px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  background: #141a23 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
   border-radius: 0px !important;
-  overflow: hidden;
-  cursor: pointer;
-  position: relative;
-  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  overflow: hidden !important;
+  cursor: pointer !important;
+  position: relative !important;
   outline: none !important;
-  user-select: none;
+  user-select: none !important;
   transform: none !important;
   box-sizing: border-box !important;
+  transition: border-color 0.1s ease !important;
 }
 
 .projacktor-card::before,
@@ -519,16 +492,16 @@ export const PROJACKTOR_STYLES = `
 .projacktor-card:focus,
 .projacktor-card.gpfocus {
   transform: none !important;
-  border-color: #ffffff !important;
+  border: 2px solid #ffffff !important;
   outline: none !important;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5) !important;
+  box-shadow: none !important;
 }
 
 .projacktor-app-root.suppress-card-focus .projacktor-card,
 .projacktor-app-root.suppress-card-focus .projacktor-card:focus,
 .projacktor-app-root.suppress-card-focus .projacktor-card.gpfocus,
 .projacktor-app-root.suppress-card-focus [class*="gpfocus"].projacktor-card {
-  border-color: var(--ds-border) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
   box-shadow: none !important;
   outline: none !important;
 }
@@ -539,48 +512,53 @@ export const PROJACKTOR_STYLES = `
 }
 
 .projacktor-card-poster {
-  width: 100%;
-  height: 174px;
-  object-fit: cover;
-  background: #151922;
-  display: block;
+  width: 100% !important;
+  height: 196px !important;
+  object-fit: cover !important;
+  background: #0f141c !important;
+  display: block !important;
 }
 
 .projacktor-card-rating {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  background: rgba(0, 0, 0, 0.82);
-  color: #fbbf24;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 2px 6px;
-  border-radius: 0px !important;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  position: absolute !important;
+  top: 6px !important;
+  right: 6px !important;
+  background: rgba(0, 0, 0, 0.78) !important;
+  color: #fbbf24 !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  padding: 2px 6px !important;
+  border-radius: 2px !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0.3px !important;
+  z-index: 2 !important;
 }
 
 .projacktor-card-info {
-  padding: 5px 7px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  flex: 1;
+  padding: 6px 8px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  flex: 1 !important;
+  background: #141a23 !important;
 }
 
 .projacktor-card-title {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: #fff;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1.25;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: #ffffff !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  line-height: 1.25 !important;
 }
 
 .projacktor-card-year {
-  font-size: 10.5px;
-  color: var(--ds-text-dim);
-  margin-top: 2px;
+  font-size: 11px !important;
+  color: #8b929a !important;
+  margin-top: 2px !important;
+  line-height: 1.2 !important;
 }
 
 /* ───── Sharp Downloads List Items ───── */

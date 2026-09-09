@@ -84,8 +84,8 @@ export const SettingsView: FC = memo(() => {
   }, [clearingCache]);
 
   return (
-    <div className="projacktor-content" style={{ maxWidth: 520, padding: "12px 20px" }}>
-      <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>Настройки</div>
+    <div className="projacktor-content" style={{ maxWidth: 560, padding: "0 52px 200px 52px" }}>
+      <div style={{ fontSize: 19, fontWeight: 700, color: "#ffffff", marginBottom: 16 }}>Настройки</div>
 
       <div
         style={{
