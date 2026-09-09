@@ -73,8 +73,17 @@ export const ProjacktorApp: FC = () => {
         close();
         handlePlayVideo(filePath, streamTitle, true);
       };
+      const onStartMagicBlack = () => {
+        close();
+        setMagicBlackActive(true);
+      };
       modalInstance = showModal(
-        <MovieModal movie={movie} closeModal={close} onWatchOnline={onWatchOnline} />,
+        <MovieModal
+          movie={movie}
+          closeModal={close}
+          onWatchOnline={onWatchOnline}
+          onStartMagicBlack={onStartMagicBlack}
+        />,
         getParentWindow()
       );
     },

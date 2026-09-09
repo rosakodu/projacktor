@@ -29,6 +29,8 @@ export const rpcSaveSettings = callable<[string], boolean>("save_settings");
 export const rpcGetStatus = callable<[], Record<string, any>>("get_status");
 export const rpcCheckJacred = callable<[string], boolean>("check_jacred");
 export const rpcClearCache = callable<[], boolean>("clear_cache");
+export const rpcInhibitSleep = callable<[], { success: boolean; error?: string }>("inhibit_sleep");
+export const rpcUninhibitSleep = callable<[], { success: boolean; error?: string }>("uninhibit_sleep");
 
 // ── Catalog Fetcher ────────────────────────────────────────────
 export async function fetchCatalog(

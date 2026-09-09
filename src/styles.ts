@@ -1088,28 +1088,51 @@ div:has(.projacktor-player-fullscreen) {
   box-shadow: none !important;
 }
 
-.projacktor-magicblack-hint {
-  color: rgba(255, 255, 255, 0.08);
-  font-size: 11px;
-  letter-spacing: 1px;
-  position: absolute;
-  bottom: 24px;
-  font-family: monospace;
+.projacktor-magicblack-banner {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  color: rgba(255, 255, 255, 0.4) !important;
+  user-select: none !important;
+  pointer-events: none !important;
+  animation: projacktor-magicblack-fadeout 3.5s forwards !important;
+}
+
+.projacktor-magicblack-title {
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  color: #38bdf8 !important;
+  letter-spacing: 0.3px !important;
+}
+
+.projacktor-magicblack-sub {
+  font-size: 11.5px !important;
+  color: rgba(255, 255, 255, 0.3) !important;
+  letter-spacing: 0.2px !important;
+}
+
+@keyframes projacktor-magicblack-fadeout {
+  0% { opacity: 0.9; }
+  75% { opacity: 0.9; }
+  100% { opacity: 0; }
 }
 
 .projacktor-magicblack-btn {
-  background: rgba(20, 20, 20, 0.8) !important;
-  border: 1px solid rgba(255, 255, 255, 0.2) !important;
-  color: #94a3b8 !important;
-  transition: all 0.2s ease !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color: #38bdf8 !important;
+  transition: all 0.12s ease !important;
 }
 
 .projacktor-magicblack-btn:hover,
 .projacktor-magicblack-btn:focus,
 .projacktor-magicblack-btn.gpfocus {
+  background: rgba(56, 189, 248, 0.15) !important;
   border-color: #38bdf8 !important;
-  color: #38bdf8 !important;
-  box-shadow: 0 0 12px rgba(56, 189, 248, 0.4) !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.3) !important;
 }
 
 /* ───── Bumper L1/R1 Fallback Badge ───── */

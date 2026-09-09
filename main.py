@@ -1289,6 +1289,7 @@ class Plugin:
         self.server = None
         self.server_thread = None
         self.dm = None
+        self.inhibit_proc = None
 
     async def _main(self):
         logger.info("Projacktor: Starting plugin")
@@ -1305,6 +1306,10 @@ class Plugin:
 
     async def _unload(self):
         logger.info("Projacktor: Unloading plugin")
+        if self.inhibit_proc and self.inhibit_proc.poll() is None:
+            try:
+                self.inhibit_proc.terminate()
+            except: pass
         if self.server:
             self.server.shutdown()
             self.server.server_close()
@@ -1319,6 +1324,34 @@ class Plugin:
             logger.error(f"Error during uninstall cleanup: {e}")
 
     # Методы RPC (вызываются из JS-фронтенда)
+    async def inhibit_sleep(self):
+        try:
+            if not self.inhibit_proc or self.inhibit_proc.poll() is not None:
+                self.inhibit_proc = subprocess.Popen(
+                    ["systemd-inhibit", "--what=idle", "--who=Projacktor", "--why=Downloading in MagicBlack screen-off mode", "sleep", "infinity"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                logger.info("Projacktor: Sleep inhibited for MagicBlack screen-off download")
+            return {"success": True}
+        except Exception as e:
+            logger.error(f"inhibit_sleep error: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def uninhibit_sleep(self):
+        try:
+            if self.inhibit_proc and self.inhibit_proc.poll() is None:
+                self.inhibit_proc.terminate()
+                try:
+                    self.inhibit_proc.wait(timeout=1)
+                except:
+                    self.inhibit_proc.kill()
+                self.inhibit_proc = None
+                logger.info("Projacktor: Sleep uninhibited")
+            return {"success": True}
+        except Exception as e:
+            logger.error(f"uninhibit_sleep error: {e}")
+            return {"success": False, "error": str(e)}
     async def get_status(self):
         sett = load_settings()
         dp = os.path.expanduser(sett['download_path'])

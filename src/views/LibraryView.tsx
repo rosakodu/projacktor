@@ -29,7 +29,20 @@ export const LibraryView: FC<LibraryViewProps> = memo(
 
     return (
       <div className="projacktor-content" style={{ padding: "0 52px 200px 52px" }}>
-        <div style={{ fontSize: 19, fontWeight: 700, color: "#ffffff", marginBottom: 16 }}>Библиотека</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div style={{ fontSize: 19, fontWeight: 700, color: "#ffffff" }}>Библиотека</div>
+          {library.some((i) => i.download_status === "downloading") && (
+            <Focusable
+              className="ds-btn ds-btn--compact projacktor-magicblack-btn"
+              onActivate={onActivateMagicBlack}
+              onClick={onActivateMagicBlack}
+              title="Выключить экран для фоновой загрузки (MagicBlack OLED)"
+            >
+              <FaMoon style={{ marginRight: 6, fontSize: 11 }} />
+              Выключить экран (MagicBlack)
+            </Focusable>
+          )}
+        </div>
 
         {library.length === 0 ? (
           <Focusable

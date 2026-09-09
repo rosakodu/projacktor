@@ -1,7 +1,7 @@
 import { FC, useState, useEffect, useRef, useCallback } from "react";
 import { ModalRoot, Focusable, Spinner } from "@decky/ui";
 import { toaster } from "@decky/api";
-import { FaPlay, FaDownload, FaList, FaSpinner } from "react-icons/fa";
+import { FaPlay, FaDownload, FaList, FaSpinner, FaMoon } from "react-icons/fa";
 import { PROJACKTOR_STYLES } from "../styles";
 import {
   MediaItem,
@@ -20,9 +20,10 @@ interface MovieModalProps {
   movie: MediaItem;
   closeModal?: () => void;
   onWatchOnline?: (filePath: string, title: string) => void;
+  onStartMagicBlack?: () => void;
 }
 
-export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnline }) => {
+export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnline, onStartMagicBlack }) => {
   const [torrents, setTorrents] = useState<TorrentItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -236,6 +237,30 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
     }
   };
 
+  // 2b. Download torrent with MagicBlack OLED screen-off mode
+  const handleDownloadWithMagicBlack = async (torrent: TorrentItem) => {
+    const tId = torrent.id || torrent.magnet;
+    if (streamingTorrentId || downloadingTorrentId) return;
+    setDownloadingTorrentId(tId);
+
+    try {
+      const mid = await getOrCreateMediaId(torrent, true);
+      await rpcStartDownload(mid);
+      if (closeModal) closeModal();
+      if (onStartMagicBlack) {
+        onStartMagicBlack();
+      }
+    } catch (err: any) {
+      toaster.toast({
+        title: "Ошибка загрузки",
+        body: String(err?.message || err),
+        duration: 4000,
+      });
+    } finally {
+      setDownloadingTorrentId(null);
+    }
+  };
+
   // 5. Download single episode (appears in library and begins downloading)
   const handleDownloadEpisode = async (torrent: TorrentItem, ep: EpisodeItem) => {
     if (downloadingEpIdx !== null) return;
@@ -247,6 +272,28 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
     } catch (err: any) {
       toaster.toast({
         title: "Ошибка",
+        body: String(err?.message || err),
+        duration: 3500,
+      });
+    } finally {
+      setDownloadingEpIdx(null);
+    }
+  };
+
+  // 5b. Download single episode with MagicBlack OLED screen-off mode
+  const handleDownloadEpisodeWithMagicBlack = async (torrent: TorrentItem, ep: EpisodeItem) => {
+    if (downloadingEpIdx !== null) return;
+    setDownloadingEpIdx(ep.index);
+    try {
+      const mid = await getOrCreateMediaId(torrent, true);
+      await rpcDownloadEpisode(mid, ep.index);
+      if (closeModal) closeModal();
+      if (onStartMagicBlack) {
+        onStartMagicBlack();
+      }
+    } catch (err: any) {
+      toaster.toast({
+        title: "Ошибка загрузки серии",
         body: String(err?.message || err),
         duration: 3500,
       });
@@ -482,6 +529,16 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                               <FaDownload />
                             )}
                           </Focusable>
+
+                          {/* Download with MagicBlack screen-off (OLED background) */}
+                          <Focusable
+                            className="projacktor-icon-btn projacktor-magicblack-btn"
+                            onActivate={() => handleDownloadWithMagicBlack(tor)}
+                            onClick={() => handleDownloadWithMagicBlack(tor)}
+                            title="Скачать с выключенным экраном (MagicBlack OLED)"
+                          >
+                            <FaMoon style={{ fontSize: 11 }} />
+                          </Focusable>
                         </div>
                       </div>
 
@@ -537,6 +594,15 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                                       ) : (
                                         <FaDownload style={{ fontSize: 9 }} />
                                       )}
+                                    </Focusable>
+                                    {/* Download episode with MagicBlack screen-off */}
+                                    <Focusable
+                                      className="projacktor-icon-btn projacktor-icon-btn--compact projacktor-magicblack-btn"
+                                      onActivate={() => handleDownloadEpisodeWithMagicBlack(tor, ep)}
+                                      onClick={() => handleDownloadEpisodeWithMagicBlack(tor, ep)}
+                                      title="Скачать серию с выключенным экраном (MagicBlack OLED)"
+                                    >
+                                      <FaMoon style={{ fontSize: 9 }} />
                                     </Focusable>
                                   </div>
                                 </div>

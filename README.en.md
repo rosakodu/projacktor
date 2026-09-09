@@ -15,7 +15,7 @@ A Decky Loader plugin for Steam Deck that transforms the console into a full-fea
 - **Built-in Download Manager (Aria2c)**: High-speed multithreaded downloads directly to internal SSD or MicroSD storage.
 - **Online Streaming**: Stream movies and TV episodes immediately without waiting for full download completion.
 - **Integrated Video Player**: Fullscreen player with seeking, pause/resume, audio track selection, and smooth playback.
-- **Magic Black (OLED Mode)**: Ultra-low-power background download mode that disables screen illumination to protect OLED displays and save battery.
+- **MagicBlack (OLED Screen-Off Mode)**: Download movies and series with display turned off (moon icon 🌙 on torrent cards and library). Fills the screen with pure `#000000` black to turn off OLED pixels, saving battery and preventing burn-in, while preventing idle sleep. Wake up instantly by pressing any button or touching the screen.
 - **Local Library**: Manage downloaded media, resume playback, and free up space directly from the UI.
 
 ---
