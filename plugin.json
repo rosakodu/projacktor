@@ -1,0 +1,12 @@
+{
+  "name": "Projacktor",
+  "version": "1.0.0",
+  "author": "rosakodu",
+  "flags": [],
+  "api_version": 1,
+  "publish": {
+    "tags": ["media", "torrent", "catalog", "movies"],
+    "description": "Self-contained media catalog for Steam Deck. Browse movies & TV shows, search torrents via JacRed, download and watch — all in Steam Big Picture style.",
+    "image": "https://raw.githubusercontent.com/rosakodu/projecktor/main/assets/logo.png"
+  }
+}

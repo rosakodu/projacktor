@@ -1,0 +1,240 @@
+/* ==========================================================================
+   PROJACTOR — Detail Page Styling (Steam Deck Big Picture)
+   ========================================================================== */
+
+.detail-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 520px;
+    background-size: cover;
+    background-position: center top;
+    z-index: 0;
+    opacity: 0.35;
+    mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 30%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 30%, transparent 100%);
+    pointer-events: none;
+}
+
+.detail-content {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    gap: 32px;
+    padding: 24px;
+    max-width: 1280px;
+    margin: 0 auto;
+}
+
+.detail-poster {
+    width: 220px;
+    aspect-ratio: 2 / 3;
+    border-radius: var(--radius-md);
+    box-shadow: 0 12px 32px rgba(0,0,0,0.8);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.detail-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.detail-info h1 {
+    font-size: 26px;
+    font-weight: 800;
+    color: var(--text-white);
+    letter-spacing: -0.01em;
+    margin-bottom: 4px;
+}
+
+.original-title {
+    font-size: 14px;
+    color: var(--text-secondary);
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+
+.meta-line {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.meta-pill {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--border-subtle);
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-primary);
+    text-transform: uppercase;
+}
+
+.meta-pill.rating {
+    background: rgba(255, 209, 102, 0.15);
+    border-color: rgba(255, 209, 102, 0.3);
+    color: #ffd166;
+}
+
+.overview {
+    font-size: 13px;
+    line-height: 1.6;
+    color: #cbd5e1;
+    max-width: 820px;
+    margin-bottom: 24px;
+}
+
+.detail-actions {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.detail-actions .btn {
+    padding: 12px 24px;
+    font-size: 13px;
+}
+
+/* Torrents Section (Steam DLC / Content Style) */
+.torrent-section {
+    margin-top: 12px;
+    background: #141d27;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 18px;
+    max-width: 900px;
+}
+
+.torrent-section h3 {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-primary);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.torrent-section h3::before {
+    content: '';
+    display: inline-block;
+    width: 3px;
+    height: 12px;
+    background: var(--steam-blue);
+    border-radius: 2px;
+}
+
+.torrent-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.torrent-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #1a2532;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.torrent-item:hover, .torrent-item:focus {
+    background: #233446;
+    border-color: var(--steam-blue);
+}
+
+.torrent-item-title {
+    flex: 1;
+    padding-right: 16px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-white);
+    line-height: 1.4;
+}
+
+.torrent-item-tags {
+    display: flex;
+    gap: 6px;
+    margin-top: 5px;
+    align-items: center;
+}
+
+.badge-quality {
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.badge-quality.q-2160p {
+    background: #7c3aed;
+    color: #ffffff;
+}
+
+.badge-quality.q-1080p {
+    background: var(--steam-blue);
+    color: #ffffff;
+}
+
+.badge-tracker {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-secondary);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.torrent-item-meta {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-shrink: 0;
+}
+
+.torrent-size {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-secondary);
+}
+
+.torrent-seeders {
+    font-size: 11px;
+    font-weight: 800;
+    padding: 2px 7px;
+    border-radius: 4px;
+}
+
+.seeders-high {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.seeders-mid {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.seeders-low {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}

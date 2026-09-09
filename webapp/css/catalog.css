@@ -1,0 +1,152 @@
+/* ==========================================================================
+   PROJACTOR — Catalog & Shelves Styling (Deck Shelves Style)
+   ========================================================================== */
+
+.media-row-container {
+    margin-bottom: 28px;
+    padding: 0 24px;
+}
+
+.media-row-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.media-row-header h2 {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+}
+
+.media-row-header h2::before {
+    content: '';
+    display: inline-block;
+    width: 3px;
+    height: 12px;
+    background: var(--steam-blue);
+    border-radius: 2px;
+}
+
+.media-row-header a {
+    color: var(--steam-blue);
+    text-decoration: none;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    transition: var(--transition);
+}
+
+.media-row-header a:hover {
+    color: var(--text-white);
+    background: rgba(26, 159, 255, 0.15);
+}
+
+/* Horizontal Shelf */
+.media-row {
+    display: flex;
+    gap: 14px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    padding: 6px 2px 18px 2px;
+    scrollbar-width: thin;
+}
+
+/* Grid Layout (Search, Library) */
+.media-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(154px, 1fr));
+    gap: 16px;
+    padding: 10px 24px 30px;
+}
+
+/* Steam Capsule Card */
+.media-card {
+    position: relative;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--bg-card);
+    aspect-ratio: 2 / 3;
+    cursor: pointer;
+    transition: transform 0.15s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.15s ease, border-color 0.15s ease;
+    scroll-snap-align: start;
+    flex: 0 0 154px;
+    border: 1px solid var(--border-subtle);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+}
+
+.media-card:hover {
+    transform: translateY(-4px) scale(1.03);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.7);
+    border-color: rgba(255, 255, 255, 0.3);
+    z-index: 5;
+}
+
+.media-card:focus {
+    transform: translateY(-4px) scale(1.05);
+    box-shadow: 0 14px 28px rgba(0, 0, 0, 0.8), 0 0 16px rgba(255, 255, 255, 0.4);
+    z-index: 10;
+}
+
+.media-card img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    background: #141d27;
+}
+
+/* Rating Badge in Steam Pill Style */
+.media-card .rating {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    background: rgba(14, 20, 27, 0.88);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: #ffd166;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 800;
+    font-size: 11px;
+    letter-spacing: 0.02em;
+}
+
+/* Bottom Title Overlay */
+.media-card .title-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(to top, rgba(14, 20, 27, 0.95) 0%, rgba(14, 20, 27, 0.7) 65%, transparent 100%);
+    padding: 24px 8px 8px;
+    pointer-events: none;
+}
+
+.media-card .title {
+    color: var(--text-white);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.media-card .year {
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+    margin-top: 1px;
+}
