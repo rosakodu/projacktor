@@ -100,7 +100,7 @@ _default_video = os.path.join(get_user_home(), "Video", "Projacktor")
 INITIAL_DOWNLOAD_PATH = _default_video if not os.path.isdir(_legacy_video) else _legacy_video
 
 DEFAULT_SETTINGS = {
-    "jacred_url": "https://jac.red",
+    "jacred_url": "",
     "tmdb_api_key": "4ef0d7355d9ffb5151e987764708ce96",
     "download_path": INITIAL_DOWNLOAD_PATH,
     "language": "ru",
@@ -932,7 +932,11 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_jacred_search(self, query):
         sett = load_settings()
-        url = sett['jacred_url'].rstrip('/')
+        url = (sett.get('jacred_url') or '').strip().rstrip('/')
+        if not url:
+            self._send_json([])
+            return
+
         q = query.get('query', [''])[0]
         c = query.get('category', [''])[0]
         
@@ -988,7 +992,10 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             
     def _handle_jacred_status(self):
         sett = load_settings()
-        url = sett['jacred_url'].rstrip('/')
+        url = (sett.get('jacred_url') or '').strip().rstrip('/')
+        if not url:
+            self._send_json({"status": False})
+            return
         try:
             req = urllib.request.Request(f"{url}/api/v2.0/indexers/all/results?apikey=1&Query=test")
             with urllib.request.urlopen(req, timeout=5) as response:
@@ -1322,10 +1329,11 @@ class Plugin:
             
         j_ok = False
         try:
-            url = sett['jacred_url'].rstrip('/')
-            req = urllib.request.Request(f"{url}/api/v2.0/indexers/all/results?apikey=1&Query=test")
-            with urllib.request.urlopen(req, timeout=3):
-                j_ok = True
+            url = (sett.get('jacred_url') or '').strip().rstrip('/')
+            if url:
+                req = urllib.request.Request(f"{url}/api/v2.0/indexers/all/results?apikey=1&Query=test")
+                with urllib.request.urlopen(req, timeout=3):
+                    j_ok = True
         except: pass
         
         return {
@@ -1361,8 +1369,10 @@ class Plugin:
             return 0
 
     async def check_jacred(self, url: str):
+        if not url or not url.strip():
+            return False
         try:
-            req = urllib.request.Request(f"{url.rstrip('/')}/api/v2.0/indexers/all/results?apikey=1&Query=test")
+            req = urllib.request.Request(f"{url.strip().rstrip('/')}/api/v2.0/indexers/all/results?apikey=1&Query=test")
             with urllib.request.urlopen(req, timeout=5):
                 return True
         except:

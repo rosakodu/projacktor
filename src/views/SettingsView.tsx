@@ -12,7 +12,7 @@ import {
 } from "../api";
 
 export const SettingsView: FC = memo(() => {
-  const [jacredUrl, setJacredUrl] = useState("https://jac.red");
+  const [jacredUrl, setJacredUrl] = useState("");
   const [jacredOk, setJacredOk] = useState<boolean | null>(null);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [clearingCache, setClearingCache] = useState(false);
@@ -38,12 +38,14 @@ export const SettingsView: FC = memo(() => {
   const handleSaveSettings = useCallback(async () => {
     setSettingsSaving(true);
     try {
-      const ok = await rpcCheckJacred(jacredUrl);
+      const ok = jacredUrl.trim() ? await rpcCheckJacred(jacredUrl.trim()) : false;
       setJacredOk(ok);
-      await rpcSaveSettings(JSON.stringify({ jacred_url: jacredUrl }));
+      await rpcSaveSettings(JSON.stringify({ jacred_url: jacredUrl.trim() }));
       toaster.toast({
         title: "Настройки",
-        body: ok
+        body: !jacredUrl.trim()
+          ? "Настройки сохранены (URL не указан)"
+          : ok
           ? "Сохранено! Соединение с JacRed успешно."
           : "Сохранено, но JacRed недоступен.",
       });
@@ -126,7 +128,7 @@ export const SettingsView: FC = memo(() => {
         <TextField
           value={jacredUrl}
           onChange={(e) => setJacredUrl(e.target.value)}
-          {...({ placeholder: "https://jac.red" } as any)}
+          {...({ placeholder: "https://..." } as any)}
         />
         <div style={{ marginTop: 8 }}>
           <Focusable
