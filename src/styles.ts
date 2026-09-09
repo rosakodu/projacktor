@@ -85,137 +85,48 @@ export const PROJACKTOR_STYLES = `
   letter-spacing: 0.2px;
 }
 
-/* ───── Fixed Projacktor Top Tab Bar (Never slides or shifts) ───── */
-.projacktor-tab-header {
-  position: relative !important;
-  height: 42px !important;
-  min-height: 42px !important;
-  max-height: 42px !important;
-  width: 100% !important;
-  background: #0e141b !important;
-  border-bottom: 1px solid var(--ds-border) !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
-  display: flex !important;
-  flex-direction: row !important;
-  align-items: center !important;
-  justify-content: center !important;
-  z-index: 5 !important;
-  contain: layout paint !important;
-  flex-shrink: 0 !important;
-  padding: 0 16px !important;
-  margin: 0 !important;
-  user-select: none !important;
-  box-sizing: border-box !important;
-  outline: none !important;
-}
-
-.projacktor-tab-header:focus,
-.projacktor-tab-header.gpfocus {
-  outline: none !important;
-  box-shadow: none !important;
-  border-color: transparent !important;
-  border-bottom: 1px solid var(--ds-border) !important;
-}
-
-.projacktor-tab-header::before,
-.projacktor-tab-header::after {
-  display: none !important;
-  content: none !important;
-}
-
-.projacktor-tab-bumper {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  width: 32px !important;
-  height: 32px !important;
-  margin: 0 6px !important;
-  cursor: pointer !important;
-  flex-shrink: 0 !important;
-}
-
-.projacktor-bumper-icon {
-  width: 26px !important;
-  height: 26px !important;
-  display: block !important;
-  pointer-events: none !important;
-}
-
-.projacktor-tab-row {
-  display: flex !important;
-  flex-direction: row !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 6px !important;
-  margin: 0 !important;
-  padding: 0 !important;
+/* ───── Native Decky Tabs Styling (Match Steam Big Picture) ───── */
+[class*="TabRowTabs"],
+[class*="GamepadTabbedPage"] [class*="TabRow"] {
   outline: none !important;
   border: none !important;
-}
-
-.projacktor-tab-row::before,
-.projacktor-tab-row::after,
-.projacktor-tab-row:focus::before,
-.projacktor-tab-row:focus::after,
-.projacktor-tab-row.gpfocus::before,
-.projacktor-tab-row.gpfocus::after {
-  display: none !important;
-  content: none !important;
-}
-
-.projacktor-tab-btn {
-  height: 30px !important;
-  line-height: 30px !important;
-  padding: 0 12px !important;
-  font-size: 12px !important;
-  font-weight: 600 !important;
-  letter-spacing: 0.2px !important;
-  white-space: nowrap !important;
-  color: var(--ds-text-dim) !important;
   background: transparent !important;
+}
+
+[class*="TabRowTabs"] [class*="Tab"],
+[class*="GamepadTabbedPage"] [class*="Tab"] {
+  outline: none !important;
+  box-shadow: none !important;
+  border-radius: 0px !important;
   border: none !important;
   border-bottom: 2.5px solid transparent !important;
-  border-radius: 0px !important;
-  cursor: pointer !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
+  background: transparent !important;
+  transition: border-bottom-color 0.15s ease, color 0.15s ease, background 0.15s ease !important;
+}
+
+[class*="TabRowTabs"] [class*="Tab"]:focus,
+[class*="TabRowTabs"] [class*="Tab"].gpfocus,
+[class*="GamepadTabbedPage"] [class*="Tab"]:focus,
+[class*="GamepadTabbedPage"] [class*="Tab"].gpfocus {
   outline: none !important;
   box-shadow: none !important;
-  box-sizing: border-box !important;
-  transition: background 0.15s ease, color 0.15s ease, border-bottom-color 0.15s ease !important;
-  position: relative !important;
-  transform: none !important;
+  border: none !important;
+  border-bottom: 2.5px solid transparent !important;
+  background: rgba(255, 255, 255, 0.08) !important;
 }
 
-.projacktor-tab-btn::before,
-.projacktor-tab-btn::after,
-.projacktor-tab-btn:focus::before,
-.projacktor-tab-btn:focus::after,
-.projacktor-tab-btn.gpfocus::before,
-.projacktor-tab-btn.gpfocus::after {
-  display: none !important;
-  content: none !important;
-}
-
-.projacktor-tab-btn.active,
-.projacktor-tab-btn.active:focus,
-.projacktor-tab-btn.active.gpfocus {
-  color: #ffffff !important;
+[class*="TabRowTabs"] [class*="Tab"][class*="Active"],
+[class*="TabRowTabs"] [class*="Tab"][class*="Selected"],
+[class*="TabRowTabs"] [class*="Tab"].active,
+[class*="GamepadTabbedPage"] [class*="Tab"][class*="Active"],
+[class*="GamepadTabbedPage"] [class*="Tab"][class*="Selected"],
+[class*="GamepadTabbedPage"] [class*="Tab"].active {
   border: none !important;
   border-bottom: 2.5px solid #1a9fff !important;
   background: rgba(255, 255, 255, 0.08) !important;
+  color: #ffffff !important;
   outline: none !important;
   box-shadow: none !important;
-}
-
-.projacktor-tab-btn:focus,
-.projacktor-tab-btn.gpfocus {
-  outline: none !important;
-  box-shadow: none !important;
-  border: none !important;
-  border-bottom: 2.5px solid transparent !important;
-  transform: none !important;
 }
 
 /* ───── Main Scroll Container (Below Fixed Tab Bar) ───── */

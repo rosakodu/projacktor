@@ -1,38 +1,21 @@
-import { FC, useState, useCallback, useMemo, useRef, useEffect } from "react";
-import { Navigation, Focusable, showModal } from "@decky/ui";
+import { FC, useState, useCallback, useMemo, useEffect } from "react";
+import { Navigation, Focusable, Tabs, showModal } from "@decky/ui";
 import { PROJACKTOR_STYLES } from "../styles";
 import { MediaItem } from "../types";
 import { Header } from "../components/Header";
-import { TabBar } from "../components/TabBar";
 import { MovieModal } from "../components/MovieModal";
 import { PlayerModal } from "../components/PlayerModal";
 import { MagicBlackOverlay } from "../components/MagicBlackOverlay";
-import { useGamepadTabs } from "../hooks/useGamepadTabs";
 import { CatalogView } from "./CatalogView";
 import { SearchView } from "./SearchView";
 import { LibraryView } from "./LibraryView";
 import { SettingsView } from "./SettingsView";
-import { dispatchHomeButtonDown, dispatchHomeDirection } from "../runtime/homeInputBus";
+import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
+import { isModalOpen } from "../runtime/homeInputBus";
 
 export const ProjacktorApp: FC = () => {
-  const {
-    activeTab,
-    setActiveTab,
-    tabList,
-    prevTab,
-    nextTab,
-    suppressCardFocus,
-    setSuppressCardFocus,
-  } = useGamepadTabs("movies");
-
+  const [activeTab, setActiveTab] = useState<string>("movies");
   const [magicBlackActive, setMagicBlackActive] = useState<boolean>(false);
-  const contentScrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (contentScrollRef.current) {
-      contentScrollRef.current.scrollTop = 0;
-    }
-  }, [activeTab]);
 
   const getParentWindow = (): EventTarget => {
     try {
@@ -95,66 +78,116 @@ export const ProjacktorApp: FC = () => {
     } catch {}
   }, []);
 
-  const activeContent = useMemo(() => {
-    switch (activeTab) {
-      case "movies":
-        return <CatalogView key="movies" category="movie" onSelectMovie={handleOpenMovie} />;
-      case "tv":
-        return <CatalogView key="tv" category="tv" onSelectMovie={handleOpenMovie} />;
-      case "cartoons":
-        return (
-          <CatalogView key="cartoons" category="cartoon" onSelectMovie={handleOpenMovie} />
-        );
-      case "anime":
-        return <CatalogView key="anime" category="anime" onSelectMovie={handleOpenMovie} />;
-      case "search":
-        return <SearchView onSelectMovie={handleOpenMovie} />;
-      case "library":
-        return (
+  const tabs = useMemo(
+    () => [
+      {
+        id: "movies",
+        title: "Главная",
+        content: <CatalogView key="movies" category="movie" onSelectMovie={handleOpenMovie} />,
+      },
+      {
+        id: "tv",
+        title: "Сериалы",
+        content: <CatalogView key="tv" category="tv" onSelectMovie={handleOpenMovie} />,
+      },
+      {
+        id: "cartoons",
+        title: "Мультфильмы",
+        content: <CatalogView key="cartoons" category="cartoon" onSelectMovie={handleOpenMovie} />,
+      },
+      {
+        id: "anime",
+        title: "Аниме",
+        content: <CatalogView key="anime" category="anime" onSelectMovie={handleOpenMovie} />,
+      },
+      {
+        id: "search",
+        title: "Поиск",
+        content: <SearchView onSelectMovie={handleOpenMovie} />,
+      },
+      {
+        id: "library",
+        title: "Библиотека",
+        content: (
           <LibraryView
             onPlayVideo={handlePlayVideo}
             onActivateMagicBlack={() => setMagicBlackActive(true)}
           />
-        );
-      case "settings":
-        return <SettingsView />;
-      default:
-        return <CatalogView key="movies" category="movie" onSelectMovie={handleOpenMovie} />;
-    }
-  }, [activeTab, handleOpenMovie, handlePlayVideo]);
+        ),
+      },
+      {
+        id: "settings",
+        title: "Настройки",
+        content: <SettingsView />,
+      },
+    ],
+    [handleOpenMovie, handlePlayVideo]
+  );
+
+  const tabIds = useMemo(() => tabs.map((t) => t.id), [tabs]);
+
+  const prevTab = useCallback(() => {
+    setActiveTab((cur) => {
+      const idx = tabIds.indexOf(cur);
+      const prevIdx = idx > 0 ? idx - 1 : tabIds.length - 1;
+      return tabIds[prevIdx];
+    });
+  }, [tabIds]);
+
+  const nextTab = useCallback(() => {
+    setActiveTab((cur) => {
+      const idx = tabIds.indexOf(cur);
+      const nextIdx = idx < tabIds.length - 1 ? idx + 1 : 0;
+      return tabIds[nextIdx];
+    });
+  }, [tabIds]);
+
+  // Зацикленное переключение вкладок через L1/R1 в любой момент
+  useEffect(() => {
+    let lastBumperAt = 0;
+    const un = subscribeControllerInput((e) => {
+      if (isModalOpen()) return;
+      if (!e.pressed) return;
+      const now = Date.now();
+      if (now - lastBumperAt < 180) return;
+
+      if (e.button === RawButton.L1) {
+        lastBumperAt = now;
+        prevTab();
+      } else if (e.button === RawButton.R1) {
+        lastBumperAt = now;
+        nextTab();
+      }
+    });
+    return un;
+  }, [prevTab, nextTab]);
 
   return (
     <Focusable
-      className={`projacktor-app-root ${suppressCardFocus ? "suppress-card-focus" : ""}`}
+      className="projacktor-app-root"
+      flow-children="vertical"
       onCancelButton={handleBack}
-      onButtonDown={(evt: any) => {
-        setSuppressCardFocus(false);
-        try {
-          dispatchHomeButtonDown(evt);
-        } catch {}
-      }}
-      onGamepadDirection={(evt: any) => {
-        try {
-          dispatchHomeDirection(evt);
-        } catch {}
+      style={{
+        position: "relative",
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        color: "var(--ds-text, #fff)",
       }}
     >
       <style>{PROJACKTOR_STYLES}</style>
 
-      {/* Header */}
-      <Header />
+      {/* Нативный заголовок в стиле Deck-Shelves */}
+      <Header onBack={handleBack} />
 
-      {/* Верхние вкладки — переключение только через L1/R1, изолированы от D-pad */}
-      <TabBar
-        tabs={tabList}
-        activeTab={activeTab}
-        onSelectTab={setActiveTab}
-        onPrevTab={prevTab}
-        onNextTab={nextTab}
-      />
-
-      {/* Основная рабочая область контента */}
-      <div ref={contentScrollRef} className="projacktor-content-scroll">{activeContent}</div>
+      {/* Нативные вкладки SteamOS GamepadUI */}
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+        <Tabs
+          activeTab={activeTab}
+          onShowTab={(tabId: string) => setActiveTab(tabId)}
+          tabs={tabs}
+        />
+      </div>
 
       {/* OLED режим фоновой загрузки */}
       {magicBlackActive && (

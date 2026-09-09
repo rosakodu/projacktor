@@ -181,22 +181,30 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
             dispatchHomeDirection(evt);
             const dir = evt?.detail?.button;
             if (dir === DeckyButton.DPAD_UP || dir === 9 || dir === 12) {
-              absorb(evt);
-              triggerPrevSection();
+              if (hasPrevSection) {
+                absorb(evt);
+                triggerPrevSection();
+              }
             } else if (dir === DeckyButton.DPAD_DOWN || dir === 10 || dir === 13) {
-              absorb(evt);
-              triggerNextSection();
+              if (hasNextSection) {
+                absorb(evt);
+                triggerNextSection();
+              }
             }
           }}
           onButtonDown={(evt: any) => {
             dispatchHomeButtonDown(evt);
             const btn = evt?.detail?.button;
             if (btn === DeckyButton.DPAD_UP || btn === 9 || btn === 12) {
-              absorb(evt);
-              triggerPrevSection();
+              if (hasPrevSection) {
+                absorb(evt);
+                triggerPrevSection();
+              }
             } else if (btn === DeckyButton.DPAD_DOWN || btn === 10 || btn === 13) {
-              absorb(evt);
-              triggerNextSection();
+              if (hasNextSection) {
+                absorb(evt);
+                triggerNextSection();
+              }
             }
           }}
           onKeyDown={(e: any) => {

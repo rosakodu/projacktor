@@ -1,5 +1,4 @@
 export * from "./Header";
-export * from "./TabBar";
 export * from "./SectorShelf";
 export * from "./MovieCard";
 export * from "./MovieModal";
