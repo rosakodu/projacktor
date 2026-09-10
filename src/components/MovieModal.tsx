@@ -530,12 +530,12 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                             )}
                           </Focusable>
 
-                          {/* Download with MagicBlack screen-off (OLED background) */}
+                          {/* Download with screen-off (OLED background) */}
                           <Focusable
                             className="projacktor-icon-btn projacktor-magicblack-btn"
                             onActivate={() => handleDownloadWithMagicBlack(tor)}
                             onClick={() => handleDownloadWithMagicBlack(tor)}
-                            title="Скачать с выключенным экраном (MagicBlack OLED)"
+                            title="Скачать с выключенным экраном"
                           >
                             <FaMoon style={{ fontSize: 11 }} />
                           </Focusable>
@@ -595,12 +595,12 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                                         <FaDownload style={{ fontSize: 9 }} />
                                       )}
                                     </Focusable>
-                                    {/* Download episode with MagicBlack screen-off */}
+                                    {/* Download episode with screen-off */}
                                     <Focusable
                                       className="projacktor-icon-btn projacktor-icon-btn--compact projacktor-magicblack-btn"
                                       onActivate={() => handleDownloadEpisodeWithMagicBlack(tor, ep)}
                                       onClick={() => handleDownloadEpisodeWithMagicBlack(tor, ep)}
-                                      title="Скачать серию с выключенным экраном (MagicBlack OLED)"
+                                      title="Скачать серию с выключенным экраном"
                                     >
                                       <FaMoon style={{ fontSize: 9 }} />
                                     </Focusable>

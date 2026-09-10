@@ -4,6 +4,8 @@
    and exposes typed subscription streams. */
 
 
+import { isMagicBlack } from "./magicBlackBus";
+
 export const DeckyButton = {
   INVALID: 0,
   OK: 1,
@@ -93,8 +95,9 @@ export function dispatchHomeKey(ev: KeyEvent): void {
 }
 
 export function isModalOpen(): boolean {
+  if (isMagicBlack()) return true;
   if (typeof document === "undefined") return false;
   return !!document.querySelector(
-    ".projacktor-modal-root, .projacktor-player-fullscreen, .projacktor-magicblack-overlay"
+    ".projacktor-modal-root, .projacktor-player-fullscreen"
   );
 }

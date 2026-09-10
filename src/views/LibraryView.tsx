@@ -44,10 +44,10 @@ export const LibraryView: FC<LibraryViewProps> = memo(
               className="ds-btn ds-btn--compact projacktor-magicblack-btn"
               onActivate={onActivateMagicBlack}
               onClick={onActivateMagicBlack}
-              title="Выключить экран для фоновой загрузки (MagicBlack OLED)"
+              title="Выключить экран для фоновой загрузки"
             >
               <FaMoon style={{ marginRight: 6, fontSize: 11 }} />
-              Выключить экран (MagicBlack)
+              Выключить экран
             </Focusable>
           </div>
         )}
@@ -280,10 +280,10 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                             </Focusable>
                           )}
 
-                          {/* MagicBlack Mode (Screen-off OLED background downloading) */}
+                          {/* Screen-off OLED background downloading */}
                           <Focusable
                             className="projacktor-icon-btn projacktor-magicblack-btn"
-                            title="Загрузка в фоне с отключением экрана (MagicBlack OLED)"
+                            title="Загрузка в фоне с отключением экрана"
                             onActivate={() => {
                               if (!isDownloading && !isPaused) {
                                 startDownload(item);
