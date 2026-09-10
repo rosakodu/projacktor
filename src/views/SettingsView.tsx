@@ -62,8 +62,8 @@ export const SettingsView: FC = memo(() => {
         body: !cleanUrl
           ? "Настройки сохранены (URL парсера очищен)"
           : ok
-          ? "Сохранено! Соединение с JacRed успешно."
-          : "Сохранено, но сервер JacRed недоступен.",
+          ? "Сохранено! Соединение с Jackett успешно."
+          : "Сохранено, но сервер Jackett недоступен.",
       });
     } catch {
       toaster.toast({ title: "Ошибка", body: "Не удалось сохранить настройки" });
@@ -101,15 +101,16 @@ export const SettingsView: FC = memo(() => {
 
   return (
     <div
-      className="projacktor-content-scroll"
+      className="projacktor-content"
       style={{
         width: "100%",
-        padding: "16px 52px 140px 52px",
+        padding: "6px 52px 24px 52px",
         boxSizing: "border-box",
+        overflowY: "auto",
       }}
     >
-      <div style={{ maxWidth: 880, width: "100%", margin: "0 auto" }}>
-        <PanelSection title="Парсер JacRed">
+      <div style={{ maxWidth: 840, width: "100%", margin: "0 auto" }}>
+        <PanelSection title="Парсер Jackett">
           <PanelSectionRow>
             <Field
               label="Статус подключения"
@@ -117,8 +118,8 @@ export const SettingsView: FC = memo(() => {
                 jacredOk === null
                   ? "Проверка соединения..."
                   : jacredOk
-                  ? "Связь с сервером парсера установлена"
-                  : "Сервер парсера недоступен или не настроен"
+                  ? "Связь с парсером установлена"
+                  : "Парсер недоступен или не настроен"
               }
             >
               <div
@@ -158,16 +159,13 @@ export const SettingsView: FC = memo(() => {
           </PanelSectionRow>
 
           <PanelSectionRow>
-            <Field
-              label="Ссылка на парсер"
-              description="URL вашего сервера JacRed (например: http://192.168.1.50:7000)"
-            >
+            <div style={{ width: "100%", marginTop: 2, marginBottom: 4 }}>
               <TextField
                 value={jacredUrl}
                 onChange={(e) => setJacredUrl(e.target.value)}
-                {...({ placeholder: "http://..." } as any)}
+                {...({ placeholder: "URL парсера (например: http://192.168.1.50:9117)" } as any)}
               />
-            </Field>
+            </div>
           </PanelSectionRow>
 
           <PanelSectionRow>
@@ -183,19 +181,16 @@ export const SettingsView: FC = memo(() => {
 
         <PanelSection title="Хранилище и кэш">
           <PanelSectionRow>
-            <Field
-              label="Кэш каталога, стримов и загрузок"
-              description="Очищает метаданные TMDB, постеры, историю страниц и временные файлы онлайн-просмотра."
+            <ButtonItem
+              layout="below"
+              onClick={handleClearCache}
+              disabled={clearingCache}
             >
-              <ButtonItem
-                layout="inline"
-                onClick={handleClearCache}
-                disabled={clearingCache}
-              >
-                <FaTrash style={{ marginRight: 6, fontSize: 11 }} />
-                {clearingCache ? "Очистка..." : "Сбросить кэш"}
-              </ButtonItem>
-            </Field>
+              <FaTrash style={{ marginRight: 8, fontSize: 12 }} />
+              {clearingCache
+                ? "Очистка..."
+                : "Сбросить кэш (TMDB, постеры, стримы)"}
+            </ButtonItem>
           </PanelSectionRow>
         </PanelSection>
       </div>
