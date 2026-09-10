@@ -204,7 +204,7 @@ export const SettingsView: FC = memo(() => {
               <TextField
                 value={jacredUrl}
                 onChange={(e) => setJacredUrl(e.target.value)}
-                {...({ placeholder: "URL парсера (например: http://192.168.1.50:9117)" } as any)}
+                {...({ placeholder: "URL парсера" } as any)}
               />
             </div>
           </PanelSectionRow>
@@ -230,7 +230,7 @@ export const SettingsView: FC = memo(() => {
               <FaTrash style={{ marginRight: 8, fontSize: 12 }} />
               {clearingCache
                 ? "Очистка..."
-                : "Сбросить кэш (TMDB, постеры, стримы)"}
+                : "Сбросить кэш"}
             </ButtonItem>
           </PanelSectionRow>
         </PanelSection>
