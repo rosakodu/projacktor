@@ -22,8 +22,9 @@ export const TabBar: FC<TabBarProps> = memo(
     const navRef = useRef<HTMLDivElement>(null);
 
     const moveFocusDown = useCallback(() => {
+      const doc = navRef.current?.ownerDocument || document;
       // 1. Try focusing the first movie card in the active shelf
-      const firstCard = document.querySelector<HTMLElement>(
+      const firstCard = doc.querySelector<HTMLElement>(
         ".projacktor-shelf-row .projacktor-card, .projacktor-card"
       );
       if (firstCard) {
@@ -31,8 +32,8 @@ export const TabBar: FC<TabBarProps> = memo(
         return;
       }
       // 2. Fallback for search, library, or settings views
-      const fallback = document.querySelector<HTMLElement>(
-        ".projacktor-content input, .projacktor-content button, .projacktor-content .ds-btn, .projacktor-content .projacktor-lib-card"
+      const fallback = doc.querySelector<HTMLElement>(
+        ".projacktor-library-content .projacktor-magicblack-btn, .projacktor-library-content .projacktor-lib-card, .projacktor-library-content .projacktor-icon-btn, .projacktor-library-content .projacktor-empty-lib, .projacktor-content input, .projacktor-content button, .projacktor-content .DialogButton, .projacktor-content .ds-btn, .projacktor-content [tabindex='0']"
       );
       if (fallback) {
         fallback.focus();
@@ -47,7 +48,8 @@ export const TabBar: FC<TabBarProps> = memo(
         if (!e.pressed) return;
 
         const navEl = navRef.current;
-        const active = document.activeElement;
+        const doc = navEl?.ownerDocument || document;
+        const active = doc.activeElement;
         const isNavFocused = !!(navEl && active && navEl.contains(active));
         if (!isNavFocused) return;
 

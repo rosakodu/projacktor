@@ -1,4 +1,4 @@
-import { FC, memo } from "react";
+import { FC, memo, useEffect, useRef } from "react";
 import { Focusable } from "@decky/ui";
 import { FaPlay, FaPause, FaDownload, FaList, FaTrash, FaMoon, FaSpinner } from "react-icons/fa";
 import { EpisodeItem } from "../types";
@@ -12,6 +12,7 @@ interface LibraryViewProps {
 
 export const LibraryView: FC<LibraryViewProps> = memo(
   ({ onPlayVideo, onActivateMagicBlack }) => {
+    const rootRef = useRef<HTMLDivElement>(null);
     const {
       library,
       expandedEpisodes,
@@ -29,8 +30,49 @@ export const LibraryView: FC<LibraryViewProps> = memo(
 
     const hasDownloading = library.some((i) => i.download_status === "downloading");
 
+    // Авто-фокус на элементе библиотеки при переходе во вкладку
+    useEffect(() => {
+      let cancelled = false;
+      const focusLib = () => {
+        if (cancelled) return true;
+        const root = rootRef.current;
+        const target = root
+          ? root.querySelector<HTMLElement>(
+              ".projacktor-magicblack-btn, .projacktor-lib-card, .projacktor-icon-btn, .projacktor-empty-lib"
+            )
+          : null;
+        if (target) {
+          try {
+            target.focus();
+          } catch {}
+          return true;
+        }
+        return false;
+      };
+
+      if (!focusLib()) {
+        const t1 = setTimeout(focusLib, 40);
+        const t2 = setTimeout(focusLib, 120);
+        const t3 = setTimeout(focusLib, 260);
+        return () => {
+          cancelled = true;
+          clearTimeout(t1);
+          clearTimeout(t2);
+          clearTimeout(t3);
+        };
+      }
+      return () => {
+        cancelled = true;
+      };
+    }, [library.length, hasDownloading]);
+
     return (
-      <div className="projacktor-library-content">
+      <Focusable
+        ref={rootRef}
+        flow-children="vertical"
+        noFocusRing
+        className="projacktor-library-content"
+      >
         {hasDownloading && (
           <div
             style={{
@@ -54,6 +96,8 @@ export const LibraryView: FC<LibraryViewProps> = memo(
 
         {library.length === 0 ? (
           <Focusable
+            className="projacktor-empty-lib"
+            tabIndex={0}
             noFocusRing
             style={{ textAlign: "center", padding: 50, color: "rgba(255,255,255,0.4)" }}
           >
@@ -76,7 +120,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
             const isStreamStarting = streamLoading === item.id;
 
             return (
-              <Focusable key={item.id} className="projacktor-lib-card">
+              <Focusable key={item.id} tabIndex={0} className="projacktor-lib-card">
                 <div className="projacktor-lib-main">
                   <img
                     src={getImageUrl(item.poster_path)}
@@ -496,7 +540,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
           style={{ minHeight: 180, width: "100%", flexShrink: 0 }}
           aria-hidden="true"
         />
-      </div>
+      </Focusable>
     );
   }
 );

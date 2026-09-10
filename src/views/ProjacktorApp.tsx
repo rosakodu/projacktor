@@ -1,4 +1,4 @@
-import { FC, useState, useCallback, useEffect } from "react";
+import { FC, useState, useCallback, useEffect, useRef } from "react";
 import { Navigation, Focusable, showModal } from "@decky/ui";
 import { PROJACKTOR_STYLES } from "../styles";
 import { MediaItem } from "../types";
@@ -25,6 +25,7 @@ const TABS_CONFIG = [
 const TAB_IDS = TABS_CONFIG.map((t) => t.id);
 
 export const ProjacktorApp: FC = () => {
+  const rootRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<string>("movies");
 
   const getParentWindow = (): EventTarget => {
@@ -115,12 +116,78 @@ export const ProjacktorApp: FC = () => {
     });
   }, []);
 
+  // Гарантированная фокусировка контента при переключении вкладок
+  const ensureContentFocus = useCallback(() => {
+    const root = rootRef.current;
+    if (!root) return false;
+
+    let target: HTMLElement | null = null;
+    if (
+      activeTab === "movies" ||
+      activeTab === "tv" ||
+      activeTab === "cartoons" ||
+      activeTab === "anime"
+    ) {
+      target = root.querySelector<HTMLElement>(
+        ".projacktor-shelf-row .projacktor-card, .projacktor-card"
+      );
+    } else if (activeTab === "search") {
+      target = root.querySelector<HTMLElement>(
+        ".projacktor-content input, .projacktor-content button, .projacktor-content .ds-btn"
+      );
+    } else if (activeTab === "library") {
+      target = root.querySelector<HTMLElement>(
+        ".projacktor-library-content .projacktor-magicblack-btn, .projacktor-library-content .projacktor-lib-card, .projacktor-library-content .projacktor-icon-btn, .projacktor-library-content .projacktor-empty-lib"
+      );
+    } else if (activeTab === "settings") {
+      target = root.querySelector<HTMLElement>(
+        ".projacktor-content input, .projacktor-content button, .projacktor-content .DialogButton, .projacktor-content [tabindex='0']"
+      );
+    }
+
+    if (!target) {
+      target = root.querySelector<HTMLElement>(
+        ".projacktor-tab-item.active, [role='tab'][aria-selected='true']"
+      );
+    }
+
+    if (target) {
+      try {
+        target.focus();
+      } catch {}
+      return true;
+    }
+    return false;
+  }, [activeTab]);
+
+  useEffect(() => {
+    ensureContentFocus();
+    const t1 = setTimeout(ensureContentFocus, 40);
+    const t2 = setTimeout(ensureContentFocus, 100);
+    const t3 = setTimeout(ensureContentFocus, 250);
+    const t4 = setTimeout(ensureContentFocus, 500);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      clearTimeout(t4);
+    };
+  }, [activeTab, ensureContentFocus]);
+
   // Зацикленное переключение вкладок через L1/R1 в любой момент
   useEffect(() => {
     let lastBumperAt = 0;
     const un = subscribeControllerInput((e) => {
       if (isModalOpen()) return;
       if (!e.pressed) return;
+
+      // Если фокус упал на body, восстанавливаем его на активном контенте
+      const doc = rootRef.current?.ownerDocument || document;
+      const active = doc.activeElement;
+      if (!active || active === doc.body || active === document.body) {
+        ensureContentFocus();
+      }
+
       const now = Date.now();
       if (now - lastBumperAt < 180) return;
 
@@ -133,10 +200,11 @@ export const ProjacktorApp: FC = () => {
       }
     });
     return un;
-  }, [prevTab, nextTab]);
+  }, [prevTab, nextTab, ensureContentFocus]);
 
   return (
     <Focusable
+      ref={rootRef}
       className="projacktor-app-root"
       flow-children="vertical"
       onCancelButton={handleBack}
@@ -163,7 +231,12 @@ export const ProjacktorApp: FC = () => {
       />
 
       {/* Контент текущей вкладки */}
-      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <Focusable
+        flow-children="vertical"
+        noFocusRing
+        className="projacktor-view-container"
+        style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}
+      >
         {activeTab === "movies" && (
           <CatalogView key="movies" category="movie" onSelectMovie={handleOpenMovie} />
         )}
@@ -188,7 +261,7 @@ export const ProjacktorApp: FC = () => {
         {activeTab === "settings" && (
           <SettingsView />
         )}
-      </div>
+      </Focusable>
     </Focusable>
   );
 };

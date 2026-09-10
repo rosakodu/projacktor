@@ -1,10 +1,11 @@
-import { FC, useState, useEffect, useCallback, memo } from "react";
+import { FC, useState, useEffect, useCallback, useRef, memo } from "react";
 import {
   PanelSection,
   PanelSectionRow,
   Field,
   ButtonItem,
   TextField,
+  Focusable,
 } from "@decky/ui";
 import { toaster } from "@decky/api";
 import { FaTrash, FaCheck, FaTimes } from "react-icons/fa";
@@ -18,6 +19,7 @@ import {
 } from "../api";
 
 export const SettingsView: FC = memo(() => {
+  const rootRef = useRef<HTMLDivElement>(null);
   const [jacredUrl, setJacredUrl] = useState("");
   const [jacredOk, setJacredOk] = useState<boolean | null>(null);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -48,6 +50,42 @@ export const SettingsView: FC = memo(() => {
         }
       })
       .catch(() => {});
+  }, []);
+
+  // Авто-фокус на первом интерактивном элементе при переходе в настройки
+  useEffect(() => {
+    let cancelled = false;
+    const focusSett = () => {
+      if (cancelled) return true;
+      const root = rootRef.current;
+      const firstInteractive = root
+        ? root.querySelector<HTMLElement>(
+            "input, button, .DialogButton, [tabindex='0']"
+          )
+        : null;
+      if (firstInteractive) {
+        try {
+          firstInteractive.focus();
+        } catch {}
+        return true;
+      }
+      return false;
+    };
+
+    if (!focusSett()) {
+      const t1 = setTimeout(focusSett, 40);
+      const t2 = setTimeout(focusSett, 120);
+      const t3 = setTimeout(focusSett, 260);
+      return () => {
+        cancelled = true;
+        clearTimeout(t1);
+        clearTimeout(t2);
+        clearTimeout(t3);
+      };
+    }
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleSaveSettings = useCallback(async () => {
@@ -100,7 +138,10 @@ export const SettingsView: FC = memo(() => {
   }, [clearingCache]);
 
   return (
-    <div
+    <Focusable
+      ref={rootRef}
+      flow-children="vertical"
+      noFocusRing
       className="projacktor-content"
       style={{
         width: "100%",
@@ -194,6 +235,6 @@ export const SettingsView: FC = memo(() => {
           </PanelSectionRow>
         </PanelSection>
       </div>
-    </div>
+    </Focusable>
   );
 });
