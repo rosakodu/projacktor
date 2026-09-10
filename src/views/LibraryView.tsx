@@ -27,11 +27,19 @@ export const LibraryView: FC<LibraryViewProps> = memo(
       watchOnline,
     } = useLibrary(onPlayVideo);
 
+    const hasDownloading = library.some((i) => i.download_status === "downloading");
+
     return (
-      <div className="projacktor-content" style={{ padding: "0 52px 200px 52px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <div style={{ fontSize: 19, fontWeight: 700, color: "#ffffff" }}>Библиотека</div>
-          {library.some((i) => i.download_status === "downloading") && (
+      <div className="projacktor-library-content">
+        {hasDownloading && (
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              alignItems: "center",
+              marginBottom: 10,
+            }}
+          >
             <Focusable
               className="ds-btn ds-btn--compact projacktor-magicblack-btn"
               onActivate={onActivateMagicBlack}
@@ -41,8 +49,8 @@ export const LibraryView: FC<LibraryViewProps> = memo(
               <FaMoon style={{ marginRight: 6, fontSize: 11 }} />
               Выключить экран (MagicBlack)
             </Focusable>
-          )}
-        </div>
+          </div>
+        )}
 
         {library.length === 0 ? (
           <Focusable
@@ -53,12 +61,14 @@ export const LibraryView: FC<LibraryViewProps> = memo(
           </Focusable>
         ) : (
           library.map((item) => {
-            const hasLocalFiles = !!(item.files && item.files.length > 0);
-            const localFilePath = hasLocalFiles && item.files ? item.files[0].file_path : null;
-            const isCompleted = item.download_status === "completed" || hasLocalFiles;
-            const canPlayDirect = isCompleted && !!localFilePath;
             const isDownloading = item.download_status === "downloading";
             const isPaused = item.download_status === "paused";
+            const hasLocalFiles = !!(item.files && item.files.length > 0);
+            const localFilePath = hasLocalFiles && item.files ? item.files[0].file_path : null;
+            const isCompleted =
+              item.download_status === "completed" ||
+              (!isDownloading && !isPaused && hasLocalFiles);
+            const canPlayDirect = isCompleted && !!localFilePath;
             const isTv = item.media_type === "tv";
             const isEpisodesOpen = !!expandedEpisodes[item.id];
             const episodes = episodesMap[item.id] || [];
@@ -156,7 +166,8 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                       {item.effective_torrent_title && (
                         <span
                           style={{
-                            maxWidth: 280,
+                            flex: 1,
+                            minWidth: 0,
                             overflow: "hidden",
                             textOverflow: "ellipsis",
                             whiteSpace: "nowrap",

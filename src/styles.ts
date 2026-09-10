@@ -283,7 +283,17 @@ export const PROJACKTOR_STYLES = `
   min-height: 0 !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
-  padding: 0 !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.projacktor-library-content {
+  width: 100% !important;
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding: 6px 52px 140px 52px !important;
   margin: 0 !important;
   box-sizing: border-box !important;
 }
