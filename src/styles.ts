@@ -87,7 +87,7 @@ export const PROJACKTOR_STYLES = `
   display: flex !important;
   align-items: center !important;
   padding: 0 52px 14px 52px !important;
-  gap: 10px !important;
+  gap: 12px !important;
   flex-shrink: 0 !important;
   user-select: none !important;
   outline: none !important;
@@ -99,17 +99,29 @@ export const PROJACKTOR_STYLES = `
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  background: #ffffff !important;
-  color: #0b1016 !important;
-  font-weight: 800 !important;
+  background: rgba(255, 255, 255, 0.12) !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+  border: 1px solid rgba(255, 255, 255, 0.22) !important;
+  font-weight: 700 !important;
   font-size: 11px !important;
-  padding: 2px 7px !important;
+  letter-spacing: 0.5px !important;
+  padding: 0 8px !important;
+  height: 22px !important;
+  line-height: 20px !important;
   border-radius: 4px !important;
-  line-height: 1 !important;
   cursor: pointer !important;
   user-select: none !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
   flex-shrink: 0 !important;
+  margin-bottom: 2px !important;
+  transition: all 0.12s ease !important;
+}
+
+.projacktor-bumper-pill:hover,
+.projacktor-bumper-pill:active {
+  background: rgba(255, 255, 255, 0.24) !important;
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.38) !important;
 }
 
 .projacktor-tabs-track {
@@ -118,13 +130,15 @@ export const PROJACKTOR_STYLES = `
   gap: 6px !important;
   flex-shrink: 0 !important;
   outline: none !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+  position: relative !important;
 }
 
 .projacktor-tab-item {
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  height: 30px !important;
+  height: 32px !important;
   padding: 0 14px !important;
   font-size: 13.5px !important;
   font-weight: 500 !important;
@@ -134,6 +148,7 @@ export const PROJACKTOR_STYLES = `
   border: none !important;
   border-bottom: 3px solid transparent !important;
   border-radius: 0px !important;
+  margin-bottom: -1px !important;
   cursor: pointer !important;
   outline: none !important;
   box-shadow: none !important;
@@ -157,8 +172,9 @@ export const PROJACKTOR_STYLES = `
   font-weight: 700 !important;
   background: transparent !important;
   border-bottom: 3px solid #1a9fff !important;
+  margin-bottom: -1px !important;
   outline: none !important;
-  box-shadow: none !important;
+  box-shadow: 0 2px 8px rgba(26, 159, 255, 0.45) !important;
 }
 
 .projacktor-tab-item.active:focus,
@@ -167,8 +183,9 @@ export const PROJACKTOR_STYLES = `
   font-weight: 700 !important;
   background: transparent !important;
   border-bottom: 3px solid #1a9fff !important;
+  margin-bottom: -1px !important;
   outline: none !important;
-  box-shadow: none !important;
+  box-shadow: 0 2px 8px rgba(26, 159, 255, 0.45) !important;
 }
 
 /* ───── Main Scroll Container (Below Fixed Tab Bar) ───── */
@@ -474,7 +491,7 @@ export const PROJACKTOR_STYLES = `
   min-width: 140px !important;
   max-width: 140px !important;
   flex: 0 0 140px !important;
-  height: 246px !important;
+  height: 250px !important;
   display: flex !important;
   flex-direction: column !important;
   background: #141a23 !important;
@@ -524,7 +541,7 @@ export const PROJACKTOR_STYLES = `
 
 .projacktor-card-poster {
   width: 100% !important;
-  height: 196px !important;
+  height: 186px !important;
   object-fit: cover !important;
   background: #0f141c !important;
   display: block !important;
@@ -547,29 +564,37 @@ export const PROJACKTOR_STYLES = `
 }
 
 .projacktor-card-info {
-  padding: 6px 8px !important;
+  padding: 5px 8px 6px 8px !important;
   display: flex !important;
   flex-direction: column !important;
-  justify-content: center !important;
+  justify-content: flex-start !important;
   flex: 1 !important;
+  min-height: 0 !important;
   background: #141a23 !important;
+  box-sizing: border-box !important;
 }
 
 .projacktor-card-title {
-  font-size: 12px !important;
+  font-size: 11.5px !important;
   font-weight: 600 !important;
   color: #ffffff !important;
-  white-space: nowrap !important;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 2 !important;
+  -webkit-box-orient: vertical !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
+  white-space: normal !important;
   line-height: 1.25 !important;
+  min-height: 28px !important;
+  max-height: 28px !important;
+  word-break: break-word !important;
 }
 
 .projacktor-card-year {
-  font-size: 11px !important;
+  font-size: 10.5px !important;
   color: #8b929a !important;
-  margin-top: 2px !important;
-  line-height: 1.2 !important;
+  margin-top: 3px !important;
+  line-height: 1.1 !important;
 }
 
 /* ───── Sharp Downloads List Items ───── */
