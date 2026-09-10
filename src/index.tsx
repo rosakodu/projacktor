@@ -9,6 +9,7 @@ import {
 import { callable, definePlugin, routerHook } from "@decky/api";
 import { FaVideo } from "react-icons/fa";
 import { ProjacktorApp } from "./views/ProjacktorApp";
+import { GlobalMagicBlackOverlay } from "./components/GlobalMagicBlackOverlay";
 import "./runtime/controllerInput";
 
 // ── RPC-вызовы Python бэкенда ────────────────────────────────
@@ -90,6 +91,12 @@ export default definePlugin(() => {
     console.error("Projacktor addRoute error:", e);
   }
 
+  try {
+    routerHook.addGlobalComponent("ProjecktorMagicBlack", GlobalMagicBlackOverlay);
+  } catch (e) {
+    console.error("Projecktor addGlobalComponent error:", e);
+  }
+
   return {
     name:      "Projacktor",
     titleView: <div className={staticClasses.Title}>Projecktor</div>,
@@ -100,6 +107,11 @@ export default definePlugin(() => {
         routerHook.removeRoute("/projacktor");
       } catch (e) {
         console.error("Projacktor removeRoute error:", e);
+      }
+      try {
+        routerHook.removeGlobalComponent("ProjecktorMagicBlack");
+      } catch (e) {
+        console.error("Projecktor removeGlobalComponent error:", e);
       }
     },
   };

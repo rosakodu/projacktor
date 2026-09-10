@@ -2,13 +2,14 @@ import { FC, useState, useCallback, useEffect } from "react";
 import { Navigation, Focusable, showModal } from "@decky/ui";
 import { PROJACKTOR_STYLES } from "../styles";
 import { MediaItem } from "../types";
-import { Header, TabBar, MovieModal, PlayerModal, MagicBlackOverlay } from "../components";
+import { Header, TabBar, MovieModal, PlayerModal } from "../components";
 import { CatalogView } from "./CatalogView";
 import { SearchView } from "./SearchView";
 import { LibraryView } from "./LibraryView";
 import { SettingsView } from "./SettingsView";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
 import { isModalOpen } from "../runtime/homeInputBus";
+import { setMagicBlack } from "../runtime/magicBlackBus";
 
 const TABS_CONFIG = [
   { id: "movies", title: "Главная" },
@@ -24,7 +25,6 @@ const TAB_IDS = TABS_CONFIG.map((t) => t.id);
 
 export const ProjacktorApp: FC = () => {
   const [activeTab, setActiveTab] = useState<string>("movies");
-  const [magicBlackActive, setMagicBlackActive] = useState<boolean>(false);
 
   const getParentWindow = (): EventTarget => {
     try {
@@ -75,7 +75,7 @@ export const ProjacktorApp: FC = () => {
       };
       const onStartMagicBlack = () => {
         close();
-        setMagicBlackActive(true);
+        setMagicBlack(true);
       };
       modalInstance = showModal(
         <MovieModal
@@ -179,18 +179,13 @@ export const ProjacktorApp: FC = () => {
         {activeTab === "library" && (
           <LibraryView
             onPlayVideo={handlePlayVideo}
-            onActivateMagicBlack={() => setMagicBlackActive(true)}
+            onActivateMagicBlack={() => setMagicBlack(true)}
           />
         )}
         {activeTab === "settings" && (
           <SettingsView />
         )}
       </div>
-
-      {/* OLED режим фоновой загрузки */}
-      {magicBlackActive && (
-        <MagicBlackOverlay onDismiss={() => setMagicBlackActive(false)} />
-      )}
     </Focusable>
   );
 };

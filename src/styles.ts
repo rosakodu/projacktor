@@ -1099,6 +1099,20 @@ div:has(.projacktor-player-fullscreen) {
   box-shadow: none !important;
 }
 
+body.projacktor-magicblack-active,
+body.projacktor-magicblack-active * {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+body.projacktor-magicblack-active [class*="focus-ring"],
+body.projacktor-magicblack-active [class*="_1wPplsegQqCoe06wXPhzKT"],
+body.projacktor-magicblack-active [class*="_3FIjYetykQsFYR08l1v7Ls"] {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
+
 .projacktor-magicblack-banner {
   display: flex !important;
   flex-direction: column !important;
