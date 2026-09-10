@@ -1,7 +1,13 @@
 import { FC, useState, useEffect, useCallback, memo } from "react";
-import { Focusable, TextField } from "@decky/ui";
+import {
+  PanelSection,
+  PanelSectionRow,
+  Field,
+  ButtonItem,
+  TextField,
+} from "@decky/ui";
 import { toaster } from "@decky/api";
-import { FaTrash } from "react-icons/fa";
+import { FaTrash, FaCheck, FaTimes } from "react-icons/fa";
 import {
   rpcGetSettings,
   rpcSaveSettings,
@@ -21,7 +27,16 @@ export const SettingsView: FC = memo(() => {
     rpcGetSettings()
       .then((sett) => {
         if (sett && sett.jacred_url) {
-          setJacredUrl(sett.jacred_url);
+          const url = sett.jacred_url.trim();
+          if (
+            url !== "https://jac.red" &&
+            url !== "https://jac.red/" &&
+            url !== "jac.red"
+          ) {
+            setJacredUrl(url);
+          } else {
+            setJacredUrl("");
+          }
         }
       })
       .catch(() => {});
@@ -38,16 +53,17 @@ export const SettingsView: FC = memo(() => {
   const handleSaveSettings = useCallback(async () => {
     setSettingsSaving(true);
     try {
-      const ok = jacredUrl.trim() ? await rpcCheckJacred(jacredUrl.trim()) : false;
+      const cleanUrl = jacredUrl.trim();
+      const ok = cleanUrl ? await rpcCheckJacred(cleanUrl) : false;
       setJacredOk(ok);
-      await rpcSaveSettings(JSON.stringify({ jacred_url: jacredUrl.trim() }));
+      await rpcSaveSettings(JSON.stringify({ jacred_url: cleanUrl }));
       toaster.toast({
         title: "Настройки",
-        body: !jacredUrl.trim()
-          ? "Настройки сохранены (URL не указан)"
+        body: !cleanUrl
+          ? "Настройки сохранены (URL парсера очищен)"
           : ok
           ? "Сохранено! Соединение с JacRed успешно."
-          : "Сохранено, но JacRed недоступен.",
+          : "Сохранено, но сервер JacRed недоступен.",
       });
     } catch {
       toaster.toast({ title: "Ошибка", body: "Не удалось сохранить настройки" });
@@ -84,96 +100,104 @@ export const SettingsView: FC = memo(() => {
   }, [clearingCache]);
 
   return (
-    <div className="projacktor-content" style={{ maxWidth: 560, padding: "0 52px 200px 52px" }}>
-      <div style={{ fontSize: 19, fontWeight: 700, color: "#ffffff", marginBottom: 16 }}>Настройки</div>
+    <div
+      className="projacktor-content-scroll"
+      style={{
+        width: "100%",
+        padding: "16px 52px 140px 52px",
+        boxSizing: "border-box",
+      }}
+    >
+      <div style={{ maxWidth: 880, width: "100%", margin: "0 auto" }}>
+        <PanelSection title="Парсер JacRed">
+          <PanelSectionRow>
+            <Field
+              label="Статус подключения"
+              description={
+                jacredOk === null
+                  ? "Проверка соединения..."
+                  : jacredOk
+                  ? "Связь с сервером парсера установлена"
+                  : "Сервер парсера недоступен или не настроен"
+              }
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontWeight: 600,
+                  fontSize: 13,
+                }}
+              >
+                {jacredOk ? (
+                  <span
+                    style={{
+                      color: "#10b981",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
+                    }}
+                  >
+                    <FaCheck style={{ fontSize: 11 }} /> Подключено
+                  </span>
+                ) : (
+                  <span
+                    style={{
+                      color: "#ef4444",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
+                    }}
+                  >
+                    <FaTimes style={{ fontSize: 11 }} /> Не подключено
+                  </span>
+                )}
+              </div>
+            </Field>
+          </PanelSectionRow>
 
-      <div
-        style={{
-          background: "rgba(255,255,255,0.04)",
-          border: "1px solid rgba(255,255,255,0.07)",
-          padding: "8px 12px",
-          fontSize: 12,
-          marginBottom: 14,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <span>Статус парсера:</span>
-          <span
-            style={{
-              color: jacredOk ? "#10b981" : "#ef4444",
-              fontWeight: 600,
-            }}
-          >
-            {jacredOk ? "Подключено" : "Не подключено"}
-          </span>
-        </div>
-      </div>
+          <PanelSectionRow>
+            <Field
+              label="Ссылка на парсер"
+              description="URL вашего сервера JacRed (например: http://192.168.1.50:7000)"
+            >
+              <TextField
+                value={jacredUrl}
+                onChange={(e) => setJacredUrl(e.target.value)}
+                {...({ placeholder: "http://..." } as any)}
+              />
+            </Field>
+          </PanelSectionRow>
 
-      <div>
-        <div
-          style={{
-            fontSize: 12,
-            marginBottom: 4,
-            color: "rgba(255,255,255,0.8)",
-          }}
-        >
-          Ссылка на парсер
-        </div>
-        <TextField
-          value={jacredUrl}
-          onChange={(e) => setJacredUrl(e.target.value)}
-          {...({ placeholder: "https://..." } as any)}
-        />
-        <div style={{ marginTop: 8 }}>
-          <Focusable
-            className="ds-btn ds-btn--primary ds-btn--compact"
-            onActivate={handleSaveSettings}
-            onClick={handleSaveSettings}
-          >
-            {settingsSaving ? "Сохранение..." : "Сохранить и проверить"}
-          </Focusable>
-        </div>
-      </div>
+          <PanelSectionRow>
+            <ButtonItem
+              layout="below"
+              onClick={handleSaveSettings}
+              disabled={settingsSaving}
+            >
+              {settingsSaving ? "Сохранение..." : "Сохранить и проверить"}
+            </ButtonItem>
+          </PanelSectionRow>
+        </PanelSection>
 
-      <div
-        style={{
-          marginTop: 18,
-          paddingTop: 12,
-          borderTop: "1px solid rgba(255,255,255,0.08)",
-        }}
-      >
-        <div
-          style={{
-            fontSize: 12,
-            marginBottom: 4,
-            color: "rgba(255,255,255,0.8)",
-          }}
-        >
-          Кэш каталога, стримов и загрузок
-        </div>
-        <div
-          style={{
-            fontSize: 11,
-            color: "var(--ds-text-dim)",
-            marginBottom: 8,
-          }}
-        >
-          Очищает метаданные TMDB, постеры, историю страниц и временные файлы онлайн-просмотра.
-        </div>
-        <Focusable
-          className="ds-btn ds-btn--danger ds-btn--compact"
-          onActivate={handleClearCache}
-          onClick={handleClearCache}
-        >
-          <FaTrash style={{ marginRight: 6, fontSize: 10 }} />
-          {clearingCache ? "Очистка..." : "Сбросить кэш"}
-        </Focusable>
+        <PanelSection title="Хранилище и кэш">
+          <PanelSectionRow>
+            <Field
+              label="Кэш каталога, стримов и загрузок"
+              description="Очищает метаданные TMDB, постеры, историю страниц и временные файлы онлайн-просмотра."
+            >
+              <ButtonItem
+                layout="inline"
+                onClick={handleClearCache}
+                disabled={clearingCache}
+              >
+                <FaTrash style={{ marginRight: 6, fontSize: 11 }} />
+                {clearingCache ? "Очистка..." : "Сбросить кэш"}
+              </ButtonItem>
+            </Field>
+          </PanelSectionRow>
+        </PanelSection>
       </div>
     </div>
   );

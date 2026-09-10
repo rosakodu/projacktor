@@ -68,7 +68,7 @@ export const PROJACKTOR_STYLES = `
 .projacktor-top-header {
   display: flex !important;
   align-items: center !important;
-  padding: calc(env(safe-area-inset-top, 0px) + 24px) 52px 12px 52px !important;
+  padding: calc(env(safe-area-inset-top, 0px) + 54px) 52px 14px 52px !important;
   flex-shrink: 0 !important;
   background: transparent !important;
   user-select: none !important;
@@ -132,12 +132,12 @@ export const PROJACKTOR_STYLES = `
   color: #8b929a !important;
   background: transparent !important;
   border: none !important;
-  border-bottom: 2.5px solid transparent !important;
-  border-radius: 3px 3px 0 0 !important;
+  border-bottom: 3px solid transparent !important;
+  border-radius: 0px !important;
   cursor: pointer !important;
   outline: none !important;
   box-shadow: none !important;
-  transition: all 0.12s ease !important;
+  transition: color 0.12s ease, border-color 0.12s ease !important;
   white-space: nowrap !important;
   user-select: none !important;
   box-sizing: border-box !important;
@@ -147,16 +147,16 @@ export const PROJACKTOR_STYLES = `
 .projacktor-tab-item:focus,
 .projacktor-tab-item.gpfocus {
   color: #ffffff !important;
-  background: rgba(255, 255, 255, 0.05) !important;
+  background: transparent !important;
   outline: none !important;
   box-shadow: none !important;
 }
 
 .projacktor-tab-item.active {
   color: #ffffff !important;
-  font-weight: 600 !important;
-  background: rgba(255, 255, 255, 0.08) !important;
-  border-bottom: 2.5px solid #1a9fff !important;
+  font-weight: 700 !important;
+  background: transparent !important;
+  border-bottom: 3px solid #1a9fff !important;
   outline: none !important;
   box-shadow: none !important;
 }
@@ -164,8 +164,9 @@ export const PROJACKTOR_STYLES = `
 .projacktor-tab-item.active:focus,
 .projacktor-tab-item.active.gpfocus {
   color: #ffffff !important;
-  background: rgba(255, 255, 255, 0.12) !important;
-  border-bottom: 2.5px solid #1a9fff !important;
+  font-weight: 700 !important;
+  background: transparent !important;
+  border-bottom: 3px solid #1a9fff !important;
   outline: none !important;
   box-shadow: none !important;
 }

@@ -5,14 +5,14 @@ interface HeaderProps {
   onBack?: () => void;
 }
 
-export const Header: FC<HeaderProps> = memo(({ title = "Projacktor" }) => {
+export const Header: FC<HeaderProps> = memo(({ title = "Projecktor" }) => {
   return (
     <div
       className="projacktor-top-header"
       style={{
         display: "flex",
         alignItems: "center",
-        padding: "calc(env(safe-area-inset-top, 0px) + 24px) 52px 12px 52px",
+        padding: "calc(env(safe-area-inset-top, 0px) + 54px) 52px 14px 52px",
         flexShrink: 0,
       }}
     >

@@ -17,12 +17,12 @@ const getSteamLanguage = callable<[], string>("get_steam_language");
 // ── Локализации ──────────────────────────────────────────────
 const T: Record<string, Record<string, string>> = {
   english: {
-    title:            "Projacktor",
+    title:            "Projecktor",
     openCatalog:      "Open Catalog",
     support:          "Support",
   },
   russian: {
-    title:            "Projacktor",
+    title:            "Projecktor",
     openCatalog:      "Открыть каталог",
     support:          "Поддержка",
   },
@@ -92,7 +92,7 @@ export default definePlugin(() => {
 
   return {
     name:      "Projacktor",
-    titleView: <div className={staticClasses.Title}>Projacktor</div>,
+    titleView: <div className={staticClasses.Title}>Projecktor</div>,
     content:   <Content />,
     icon:      <FaVideo />,
     onDismount() {

@@ -220,6 +220,9 @@ def load_settings():
             if merged.get("tmdb_api_key") == "aa86d1a6876222de71c258408e1a4ed3":
                 merged["tmdb_api_key"] = DEFAULT_SETTINGS["tmdb_api_key"]
                 save_settings(merged)
+            if merged.get("jacred_url") in ("https://jac.red", "https://jac.red/", "jac.red"):
+                merged["jacred_url"] = ""
+                save_settings(merged)
             return merged
     except Exception as e:
         logger.error(f"Error loading settings: {e}")
