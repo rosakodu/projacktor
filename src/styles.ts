@@ -87,7 +87,7 @@ export const PROJACKTOR_STYLES = `
   display: flex !important;
   align-items: center !important;
   padding: 0 52px 14px 52px !important;
-  gap: 12px !important;
+  gap: 10px !important;
   flex-shrink: 0 !important;
   user-select: none !important;
   outline: none !important;
@@ -100,20 +100,20 @@ export const PROJACKTOR_STYLES = `
   align-items: center !important;
   justify-content: center !important;
   background: rgba(255, 255, 255, 0.12) !important;
-  color: rgba(255, 255, 255, 0.9) !important;
-  border: 1px solid rgba(255, 255, 255, 0.22) !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
   font-weight: 700 !important;
   font-size: 11px !important;
   letter-spacing: 0.5px !important;
-  padding: 0 8px !important;
+  padding: 0 7px !important;
   height: 22px !important;
   line-height: 20px !important;
   border-radius: 4px !important;
   cursor: pointer !important;
   user-select: none !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
+  box-shadow: none !important;
   flex-shrink: 0 !important;
-  margin-bottom: 2px !important;
+  margin: 0 !important;
   transition: all 0.12s ease !important;
 }
 
@@ -127,10 +127,10 @@ export const PROJACKTOR_STYLES = `
 .projacktor-tabs-track {
   display: flex !important;
   align-items: center !important;
-  gap: 6px !important;
+  gap: 4px !important;
   flex-shrink: 0 !important;
   outline: none !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-bottom: none !important;
   position: relative !important;
 }
 
@@ -139,7 +139,7 @@ export const PROJACKTOR_STYLES = `
   align-items: center !important;
   justify-content: center !important;
   height: 32px !important;
-  padding: 0 14px !important;
+  padding: 0 10px !important;
   font-size: 13.5px !important;
   font-weight: 500 !important;
   letter-spacing: 0.2px !important;
@@ -148,7 +148,7 @@ export const PROJACKTOR_STYLES = `
   border: none !important;
   border-bottom: 3px solid transparent !important;
   border-radius: 0px !important;
-  margin-bottom: -1px !important;
+  margin: 0 !important;
   cursor: pointer !important;
   outline: none !important;
   box-shadow: none !important;
@@ -172,9 +172,9 @@ export const PROJACKTOR_STYLES = `
   font-weight: 700 !important;
   background: transparent !important;
   border-bottom: 3px solid #1a9fff !important;
-  margin-bottom: -1px !important;
+  margin: 0 !important;
   outline: none !important;
-  box-shadow: 0 2px 8px rgba(26, 159, 255, 0.45) !important;
+  box-shadow: none !important;
 }
 
 .projacktor-tab-item.active:focus,
@@ -183,9 +183,9 @@ export const PROJACKTOR_STYLES = `
   font-weight: 700 !important;
   background: transparent !important;
   border-bottom: 3px solid #1a9fff !important;
-  margin-bottom: -1px !important;
+  margin: 0 !important;
   outline: none !important;
-  box-shadow: 0 2px 8px rgba(26, 159, 255, 0.45) !important;
+  box-shadow: none !important;
 }
 
 /* ───── Main Scroll Container (Below Fixed Tab Bar) ───── */
