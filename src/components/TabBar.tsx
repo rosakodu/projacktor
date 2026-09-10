@@ -2,6 +2,7 @@ import { FC, memo, useCallback, useEffect, useRef } from "react";
 import { Focusable } from "@decky/ui";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
 import { isModalOpen } from "../runtime/homeInputBus";
+import { playNavSound } from "../runtime/navSound";
 
 export interface TabConfig {
   id: string;
@@ -94,12 +95,17 @@ export const TabBar: FC<TabBarProps> = memo(
                 aria-selected={isActive}
                 className={`projacktor-tab-item ${isActive ? "active" : ""}`}
                 onActivate={() => {
+                  playNavSound();
                   onSelectTab(tab.id);
                   moveFocusDown();
                 }}
-                onClick={() => onSelectTab(tab.id)}
+                onClick={() => {
+                  playNavSound();
+                  onSelectTab(tab.id);
+                }}
                 onFocus={() => {
                   if (activeTab !== tab.id) {
+                    playNavSound();
                     onSelectTab(tab.id);
                   }
                 }}

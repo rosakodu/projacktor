@@ -86,32 +86,35 @@ export const PROJACKTOR_STYLES = `
 .projacktor-nav-bar {
   display: flex !important;
   align-items: center !important;
-  padding: 0 52px 14px 52px !important;
-  gap: 10px !important;
+  justify-content: center !important;
+  width: 100% !important;
+  padding: 0 0 14px 0 !important;
+  gap: 12px !important;
   flex-shrink: 0 !important;
   user-select: none !important;
   outline: none !important;
   border: none !important;
   background: transparent !important;
+  box-sizing: border-box !important;
 }
 
 .projacktor-bumper-pill {
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  background: rgba(255, 255, 255, 0.12) !important;
-  color: rgba(255, 255, 255, 0.85) !important;
-  border: 1px solid rgba(255, 255, 255, 0.18) !important;
-  font-weight: 700 !important;
+  background: #ffffff !important;
+  color: #0b1016 !important;
+  font-weight: 800 !important;
   font-size: 11px !important;
   letter-spacing: 0.5px !important;
   padding: 0 7px !important;
   height: 22px !important;
-  line-height: 20px !important;
+  line-height: 22px !important;
   border-radius: 4px !important;
+  border: none !important;
   cursor: pointer !important;
   user-select: none !important;
-  box-shadow: none !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4) !important;
   flex-shrink: 0 !important;
   margin: 0 !important;
   transition: all 0.12s ease !important;
@@ -119,14 +122,14 @@ export const PROJACKTOR_STYLES = `
 
 .projacktor-bumper-pill:hover,
 .projacktor-bumper-pill:active {
-  background: rgba(255, 255, 255, 0.24) !important;
-  color: #ffffff !important;
-  border-color: rgba(255, 255, 255, 0.38) !important;
+  background: #e2e8f0 !important;
+  color: #000000 !important;
 }
 
 .projacktor-tabs-track {
   display: flex !important;
   align-items: center !important;
+  justify-content: center !important;
   gap: 4px !important;
   flex-shrink: 0 !important;
   outline: none !important;
@@ -141,7 +144,7 @@ export const PROJACKTOR_STYLES = `
   height: 32px !important;
   padding: 0 10px !important;
   font-size: 13.5px !important;
-  font-weight: 500 !important;
+  font-weight: 600 !important;
   letter-spacing: 0.2px !important;
   color: #8b929a !important;
   background: transparent !important;
@@ -156,11 +159,13 @@ export const PROJACKTOR_STYLES = `
   white-space: nowrap !important;
   user-select: none !important;
   box-sizing: border-box !important;
+  flex-shrink: 0 !important;
 }
 
 .projacktor-tab-item:hover,
 .projacktor-tab-item:focus,
-.projacktor-tab-item.gpfocus {
+.projacktor-tab-item.gpfocus,
+.projacktor-tab-item:focus-visible {
   color: #ffffff !important;
   background: transparent !important;
   outline: none !important;
@@ -169,7 +174,7 @@ export const PROJACKTOR_STYLES = `
 
 .projacktor-tab-item.active {
   color: #ffffff !important;
-  font-weight: 700 !important;
+  font-weight: 600 !important;
   background: transparent !important;
   border-bottom: 3px solid #1a9fff !important;
   margin: 0 !important;
@@ -178,9 +183,10 @@ export const PROJACKTOR_STYLES = `
 }
 
 .projacktor-tab-item.active:focus,
-.projacktor-tab-item.active.gpfocus {
+.projacktor-tab-item.active.gpfocus,
+.projacktor-tab-item.active:focus-visible {
   color: #ffffff !important;
-  font-weight: 700 !important;
+  font-weight: 600 !important;
   background: transparent !important;
   border-bottom: 3px solid #1a9fff !important;
   margin: 0 !important;

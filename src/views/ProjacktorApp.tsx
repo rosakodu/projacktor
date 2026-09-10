@@ -10,6 +10,7 @@ import { SettingsView } from "./SettingsView";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
 import { isModalOpen } from "../runtime/homeInputBus";
 import { setMagicBlack } from "../runtime/magicBlackBus";
+import { playNavSound } from "../runtime/navSound";
 
 const TABS_CONFIG = [
   { id: "movies", title: "Главная" },
@@ -97,6 +98,7 @@ export const ProjacktorApp: FC = () => {
   }, []);
 
   const prevTab = useCallback(() => {
+    playNavSound();
     setActiveTab((cur) => {
       const idx = TAB_IDS.indexOf(cur);
       const prevIdx = idx > 0 ? idx - 1 : TAB_IDS.length - 1;
@@ -105,6 +107,7 @@ export const ProjacktorApp: FC = () => {
   }, []);
 
   const nextTab = useCallback(() => {
+    playNavSound();
     setActiveTab((cur) => {
       const idx = TAB_IDS.indexOf(cur);
       const nextIdx = idx < TAB_IDS.length - 1 ? idx + 1 : 0;
