@@ -20,10 +20,6 @@ const BlackBackdrop: FC<{ onDismiss: () => void }> = memo(({ onDismiss }) => {
         height: "100vh",
         background: "#000000",
         zIndex: 2147483647,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
         cursor: "none",
         userSelect: "none",
         overflow: "hidden",
@@ -33,14 +29,7 @@ const BlackBackdrop: FC<{ onDismiss: () => void }> = memo(({ onDismiss }) => {
       onTouchStart={onDismiss}
       onPointerDown={onDismiss}
       onMouseDown={onDismiss}
-    >
-      <div className="projacktor-magicblack-banner">
-        <div className="projacktor-magicblack-title">🌙 Экран выключен</div>
-        <div className="projacktor-magicblack-sub">
-          Идёт фоновая загрузка • Нажмите любую кнопку для включения
-        </div>
-      </div>
-    </div>
+    />
   );
 });
 

@@ -107,12 +107,7 @@ export const MagicBlackOverlay: FC<MagicBlackOverlayProps> = memo(({ onDismiss }
       onCancelButton={handleDismiss}
       onButtonDown={handleDismiss}
     >
-      <div className="projacktor-magicblack-banner">
-        <div className="projacktor-magicblack-title">🌙 MagicBlack OLED: Экран выключен</div>
-        <div className="projacktor-magicblack-sub">
-          Идёт фоновая загрузка • Нажмите любую кнопку для включения
-        </div>
-      </div>
+      {null}
     </Focusable>
   );
 });
