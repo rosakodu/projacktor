@@ -494,8 +494,42 @@ class DownloadManager:
         for row in cursor.fetchall():
             row_id = row['id']
             gid = row['aria2_gid']
+            row_dir = row['download_dir']
             
-            # Check if current task finished metadata and spawned a followed task
+            # 1. Приоритетная проверка диска: если файл уже полностью скачан (видеофайл без .aria2), отмечаем завершённым
+            if row_dir and os.path.isdir(row_dir):
+                video_exts = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov'}
+                has_aria2 = False
+                found_videos = []
+                for r_root, _, r_files in os.walk(row_dir):
+                    for r_f in r_files:
+                        if r_f.endswith('.aria2'):
+                            has_aria2 = True
+                        if os.path.splitext(r_f)[1].lower() in video_exts:
+                            fp = os.path.join(r_root, r_f)
+                            try:
+                                sz = os.path.getsize(fp)
+                                if sz > 10 * 1024 * 1024:
+                                    found_videos.append((fp, sz))
+                            except: pass
+                
+                if found_videos and not has_aria2:
+                    total_sz = sum(sz for _, sz in found_videos)
+                    logger.info(f"Download id={row_id} confirmed complete on disk ({total_sz} bytes), updating DB")
+                    cursor.execute("""
+                        UPDATE downloads 
+                        SET status='completed', progress=100.0, download_speed=0, upload_speed=0,
+                            total_size=CASE WHEN total_size > 0 THEN total_size ELSE ? END,
+                            downloaded_size=CASE WHEN total_size > 0 THEN total_size ELSE ? END,
+                            completed_at=COALESCE(completed_at, CURRENT_TIMESTAMP),
+                            error_message=NULL
+                        WHERE id=?
+                    """, (total_sz, total_sz, row_id))
+                    if row['media_id']:
+                        self._scan_and_add_files(cursor, row['media_id'], row_dir)
+                    continue
+
+            # 2. Поиск активной задачи в aria2c
             t = task_map.get(gid)
             if t:
                 followed = t.get('followedBy')
@@ -505,7 +539,7 @@ class DownloadManager:
                     gid = new_gid
                     t = task_map.get(gid)
             
-            # Also check if any task in all_tasks is following this gid
+            # Также проверяем задачи, следующие за этим gid
             if not t:
                 for cand in all_tasks:
                     if cand.get('following') == gid:
@@ -515,10 +549,10 @@ class DownloadManager:
                         t = cand
                         break
 
-            # Fallback: re-link if aria2 restarted and restored tasks under new GIDs
+            # Fallback: поиск по infoHash или директории
             if not t:
                 magnet = (row['magnet_uri'] or "").lower()
-                row_dir = os.path.normpath(row['download_dir']) if row['download_dir'] else ""
+                norm_dir = os.path.normpath(row_dir) if row_dir else ""
                 target_hash = ""
                 if "xt=urn:btih:" in magnet:
                     try:
@@ -528,50 +562,23 @@ class DownloadManager:
                 for cand in all_tasks:
                     cand_hash = cand.get('infoHash', '').lower()
                     cand_dir = os.path.normpath(cand.get('dir', '')) if cand.get('dir') else ""
-                    if (target_hash and cand_hash == target_hash) or (row_dir and cand_dir == row_dir):
+                    if (target_hash and cand_hash == target_hash) or (norm_dir and cand_dir == norm_dir):
+                        # Если это метаданные со ссылкой на контент — берем сразу задачу контента
+                        cand_followed = cand.get('followedBy')
+                        if cand_followed and len(cand_followed) > 0:
+                            f_gid = cand_followed[0]
+                            f_task = task_map.get(f_gid)
+                            if f_task:
+                                cand = f_task
                         new_gid = cand['gid']
                         cursor.execute("UPDATE downloads SET aria2_gid=? WHERE id=?", (new_gid, row_id))
                         gid = new_gid
                         t = cand
-                        logger.info(f"Re-linked download id={row_id} to new aria2 GID={new_gid}")
+                        logger.info(f"Re-linked download id={row_id} to aria2 GID={new_gid}")
                         break
             
             if not t:
-                # Проверяем, завершилась ли загрузка на диске (готовый видеофайл без .aria2)
-                row_dir = row['download_dir']
-                if row_dir and os.path.isdir(row_dir):
-                    video_exts = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov'}
-                    has_aria2 = False
-                    found_videos = []
-                    for r_root, _, r_files in os.walk(row_dir):
-                        for r_f in r_files:
-                            if r_f.endswith('.aria2'):
-                                has_aria2 = True
-                            if os.path.splitext(r_f)[1].lower() in video_exts:
-                                fp = os.path.join(r_root, r_f)
-                                try:
-                                    sz = os.path.getsize(fp)
-                                    if sz > 10 * 1024 * 1024:
-                                        found_videos.append((fp, sz))
-                                except: pass
-                    
-                    if found_videos and not has_aria2:
-                        total_sz = sum(sz for _, sz in found_videos)
-                        logger.info(f"Download id={row_id} confirmed complete on disk ({total_sz} bytes), updating DB")
-                        cursor.execute("""
-                            UPDATE downloads 
-                            SET status='completed', progress=100.0, download_speed=0, upload_speed=0,
-                                total_size=CASE WHEN total_size > 0 THEN total_size ELSE ? END,
-                                downloaded_size=CASE WHEN total_size > 0 THEN total_size ELSE ? END,
-                                completed_at=COALESCE(completed_at, CURRENT_TIMESTAMP),
-                                error_message=NULL
-                            WHERE id=?
-                        """, (total_sz, total_sz, row_id))
-                        if row['media_id']:
-                            self._scan_and_add_files(cursor, row['media_id'], row_dir)
-                        continue
-
-                # Если задачи нет в aria2 и файл не готов на диске, сбрасываем скорость
+                # Если задачи нет в aria2c, сбрасываем скорость и ставим на паузу
                 if row['status'] == 'downloading':
                     cursor.execute("UPDATE downloads SET download_speed=0, upload_speed=0, status='paused' WHERE id=?", (row_id,))
                 continue
