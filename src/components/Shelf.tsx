@@ -1,7 +1,11 @@
-import { FC, useRef, useEffect, memo } from "react";
+import { FC, useRef, useEffect, memo, useCallback } from "react";
 import { Focusable } from "@decky/ui";
 import { MediaItem } from "../api";
 import { MovieCard } from "./MovieCard";
+import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
+import { isModalOpen } from "../runtime/homeInputBus";
+import { getActiveDocument } from "../runtime/activeDoc";
+import { playNavSound } from "../runtime/navSound";
 
 interface ShelfProps {
   title?: string;
@@ -19,9 +23,145 @@ function computeCenteredScrollLeft(
   return Math.max(0, Math.min(target, maxScroll));
 }
 
+const CARD_STEP_COOLDOWN_MS = 110;
+
 export const Shelf: FC<ShelfProps> = memo(({ title, items, onSelectMovie, loading }) => {
   const shelfRef = useRef<HTMLDivElement>(null);
   const rowRef = useRef<HTMLDivElement>(null);
+  const lastCardStepAtRef = useRef(0);
+
+  const stepCard = useCallback((dir: 1 | -1) => {
+    const now = Date.now();
+    if (now - lastCardStepAtRef.current < CARD_STEP_COOLDOWN_MS) return;
+    lastCardStepAtRef.current = now;
+
+    const doc = getActiveDocument(rowRef.current);
+    const row = rowRef.current;
+    if (!row || !doc) return;
+
+    const cards = Array.from(row.querySelectorAll<HTMLElement>(".projacktor-card"));
+    if (!cards.length) return;
+
+    const active = doc.activeElement;
+    const curIdx = cards.findIndex(
+      (c) => c === active || c.contains(active as Node)
+    );
+
+    let nextIdx: number;
+    if (curIdx === -1) {
+      nextIdx = dir > 0 ? 0 : cards.length - 1;
+    } else if (dir > 0) {
+      nextIdx = curIdx < cards.length - 1 ? curIdx + 1 : 0;
+    } else {
+      nextIdx = curIdx > 0 ? curIdx - 1 : cards.length - 1;
+    }
+
+    if (nextIdx !== curIdx || curIdx === -1) {
+      const target = cards[nextIdx];
+      doc.querySelectorAll(".gpfocus").forEach((el) =>
+        el.classList.remove("gpfocus")
+      );
+      target.focus();
+      target.classList.add("gpfocus");
+      playNavSound();
+
+      const final = computeCenteredScrollLeft(
+        { width: row.clientWidth, scrollWidth: row.scrollWidth },
+        { left: target.offsetLeft, width: target.offsetWidth }
+      );
+      row.scrollTo({ left: final, behavior: "smooth" });
+    }
+  }, []);
+
+  // Обработчик направлений D-Pad / Stick от GamepadUI
+  const handleGamepadDirection = useCallback(
+    (evt: any) => {
+      const btn = evt?.detail?.button;
+      if (btn === 11) {
+        // DPAD_LEFT
+        try {
+          evt?.preventDefault?.();
+          evt?.stopPropagation?.();
+        } catch {}
+        stepCard(-1);
+        return false;
+      } else if (btn === 12) {
+        // DPAD_RIGHT
+        try {
+          evt?.preventDefault?.();
+          evt?.stopPropagation?.();
+        } catch {}
+        stepCard(1);
+        return false;
+      }
+      return undefined;
+    },
+    [stepCard]
+  );
+
+  // Подписка на raw-события геймпада (SteamClient.Input)
+  useEffect(() => {
+    const un = subscribeControllerInput((e) => {
+      if (!e.pressed) return;
+      if (isModalOpen()) return;
+
+      const doc = getActiveDocument(rowRef.current);
+      const active = doc?.activeElement;
+      const inRow = !!(active && rowRef.current?.contains(active as Node));
+      if (!inRow) return;
+
+      const isLeft =
+        e.button === RawButton.DPAD_LEFT ||
+        e.button === RawButton.LEFTSTICK_LEFT ||
+        e.button === 7 ||
+        e.button === 22;
+
+      const isRight =
+        e.button === RawButton.DPAD_RIGHT ||
+        e.button === RawButton.LEFTSTICK_RIGHT ||
+        e.button === 5 ||
+        e.button === 23;
+
+      if (isLeft) {
+        stepCard(-1);
+      } else if (isRight) {
+        stepCard(1);
+      }
+    });
+
+    return un;
+  }, [stepCard]);
+
+  // Перехват стрелок клавиатуры
+  useEffect(() => {
+    const shelfEl = shelfRef.current;
+    if (!shelfEl) return;
+    const doc = getActiveDocument(shelfEl);
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (isModalOpen()) return;
+      const active = doc?.activeElement || document?.activeElement;
+      const inRow = !!(active && rowRef.current?.contains(active as Node));
+      if (!inRow) return;
+
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        e.stopPropagation();
+        stepCard(-1);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        e.stopPropagation();
+        stepCard(1);
+      }
+    };
+
+    doc?.addEventListener?.("keydown", handleKeyDown, true);
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      doc?.removeEventListener?.("keydown", handleKeyDown, true);
+      window.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [stepCard]);
 
   useEffect(() => {
     const rowEl = rowRef.current;
@@ -86,12 +226,14 @@ export const Shelf: FC<ShelfProps> = memo(({ title, items, onSelectMovie, loadin
         role="list"
         aria-label={title || "Полка"}
         className="projacktor-shelf-row"
+        onGamepadDirection={handleGamepadDirection}
       >
         {items.map((item) => (
           <MovieCard
             key={`${item.media_type || "item"}-${item.id}`}
             movie={item}
             onActivate={onSelectMovie}
+            onGamepadDirection={handleGamepadDirection}
           />
         ))}
         {items.length === 0 && !loading && (
