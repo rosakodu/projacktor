@@ -506,31 +506,13 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
     };
   }, []);
 
-  // Если восстановили прогресс просмотра (>15с), показываем тост
-  useEffect(() => {
-    if (savedStartTimeRef.current > 15) {
-      toaster.toast({
-        title: title || "Фильмотека",
-        body: `Продолжаем просмотр с ${formatTime(savedStartTimeRef.current)}`,
-        duration: 3500,
-      });
-    }
-  }, []);
-
   // Сохраняем прогресс и возобновляем загрузки при закрытии плеера
   useEffect(() => {
     return () => {
       saveProgress(currentPlayheadRef.current, durationRef.current);
       rpcResumeAllDownloads().catch(() => {});
-      if (isOnline) {
-        toaster.toast({
-          title: title || "Фильмотека",
-          body: "Загрузка продолжается в фильмотеке",
-          duration: 3500,
-        });
-      }
     };
-  }, [isOnline, title, saveProgress]);
+  }, [saveProgress]);
 
   // Probe file metadata on mount: duration and audio tracks
   useEffect(() => {
