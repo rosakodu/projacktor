@@ -307,11 +307,9 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
         return;
       }
 
-      // D-pad Влево (7), Стик Влево (22), L1 (30), L2 (28): Перемотка назад (-15с)
+      // Перемотка назад (-15с): Стик Влево (22), L1 (30), L2 (28) (D-Pad отключен)
       if (
-        e.button === RawButton.DPAD_LEFT ||
         e.button === RawButton.LEFTSTICK_LEFT ||
-        e.button === 7 ||
         e.button === 22 ||
         e.button === RawButton.L1 ||
         e.button === RawButton.L2
@@ -324,11 +322,9 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
         return;
       }
 
-      // D-pad Вправо (5), Стик Вправо (23), R1 (31), R2 (29): Перемотка вперёд (+15с)
+      // Перемотка вперёд (+15с): Стик Вправо (23), R1 (31), R2 (29) (D-Pad отключен)
       if (
-        e.button === RawButton.DPAD_RIGHT ||
         e.button === RawButton.LEFTSTICK_RIGHT ||
-        e.button === 5 ||
         e.button === 23 ||
         e.button === RawButton.R1 ||
         e.button === RawButton.R2
@@ -395,13 +391,18 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
         return;
       }
 
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        e.preventDefault();
+        return;
+      }
+
       if (e.key === " " || e.key === "Enter" || e.key === "k" || e.key === "K") {
         e.preventDefault();
         togglePlay();
-      } else if (e.key === "ArrowLeft" || e.key === "j" || e.key === "J") {
+      } else if (e.key === "j" || e.key === "J") {
         e.preventDefault();
         seekRelative(-15);
-      } else if (e.key === "ArrowRight" || e.key === "l" || e.key === "L") {
+      } else if (e.key === "l" || e.key === "L") {
         e.preventDefault();
         seekRelative(15);
       } else if (e.key === "ArrowUp") {
@@ -548,6 +549,30 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
             setShowSubtitleMenu(false);
           } else if (closeModalRef.current) {
             closeModalRef.current();
+          }
+        }}
+        onGamepadDirection={(evt: any) => {
+          const btn = evt?.detail?.button;
+          if (btn === 11 || btn === 12) {
+            // DIR_LEFT, DIR_RIGHT - блокируем перемотку дпадом
+            try {
+              evt?.preventDefault?.();
+              evt?.stopPropagation?.();
+            } catch {}
+          } else if (btn === 9) {
+            // DIR_UP - звук +
+            try {
+              evt?.preventDefault?.();
+              evt?.stopPropagation?.();
+            } catch {}
+            changeVolume(0.05);
+          } else if (btn === 10) {
+            // DIR_DOWN - звук -
+            try {
+              evt?.preventDefault?.();
+              evt?.stopPropagation?.();
+            } catch {}
+            changeVolume(-0.05);
           }
         }}
         style={{
