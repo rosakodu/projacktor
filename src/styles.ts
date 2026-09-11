@@ -713,8 +713,10 @@ export const PROJACKTOR_STYLES = `
   flex-wrap: wrap !important;
   gap: 14px !important;
   width: 100% !important;
+  max-width: 100% !important;
   box-sizing: border-box !important;
   justify-content: flex-start !important;
+  overflow: hidden !important;
 }
 
 .projacktor-dl-grid-card {
@@ -732,10 +734,14 @@ export const PROJACKTOR_STYLES = `
   outline: none !important;
   user-select: none !important;
   box-sizing: border-box !important;
+  transform: none !important;
   transition: border-color 0.1s ease !important;
 }
 
+.projacktor-dl-grid-card:hover,
+.projacktor-dl-grid-card:focus,
 .projacktor-dl-grid-card:focus-within {
+  transform: none !important;
   border-color: rgba(255, 255, 255, 0.3) !important;
 }
 
@@ -758,11 +764,16 @@ export const PROJACKTOR_STYLES = `
   outline: none !important;
   border: none !important;
   box-shadow: none !important;
+  transform: none !important;
 }
 
 .projacktor-dl-poster-btn {
   width: 100% !important;
+  min-width: 100% !important;
+  max-width: 100% !important;
   height: 186px !important;
+  min-height: 186px !important;
+  max-height: 186px !important;
   position: relative !important;
   overflow: hidden !important;
   border: none !important;
@@ -774,20 +785,60 @@ export const PROJACKTOR_STYLES = `
   display: block !important;
   padding: 0 !important;
   margin: 0 !important;
+  transform: none !important;
+  transform-origin: center !important;
+  perspective: none !important;
+  backface-visibility: hidden !important;
+  user-select: none !important;
+  -webkit-user-drag: none !important;
+  transition: none !important;
 }
 
 .projacktor-dl-poster-btn:focus,
-.projacktor-dl-poster-btn.gpfocus {
+.projacktor-dl-poster-btn.gpfocus,
+.projacktor-dl-poster-btn:hover {
+  transform: none !important;
   outline: 2px solid #ffffff !important;
   outline-offset: -2px !important;
+  box-shadow: none !important;
+}
+
+.projacktor-dl-poster-btn::before,
+.projacktor-dl-poster-btn::after,
+.projacktor-dl-poster-btn:focus::before,
+.projacktor-dl-poster-btn:focus::after,
+.projacktor-dl-poster-btn.gpfocus::before,
+.projacktor-dl-poster-btn.gpfocus::after {
+  display: none !important;
+  content: none !important;
+}
+
+.projacktor-dl-poster-btn [class*="focus-ring"],
+.projacktor-dl-poster-btn [class*="_1wPplsegQqCoe06wXPhzKT"],
+.projacktor-dl-poster-btn [class*="_3FIjYetykQsFYR08l1v7Ls"] {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  transform: none !important;
 }
 
 .projacktor-dl-poster-img {
   width: 100% !important;
+  min-width: 100% !important;
+  max-width: 100% !important;
   height: 186px !important;
+  min-height: 186px !important;
+  max-height: 186px !important;
   object-fit: cover !important;
   display: block !important;
   background: #0f141c !important;
+  transform: none !important;
+  user-select: none !important;
+  -webkit-user-drag: none !important;
+  pointer-events: none !important;
 }
 
 .projacktor-dl-badge-status {
@@ -872,6 +923,8 @@ export const PROJACKTOR_STYLES = `
   justify-content: flex-start !important;
   background: #141a23 !important;
   box-sizing: border-box !important;
+  width: 100% !important;
+  max-width: 100% !important;
 }
 
 .projacktor-dl-title {
@@ -888,6 +941,8 @@ export const PROJACKTOR_STYLES = `
   min-height: 28px !important;
   max-height: 28px !important;
   word-break: break-word !important;
+  width: 100% !important;
+  max-width: 100% !important;
 }
 
 .projacktor-dl-subtext {
@@ -898,27 +953,33 @@ export const PROJACKTOR_STYLES = `
   white-space: nowrap !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
+  width: 100% !important;
+  max-width: 100% !important;
 }
 
 .projacktor-dl-card-btns {
   display: flex !important;
   align-items: center !important;
   gap: 4px !important;
-  padding: 0 6px 6px 6px !important;
+  padding: 0 4px 6px 4px !important;
   background: #141a23 !important;
   box-sizing: border-box !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
 }
 
 .projacktor-dl-btn-play {
   flex: 1 !important;
-  height: 26px !important;
+  min-width: 0 !important;
+  height: 24px !important;
   padding: 0 4px !important;
-  font-size: 11px !important;
+  font-size: 10.5px !important;
   font-weight: 600 !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  gap: 4px !important;
+  gap: 3px !important;
   background: var(--ds-surface) !important;
   border: 1px solid var(--ds-border) !important;
   color: #fff !important;
@@ -926,21 +987,28 @@ export const PROJACKTOR_STYLES = `
   cursor: pointer !important;
   outline: none !important;
   box-sizing: border-box !important;
+  transform: none !important;
+  user-select: none !important;
+  white-space: nowrap !important;
 }
 
 .projacktor-dl-btn-play:focus,
-.projacktor-dl-btn-play.gpfocus {
+.projacktor-dl-btn-play.gpfocus,
+.projacktor-dl-btn-play:hover {
   background: var(--ds-surface-hi) !important;
   border-color: #ffffff !important;
   color: #fff !important;
   outline: none !important;
   box-shadow: none !important;
+  transform: none !important;
 }
 
 .projacktor-dl-btn-icon {
-  width: 26px !important;
-  height: 26px !important;
-  flex: 0 0 26px !important;
+  width: 24px !important;
+  height: 24px !important;
+  min-width: 24px !important;
+  max-width: 24px !important;
+  flex: 0 0 24px !important;
   padding: 0 !important;
   display: inline-flex !important;
   align-items: center !important;
@@ -952,24 +1020,30 @@ export const PROJACKTOR_STYLES = `
   cursor: pointer !important;
   outline: none !important;
   box-sizing: border-box !important;
+  transform: none !important;
+  user-select: none !important;
 }
 
 .projacktor-dl-btn-icon:focus,
-.projacktor-dl-btn-icon.gpfocus {
+.projacktor-dl-btn-icon.gpfocus,
+.projacktor-dl-btn-icon:hover {
   background: var(--ds-surface-hi) !important;
   border-color: #ffffff !important;
   color: #fff !important;
   outline: none !important;
   box-shadow: none !important;
+  transform: none !important;
 }
 
 .projacktor-dl-btn-icon.danger:focus,
-.projacktor-dl-btn-icon.danger.gpfocus {
+.projacktor-dl-btn-icon.danger.gpfocus,
+.projacktor-dl-btn-icon.danger:hover {
   background: var(--ds-danger) !important;
   border-color: var(--ds-danger) !important;
   color: #fff !important;
   outline: none !important;
   box-shadow: none !important;
+  transform: none !important;
 }
 
 /* ───── Episodes Dialog Modal (Native Steam UI Spec) ───── */

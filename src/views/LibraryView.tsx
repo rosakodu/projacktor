@@ -1,6 +1,6 @@
 import { FC, memo, useEffect, useRef, useState, useCallback } from "react";
 import { Focusable } from "@decky/ui";
-import { FaPlay, FaPause, FaDownload, FaList, FaTrash, FaSpinner, FaTimes } from "react-icons/fa";
+import { FaPlay, FaPause, FaDownload, FaTrash, FaSpinner, FaTimes } from "react-icons/fa";
 import { EpisodeItem, LibraryItem } from "../types";
 import { formatBytes, formatSpeed, getImageUrl } from "../api";
 import { useLibrary } from "../hooks/useLibrary";
@@ -15,6 +15,20 @@ interface LibraryViewProps {
 }
 
 const NAV_COOLDOWN_MS = 110;
+
+function scrollCardVerticalOnly(root: HTMLElement | null, card: HTMLElement | null) {
+  if (!root || !card) return;
+  root.scrollLeft = 0;
+  const rootRect = root.getBoundingClientRect();
+  const cardRect = card.getBoundingClientRect();
+
+  if (cardRect.top < rootRect.top + 10) {
+    root.scrollBy({ top: cardRect.top - rootRect.top - 14, behavior: "smooth" });
+  } else if (cardRect.bottom > rootRect.bottom - 20) {
+    root.scrollBy({ top: cardRect.bottom - rootRect.bottom + 20, behavior: "smooth" });
+  }
+  root.scrollLeft = 0;
+}
 
 function findCardAbove(cards: HTMLElement[], currentIndex: number): HTMLElement | null {
   const currentCard = cards[currentIndex];
@@ -149,7 +163,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
           doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
           target.focus();
           target.classList.add("gpfocus");
-          target.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+          scrollCardVerticalOnly(root, card);
         }
       }, 40);
       return () => clearTimeout(timer);
@@ -202,17 +216,39 @@ export const LibraryView: FC<LibraryViewProps> = memo(
       };
     }, [library.length]);
 
-    // Авто-скролл карточки в поле видимости при получении фокуса
+    // Строгая блокировка горизонтального скролла в контейнере библиотеки
+    useEffect(() => {
+      const root = rootRef.current;
+      if (!root) return;
+
+      const lockHorizontal = () => {
+        if (root.scrollLeft !== 0) {
+          root.scrollLeft = 0;
+        }
+      };
+
+      root.addEventListener("scroll", lockHorizontal, { passive: true });
+      root.addEventListener("focusin", lockHorizontal, { passive: true });
+      window.addEventListener("scroll", lockHorizontal, { passive: true });
+      return () => {
+        root.removeEventListener("scroll", lockHorizontal);
+        root.removeEventListener("focusin", lockHorizontal);
+        window.removeEventListener("scroll", lockHorizontal);
+      };
+    }, []);
+
+    // Авто-скролл карточки только по вертикали при фокусе
     useEffect(() => {
       const root = rootRef.current;
       if (!root) return;
 
       const onFocusIn = (e: FocusEvent) => {
+        root.scrollLeft = 0;
         const target = e.target as HTMLElement | null;
         if (!target || !root.contains(target)) return;
         const card = target.closest(".projacktor-dl-grid-card") as HTMLElement | null;
         if (card) {
-          card.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+          scrollCardVerticalOnly(root, card);
         }
       };
 
@@ -252,7 +288,8 @@ export const LibraryView: FC<LibraryViewProps> = memo(
           target.focus();
           target.classList.add("gpfocus");
           playNavSound();
-          target.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+          const card = target.closest(".projacktor-dl-grid-card") as HTMLElement | null;
+          scrollCardVerticalOnly(root, card || target);
         };
 
         // Если пустая библиотека — переход вверх в TabBar
@@ -549,6 +586,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                       alt={item.title}
                       className="projacktor-dl-poster-img"
                       loading="lazy"
+                      draggable={false}
                     />
 
                     {/* Бейдж статуса */}
@@ -592,7 +630,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
 
                   {/* Кнопки действий */}
                   <div className="projacktor-dl-card-btns">
-                    {/* Кнопка Смотреть / Онлайн / Файл */}
+                    {/* Кнопка Смотреть / Онлайн / Файл / Серии */}
                     <Focusable
                       className="projacktor-dl-btn-play"
                       noFocusRing
@@ -626,20 +664,6 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                         title={isDownloading ? "Приостановить" : "Возобновить"}
                       >
                         {isDownloading ? <FaPause style={{ fontSize: 10 }} /> : <FaDownload style={{ fontSize: 10 }} />}
-                      </Focusable>
-                    )}
-
-                    {/* Кнопка Серии (для сериалов) */}
-                    {isTv && (
-                      <Focusable
-                        className="projacktor-dl-btn-icon"
-                        noFocusRing
-                        onActivate={() => handleOpenEpisodes(item)}
-                        onClick={() => handleOpenEpisodes(item)}
-                        onGamepadDirection={handleGamepadDir}
-                        title="Список серий"
-                      >
-                        <FaList style={{ fontSize: 10 }} />
                       </Focusable>
                     )}
 
