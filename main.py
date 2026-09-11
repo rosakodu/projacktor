@@ -2294,7 +2294,7 @@ class Plugin:
             FROM media m
             LEFT JOIN media_files f ON m.id = f.media_id
             LEFT JOIN downloads d ON m.id = d.media_id
-            WHERE m.in_library = 1
+            WHERE m.in_library = 1 OR d.id IS NOT NULL OR f.id IS NOT NULL
             GROUP BY m.id
             ORDER BY m.id DESC
         """).fetchall()
