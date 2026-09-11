@@ -636,15 +636,12 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                               Серии загружаются. Подождите пару секунд и нажмите снова.
                             </div>
                           ) : (
-                            episodes.map((ep, idx) => {
+                            episodes.map((ep) => {
                               const isEpStreaming = streamingEpIdx === ep.index;
                               const isEpDownloading = downloadingEpIdx === ep.index;
                               return (
                                 <div key={ep.index} className="projacktor-torrent-ep-row">
                                   <div className="projacktor-torrent-ep-title" title={ep.name}>
-                                    <span style={{ fontWeight: 700, marginRight: 6, color: "var(--ds-accent)" }}>
-                                      #{idx + 1}
-                                    </span>
                                     {ep.name}
                                   </div>
                                   <Focusable flow-children="horizontal" noFocusRing style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>

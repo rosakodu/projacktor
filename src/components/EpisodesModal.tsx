@@ -272,7 +272,7 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                 </Focusable>
               </div>
             ) : (
-              episodes.map((ep: EpisodeItem, idx: number) => {
+              episodes.map((ep: EpisodeItem) => {
                 const isEpCompleted =
                   ep.downloaded || (ep.size > 0 && ep.completed >= ep.size);
                 const isEpPartial = ep.completed > 0 && !isEpCompleted;
@@ -305,9 +305,6 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                         }}
                         title={ep.name}
                       >
-                        <span style={{ color: "var(--ds-accent)", marginRight: 6 }}>
-                          #{idx + 1}
-                        </span>
                         {ep.name}
                       </div>
                       <div
@@ -341,7 +338,7 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                       onCancelButton={closeModal}
                     >
                       <Focusable
-                        className={`ds-btn ds-btn--compact${isEpCompleted ? " ds-btn--primary" : ""}`}
+                        className={`ds-btn ds-btn--compact ${isEpCompleted ? "ds-btn--success" : "ds-btn--primary"}`}
                         noFocusRing
                         onActivate={() => onWatchOnline(item, ep.index)}
                         onClick={() => onWatchOnline(item, ep.index)}

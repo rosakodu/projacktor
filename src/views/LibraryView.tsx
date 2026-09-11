@@ -516,7 +516,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                   <div className="projacktor-dl-card-btns">
                     {/* Кнопка Смотреть / Онлайн / Файл / Серии */}
                     <Focusable
-                      className="projacktor-dl-btn-play"
+                      className={`projacktor-dl-btn-play ${canPlayDirect || !isTv ? "success" : ""}`}
                       noFocusRing
                       onActivate={handlePrimaryAction}
                       onClick={handlePrimaryAction}

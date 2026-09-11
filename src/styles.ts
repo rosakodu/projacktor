@@ -291,6 +291,24 @@ export const PROJACKTOR_STYLES = `
   transform: none !important;
 }
 
+.ds-btn--success {
+  background: #10b981 !important;
+  border-color: #059669 !important;
+  color: #fff !important;
+  border-radius: 0px !important;
+}
+
+.ds-btn--success:focus,
+.ds-btn--success.gpfocus,
+.ds-btn--success:hover {
+  background: #34d399 !important;
+  border-color: #ffffff !important;
+  color: #fff !important;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.45) !important;
+  outline: none !important;
+  transform: none !important;
+}
+
 .ds-btn--danger {
   color: var(--ds-danger) !important;
   border-color: rgba(255, 90, 90, 0.25) !important;
@@ -1037,6 +1055,25 @@ export const PROJACKTOR_STYLES = `
   outline: none !important;
   box-shadow: none !important;
   transform: none !important;
+}
+
+.projacktor-dl-btn-play.success,
+.projacktor-dl-btn-play.is-watch {
+  background: #10b981 !important;
+  border-color: #059669 !important;
+  color: #fff !important;
+}
+
+.projacktor-dl-btn-play.success:focus,
+.projacktor-dl-btn-play.success.gpfocus,
+.projacktor-dl-btn-play.success:hover,
+.projacktor-dl-btn-play.is-watch:focus,
+.projacktor-dl-btn-play.is-watch.gpfocus,
+.projacktor-dl-btn-play.is-watch:hover {
+  background: #34d399 !important;
+  border-color: #ffffff !important;
+  color: #fff !important;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.45) !important;
 }
 
 .projacktor-dl-btn-icon {
