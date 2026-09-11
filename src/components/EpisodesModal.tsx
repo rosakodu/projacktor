@@ -24,8 +24,7 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
   const [downloadingEpIdx, setDownloadingEpIdx] = useState<number | null>(null);
 
   const title = item.title || "Без названия";
-  const date = item.year || "";
-  const year = date ? date.split("-")[0] : "";
+  const year = item.year ? String(item.year).split("-")[0] : "";
 
   const fetchEpisodes = useCallback(async (showSpinner = true) => {
     if (showSpinner) setLoading(true);

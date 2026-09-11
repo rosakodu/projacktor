@@ -104,7 +104,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
   const title = movie.title || movie.name || "Без названия";
   const origTitle = movie.original_title || movie.original_name || "";
   const date = movie.release_date || movie.first_air_date || "";
-  const year = date ? date.split("-")[0] : "";
+  const year = date ? String(date).split("-")[0] : "";
   const rating = movie.vote_average ? movie.vote_average.toFixed(1) : null;
 
   useEffect(() => {

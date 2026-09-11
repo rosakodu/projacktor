@@ -11,7 +11,7 @@ interface MovieCardProps {
 export const MovieCard: FC<MovieCardProps> = memo(({ movie, onActivate, onGamepadDirection }) => {
   const title = movie.title || movie.name || "Без названия";
   const date = movie.release_date || movie.first_air_date || "";
-  const year = date ? date.split("-")[0] : "";
+  const year = date ? String(date).split("-")[0] : "";
   const rating = movie.vote_average ? movie.vote_average.toFixed(1) : null;
   const posterUrl = getImageUrl(movie.poster_path);
 
