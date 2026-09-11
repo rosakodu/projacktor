@@ -1,6 +1,6 @@
 import { FC, memo, useEffect, useRef, useState, useCallback } from "react";
 import { Focusable } from "@decky/ui";
-import { FaPlay, FaPause, FaDownload, FaTrash, FaMoon, FaSpinner, FaTimes } from "react-icons/fa";
+import { FaPlay, FaPlayCircle, FaPause, FaDownload, FaList, FaTrash, FaMoon, FaSpinner, FaTimes } from "react-icons/fa";
 import { EpisodeItem, LibraryItem } from "../types";
 import { formatBytes, formatSpeed, getImageUrl } from "../api";
 import { useLibrary } from "../hooks/useLibrary";
@@ -630,12 +630,13 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                       title={canPlayDirect ? "Смотреть файл" : isTv ? "Серии" : "Смотреть онлайн"}
                     >
                       {isStreamStarting ? (
-                        <FaSpinner style={{ animation: "projacktor-spin 0.9s linear infinite", fontSize: 10 }} />
+                        <FaSpinner style={{ animation: "projacktor-spin 0.9s linear infinite", fontSize: 11 }} />
+                      ) : canPlayDirect ? (
+                        <FaPlay style={{ fontSize: 10, marginLeft: 1 }} />
+                      ) : isTv ? (
+                        <FaList style={{ fontSize: 10 }} />
                       ) : (
-                        <>
-                          <FaPlay style={{ fontSize: 8.5, marginLeft: 1 }} />
-                          <span>{canPlayDirect ? "Файл" : isTv ? "Серии" : "Онлайн"}</span>
-                        </>
+                        <FaPlayCircle style={{ fontSize: 12 }} />
                       )}
                     </Focusable>
 
