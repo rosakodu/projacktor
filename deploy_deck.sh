@@ -25,11 +25,11 @@ echo "Сборка завершена"
 echo "Подготовка папки на Steam Deck..."
 sshpass -p "${DECK_PASS}" ssh -o StrictHostKeyChecking=no \
     "${DECK_USER}@${DECK_IP}" \
-    "echo '${DECK_PASS}' | sudo -S rm -rf '/home/${DECK_USER}/homebrew/plugins/projactor' '/home/${DECK_USER}/homebrew/plugins/projecktor' 2>/dev/null || true && echo '${DECK_PASS}' | sudo -S mkdir -p '${REMOTE_DIR}' && echo '${DECK_PASS}' | sudo -S chown -R ${DECK_USER}:${DECK_USER} '${REMOTE_DIR}' && echo '${DECK_PASS}' | sudo -S chmod -R 777 '${REMOTE_DIR}'"
+    "echo '${DECK_PASS}' | sudo -S rm -rf '/home/${DECK_USER}/homebrew/plugins/projactor' '/home/${DECK_USER}/homebrew/plugins/projecktor' 2>/dev/null || true; echo '${DECK_PASS}' | sudo -S mkdir -p '${REMOTE_DIR}'; echo '${DECK_PASS}' | sudo -S chown -R ${DECK_USER}:${DECK_USER} '${REMOTE_DIR}'; echo '${DECK_PASS}' | sudo -S chmod -R 777 '${REMOTE_DIR}'"
 
 # 3. Деплой на Deck
 echo "Копирование файлов на Steam Deck..."
-rsync -avz --no-owner --no-group --no-perms --omit-dir-times --delete \
+rsync -avz --inplace --no-owner --no-group --no-perms --omit-dir-times --delete \
     --exclude='node_modules' \
     --exclude='src' \
     --exclude='.git' \
@@ -39,6 +39,8 @@ rsync -avz --no-owner --no-group --no-perms --omit-dir-times --delete \
     --exclude='tsconfig.json' \
     --exclude='rollup.config.js' \
     --exclude='deploy_deck.sh' \
+    --exclude='__pycache__' \
+    --exclude='*.pyc' \
     -e "sshpass -p '${DECK_PASS}' ssh -o StrictHostKeyChecking=no" \
     ./ "${DECK_USER}@${DECK_IP}:${REMOTE_DIR}/"
 
