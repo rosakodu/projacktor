@@ -8,7 +8,7 @@ import {
   Focusable,
 } from "@decky/ui";
 import { toaster } from "@decky/api";
-import { FaTrash, FaCheck, FaTimes } from "react-icons/fa";
+import { FaTrash, FaCheck, FaTimes, FaSpinner } from "react-icons/fa";
 import {
   rpcGetSettings,
   rpcSaveSettings,
@@ -19,29 +19,45 @@ import {
 } from "../api";
 import { getActiveDocument } from "../runtime/activeDoc";
 
+// Модульный кэш статуса и URL, чтобы при переключении между вкладками статус не сбрасывался и не мигал красным
+let cachedJacredUrl: string | null = null;
+let cachedJacredOk: boolean | null = null;
+
 export const SettingsView: FC = memo(() => {
   const rootRef = useRef<HTMLDivElement>(null);
-  const [jacredUrl, setJacredUrl] = useState("");
-  const [jacredOk, setJacredOk] = useState<boolean | null>(null);
+  const [jacredUrl, setJacredUrl] = useState<string>(() => cachedJacredUrl ?? "");
+  const [jacredOk, setJacredOk] = useState<boolean | null>(() => cachedJacredOk);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [clearingCache, setClearingCache] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
+
     rpcGetSettings()
       .then((sett) => {
+        if (!isMounted) return;
         if (sett && sett.jacred_url) {
-          setJacredUrl(sett.jacred_url.trim());
+          const url = sett.jacred_url.trim();
+          cachedJacredUrl = url;
+          setJacredUrl(url);
         }
       })
       .catch(() => {});
 
     rpcGetStatus()
       .then((st) => {
+        if (!isMounted) return;
         if (st) {
-          setJacredOk(!!st.jacred_status);
+          const ok = !!st.jacred_status;
+          cachedJacredOk = ok;
+          setJacredOk(ok);
         }
       })
       .catch(() => {});
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // Авто-фокус на первом интерактивном элементе при переходе в настройки (если фокус не на табах)
@@ -101,6 +117,8 @@ export const SettingsView: FC = memo(() => {
         setJacredUrl(cleanUrl);
       }
       const ok = cleanUrl ? await rpcCheckJacred(cleanUrl) : false;
+      cachedJacredOk = ok;
+      cachedJacredUrl = cleanUrl;
       setJacredOk(ok);
       await rpcSaveSettings(JSON.stringify({ jacred_url: cleanUrl }));
       toaster.toast({
@@ -180,7 +198,24 @@ export const SettingsView: FC = memo(() => {
                   fontSize: 13,
                 }}
               >
-                {jacredOk ? (
+                {jacredOk === null ? (
+                  <span
+                    style={{
+                      color: "rgba(255, 255, 255, 0.5)",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
+                    }}
+                  >
+                    <FaSpinner
+                      style={{
+                        fontSize: 11,
+                        animation: "projacktor-spin 1s linear infinite",
+                      }}
+                    />
+                    Проверка...
+                  </span>
+                ) : jacredOk ? (
                   <span
                     style={{
                       color: "#10b981",
