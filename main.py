@@ -443,6 +443,9 @@ class DownloadManager:
     def resume(self, gid):
         return self._rpc_call("aria2.unpause", [gid])
 
+    def unpause_all(self):
+        return self._rpc_call("aria2.unpauseAll")
+
     def remove(self, gid):
         return self._rpc_call("aria2.remove", [gid])
 
@@ -813,6 +816,25 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
         if path == '/api/downloads':
             body = self._get_body()
             self._handle_downloads_add(body)
+        elif path == '/api/downloads/resume_all':
+            if plugin_instance and plugin_instance.dm:
+                plugin_instance.dm.unpause_all()
+            db = get_db()
+            cursor = db.cursor()
+            rows = cursor.execute("SELECT aria2_gid FROM downloads WHERE status='paused'").fetchall()
+            if plugin_instance and plugin_instance.dm:
+                for r in rows:
+                    if r['aria2_gid']:
+                        try:
+                            plugin_instance.dm.resume(r['aria2_gid'])
+                        except:
+                            pass
+            cursor.execute("UPDATE downloads SET status='downloading' WHERE status='paused'")
+            db.commit()
+            db.close()
+            if plugin_instance and plugin_instance.dm:
+                plugin_instance.dm._update_db()
+            self._send_json({"success": True})
         else:
             self.send_response(404)
             self.end_headers()
@@ -2091,6 +2113,30 @@ class Plugin:
                 self.dm.resume(row['aria2_gid'])
             return True
         except:
+            return False
+
+    async def resume_all_downloads(self):
+        try:
+            if self.dm:
+                self.dm.unpause_all()
+            db = get_db()
+            cursor = db.cursor()
+            rows = cursor.execute("SELECT aria2_gid FROM downloads WHERE status='paused'").fetchall()
+            if self.dm:
+                for r in rows:
+                    if r['aria2_gid']:
+                        try:
+                            self.dm.resume(r['aria2_gid'])
+                        except:
+                            pass
+            cursor.execute("UPDATE downloads SET status='downloading' WHERE status='paused'")
+            db.commit()
+            db.close()
+            if self.dm:
+                self.dm._update_db()
+            return True
+        except Exception as e:
+            logger.error(f"Plugin resume_all_downloads error: {e}")
             return False
 
     async def delete_download(self, did: int):

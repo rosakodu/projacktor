@@ -1,5 +1,6 @@
 import { FC, useState, useRef, useEffect, useCallback } from "react";
 import { ModalRoot, Focusable } from "@decky/ui";
+import { toaster } from "@decky/api";
 import {
   FaPlay,
   FaPause,
@@ -10,8 +11,10 @@ import {
   FaClosedCaptioning,
   FaVolumeUp,
   FaVolumeMute,
+  FaUndo,
 } from "react-icons/fa";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
+import { rpcResumeAllDownloads } from "../api";
 
 interface AudioTrack {
   index: number;
@@ -50,8 +53,29 @@ function formatTime(seconds: number): string {
 export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = false, closeModal }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const getSavedProgress = useCallback((): number => {
+    try {
+      const fileName = filePath.split(/[\/\\]/).pop() || filePath;
+      const raw = localStorage.getItem(`projacktor_progress_${fileName}`);
+      if (raw) {
+        const val = parseFloat(raw);
+        if (!isNaN(val) && val > 15) return Math.floor(val);
+      }
+      const cleanTitle = title.replace(/\s*\(Онлайн\)\s*/i, "").trim();
+      if (cleanTitle) {
+        const rawTitle = localStorage.getItem(`projacktor_progress_t_${cleanTitle}`);
+        if (rawTitle) {
+          const val = parseFloat(rawTitle);
+          if (!isNaN(val) && val > 15) return Math.floor(val);
+        }
+      }
+    } catch {}
+    return 0;
+  }, [filePath, title]);
+
+  const savedStartTimeRef = useRef<number>(getSavedProgress());
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
-  const [baseTime, setBaseTime] = useState<number>(0);
+  const [baseTime, setBaseTime] = useState<number>(() => savedStartTimeRef.current);
   const [videoTime, setVideoTime] = useState<number>(0);
   const [duration, setDuration] = useState<number>(0);
   const [volume, setVolume] = useState<number>(1);
@@ -144,7 +168,35 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
     [filePath, isOnline]
   );
 
-  const [streamUrl, setStreamUrl] = useState<string>(() => getStreamUrl(0));
+  const [streamUrl, setStreamUrl] = useState<string>(() => getStreamUrl(savedStartTimeRef.current));
+
+  const currentPlayheadRef = useRef<number>(savedStartTimeRef.current);
+  currentPlayheadRef.current = baseTime + videoTime;
+
+  const durationRef = useRef<number>(duration);
+  durationRef.current = duration;
+
+  const saveProgress = useCallback(
+    (sec: number, totalDur?: number) => {
+      try {
+        const fileName = filePath.split(/[\/\\]/).pop() || filePath;
+        const cleanTitle = title.replace(/\s*\(Онлайн\)\s*/i, "").trim();
+        const dur = totalDur ?? durationRef.current;
+        if (dur && dur > 0 && sec >= dur - 60) {
+          localStorage.removeItem(`projacktor_progress_${fileName}`);
+          if (cleanTitle) {
+            localStorage.removeItem(`projacktor_progress_t_${cleanTitle}`);
+          }
+        } else if (sec > 15) {
+          localStorage.setItem(`projacktor_progress_${fileName}`, String(Math.floor(sec)));
+          if (cleanTitle) {
+            localStorage.setItem(`projacktor_progress_t_${cleanTitle}`, String(Math.floor(sec)));
+          }
+        }
+      } catch {}
+    },
+    [filePath, title]
+  );
 
   const togglePlay = useCallback(() => {
     if (!videoRef.current) return;
@@ -454,6 +506,32 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
     };
   }, []);
 
+  // Если восстановили прогресс просмотра (>15с), показываем тост
+  useEffect(() => {
+    if (savedStartTimeRef.current > 15) {
+      toaster.toast({
+        title: title || "Фильмотека",
+        body: `Продолжаем просмотр с ${formatTime(savedStartTimeRef.current)}`,
+        duration: 3500,
+      });
+    }
+  }, []);
+
+  // Сохраняем прогресс и возобновляем загрузки при закрытии плеера
+  useEffect(() => {
+    return () => {
+      saveProgress(currentPlayheadRef.current, durationRef.current);
+      rpcResumeAllDownloads().catch(() => {});
+      if (isOnline) {
+        toaster.toast({
+          title: title || "Фильмотека",
+          body: "Загрузка продолжается в фильмотеке",
+          duration: 3500,
+        });
+      }
+    };
+  }, [isOnline, title, saveProgress]);
+
   // Probe file metadata on mount: duration and audio tracks
   useEffect(() => {
     let cancelled = false;
@@ -497,9 +575,16 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
     const video = videoRef.current;
     if (!video) return;
 
+    let lastSaveSec = 0;
     const onTimeUpdate = () => {
-      setVideoTime(video.currentTime);
+      const vTime = video.currentTime;
+      setVideoTime(vTime);
       setIsBuffering(false);
+      const totalCur = Math.floor(baseTime + vTime);
+      if (Math.abs(totalCur - lastSaveSec) >= 5) {
+        lastSaveSec = totalCur;
+        saveProgress(totalCur, durationRef.current);
+      }
     };
     const onLoadedMetadata = () => {
       if (!duration && video.duration && !isNaN(video.duration) && isFinite(video.duration)) {
@@ -512,9 +597,23 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
       setIsPlaying(true);
       setIsBuffering(false);
     };
-    const onPause = () => setIsPlaying(false);
+    const onPause = () => {
+      setIsPlaying(false);
+      saveProgress(baseTime + video.currentTime, durationRef.current);
+    };
     const onWaiting = () => setIsBuffering(true);
     const onCanPlay = () => setIsBuffering(false);
+    const onEnded = () => {
+      setIsPlaying(false);
+      try {
+        const fileName = filePath.split(/[\/\\]/).pop() || filePath;
+        const cleanTitle = title.replace(/\s*\(Онлайн\)\s*/i, "").trim();
+        localStorage.removeItem(`projacktor_progress_${fileName}`);
+        if (cleanTitle) {
+          localStorage.removeItem(`projacktor_progress_t_${cleanTitle}`);
+        }
+      } catch {}
+    };
 
     video.addEventListener("timeupdate", onTimeUpdate);
     video.addEventListener("loadedmetadata", onLoadedMetadata);
@@ -522,6 +621,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
     video.addEventListener("pause", onPause);
     video.addEventListener("waiting", onWaiting);
     video.addEventListener("canplay", onCanPlay);
+    video.addEventListener("ended", onEnded);
 
     return () => {
       video.removeEventListener("timeupdate", onTimeUpdate);
@@ -530,8 +630,9 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
       video.removeEventListener("pause", onPause);
       video.removeEventListener("waiting", onWaiting);
       video.removeEventListener("canplay", onCanPlay);
+      video.removeEventListener("ended", onEnded);
     };
-  }, [streamUrl, duration]);
+  }, [streamUrl, duration, baseTime, saveProgress]);
 
   const currentPlayhead = baseTime + videoTime;
   const progressPercent = duration > 0 ? Math.min(100, Math.max(0, (currentPlayhead / duration) * 100)) : 0;
@@ -811,6 +912,24 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
             >
               <FaForward />
             </Focusable>
+
+            {currentPlayhead > 30 && (
+              <Focusable
+                className="ds-btn ds-btn--compact ds-btn--icon"
+                onActivate={() => {
+                  seekTo(0);
+                  toaster.toast({ title: title || "Фильмотека", body: "С самого начала", duration: 2000 });
+                }}
+                onClick={() => {
+                  seekTo(0);
+                  toaster.toast({ title: title || "Фильмотека", body: "С самого начала", duration: 2000 });
+                }}
+                style={{ width: 36, height: 32 }}
+                title="Начать сначала"
+              >
+                <FaUndo style={{ fontSize: 11 }} />
+              </Focusable>
+            )}
           </div>
 
           {/* По центру: Время */}

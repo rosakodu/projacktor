@@ -6,6 +6,7 @@ import {
   rpcGetLibrary,
   rpcPauseDownload,
   rpcResumeDownload,
+  rpcResumeAllDownloads,
   rpcDeleteLibraryItem,
   rpcStartDownload,
   rpcGetEpisodes,
@@ -55,6 +56,14 @@ export function useLibrary(onPlayVideo?: (filePath: string, title: string, isOnl
   const resumeDownload = useCallback(
     async (id: number) => {
       await rpcResumeDownload(id);
+      refreshLibrary();
+    },
+    [refreshLibrary]
+  );
+
+  const resumeAllDownloads = useCallback(
+    async () => {
+      await rpcResumeAllDownloads();
       refreshLibrary();
     },
     [refreshLibrary]
@@ -175,6 +184,7 @@ export function useLibrary(onPlayVideo?: (filePath: string, title: string, isOnl
     refreshLibrary,
     pauseDownload,
     resumeDownload,
+    resumeAllDownloads,
     deleteItem,
     startDownload,
     toggleEpisodes,

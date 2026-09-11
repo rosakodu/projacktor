@@ -20,6 +20,7 @@ export const rpcDownloadEpisode = callable<[number, number], { success: boolean;
 export const rpcPrepareStream = callable<[number, number?], { success: boolean; file_path?: string; title?: string; transcode?: boolean; online?: boolean; error?: string }>("prepare_stream");
 export const rpcPauseDownload = callable<[number], boolean>("pause_download");
 export const rpcResumeDownload = callable<[number], boolean>("resume_download");
+export const rpcResumeAllDownloads = callable<[], boolean>("resume_all_downloads");
 export const rpcDeleteDownload = callable<[number], boolean>("delete_download");
 export const rpcGetLibrary = callable<[], LibraryItem[]>("get_library");
 export const rpcDeleteLibraryItem = callable<[number], boolean>("delete_library_item");
