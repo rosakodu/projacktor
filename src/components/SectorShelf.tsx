@@ -54,17 +54,7 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
       lastSectionChangeAtRef.current = now;
 
       if (!hasPrevSection) {
-        // Возврат фокуса на активную вкладку в панели табов при нажатии ВВЕРХ на верхней полке
-        const doc = getActiveDocument(rowRef.current);
-        const activeTab = doc?.querySelector<HTMLElement>(
-          '.projacktor-tab-item.active, [role="tab"][aria-selected="true"]'
-        );
-        if (activeTab && doc) {
-          doc.querySelectorAll('.gpfocus').forEach((el) => el.classList.remove('gpfocus'));
-          activeTab.focus();
-          activeTab.classList.add('gpfocus');
-          playNavSound();
-        }
+        // Переход из разделов вверх в табы отключен: фокус остается в верхнем разделе
         return;
       }
       if (onPrevSection) {

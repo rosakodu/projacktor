@@ -34,7 +34,6 @@ export const TabBar: FC<TabBarProps> = memo(
     }, []);
 
     const lastDownAtRef = useRef(0);
-    const lastStepAtRef = useRef(0);
 
     const moveFocusDown = useCallback(() => {
       const now = Date.now();
@@ -64,46 +63,7 @@ export const TabBar: FC<TabBarProps> = memo(
       }
     }, []);
 
-    const stepTab = useCallback(
-      (dir: 1 | -1) => {
-        const now = Date.now();
-        if (now - lastStepAtRef.current < 180) return;
-        lastStepAtRef.current = now;
-
-        const doc = getActiveDocument(navRef.current);
-        if (!doc) return;
-
-        const tabEls = Array.from(doc.querySelectorAll<HTMLElement>(".projacktor-tab-item"));
-        if (!tabEls.length) return;
-
-        const active = doc.activeElement;
-        const curIdx = tabEls.findIndex((t) => t === active || t.contains(active as Node));
-
-        let nextIdx: number;
-        if (curIdx === -1) {
-          nextIdx = dir > 0 ? 0 : tabEls.length - 1;
-        } else {
-          nextIdx = curIdx + dir;
-          if (nextIdx < 0) nextIdx = tabEls.length - 1;
-          if (nextIdx >= tabEls.length) nextIdx = 0;
-        }
-
-        const target = tabEls[nextIdx];
-        if (target) {
-          doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-          target.focus();
-          target.classList.add("gpfocus");
-          const tabId = tabs[nextIdx]?.id;
-          if (tabId && tabId !== activeTab) {
-            playNavSound();
-            onSelectTab(tabId);
-          }
-        }
-      },
-      [tabs, activeTab, onSelectTab]
-    );
-
-    // Глобальный перехват стрелок на документе при фокусе в панели табов
+    // Глобальный перехват стрелок на документе при фокусе в панели табов (D-pad не переключает табы)
     useEffect(() => {
       const navEl = navRef.current;
       if (!navEl) return;
@@ -119,19 +79,15 @@ export const TabBar: FC<TabBarProps> = memo(
         );
         if (!isNavFocused) return;
 
-        if (e.key === "ArrowRight") {
-          e.preventDefault();
-          e.stopPropagation();
-          stepTab(1);
-        } else if (e.key === "ArrowLeft") {
-          e.preventDefault();
-          e.stopPropagation();
-          stepTab(-1);
-        } else if (e.key === "ArrowDown") {
+        if (e.key === "ArrowDown") {
           e.preventDefault();
           e.stopPropagation();
           moveFocusDown();
-        } else if (e.key === "ArrowUp") {
+        } else if (
+          e.key === "ArrowUp" ||
+          e.key === "ArrowLeft" ||
+          e.key === "ArrowRight"
+        ) {
           e.preventDefault();
           e.stopPropagation();
         }
@@ -141,7 +97,7 @@ export const TabBar: FC<TabBarProps> = memo(
       return () => {
         doc.removeEventListener("keydown", handleKeyDown, true);
       };
-    }, [stepTab, moveFocusDown]);
+    }, [moveFocusDown]);
 
     const handleTabSelectImmediate = useCallback(
       (tabId: string, shouldMoveDown = false) => {
@@ -158,10 +114,9 @@ export const TabBar: FC<TabBarProps> = memo(
       [onSelectTab, moveFocusDown]
     );
 
-    // Listen to Controller events when TabBar is focused
+    // Слушатель событий геймпада при фокусе на TabBar (только спуск вниз, табы управляются L1/R1)
     useEffect(() => {
       let lastDownAt = 0;
-      let lastSideAt = 0;
       const un = subscribeControllerInput((e) => {
         if (isModalOpen()) return;
         if (!e.pressed) return;
@@ -173,34 +128,6 @@ export const TabBar: FC<TabBarProps> = memo(
           (active.closest?.(".projacktor-nav-bar") || active.classList?.contains("projacktor-tab-item"))
         );
         if (!isNavFocused) return;
-
-        // DPAD LEFT or LEFTSTICK LEFT
-        if (
-          e.button === RawButton.DPAD_LEFT ||
-          e.button === RawButton.LEFTSTICK_LEFT ||
-          e.button === 7 ||
-          e.button === 22
-        ) {
-          const now = Date.now();
-          if (now - lastSideAt < 220) return;
-          lastSideAt = now;
-          stepTab(-1);
-          return;
-        }
-
-        // DPAD RIGHT or LEFTSTICK RIGHT
-        if (
-          e.button === RawButton.DPAD_RIGHT ||
-          e.button === RawButton.LEFTSTICK_RIGHT ||
-          e.button === 5 ||
-          e.button === 23
-        ) {
-          const now = Date.now();
-          if (now - lastSideAt < 220) return;
-          lastSideAt = now;
-          stepTab(1);
-          return;
-        }
 
         // DPAD DOWN or LEFTSTICK DOWN: move focus to content
         if (
@@ -216,7 +143,7 @@ export const TabBar: FC<TabBarProps> = memo(
         }
       });
       return un;
-    }, [moveFocusDown, stepTab]);
+    }, [moveFocusDown]);
 
     return (
       <div
@@ -254,7 +181,7 @@ export const TabBar: FC<TabBarProps> = memo(
                 onClick={() => handleTabSelectImmediate(tab.id, false)}
                 onGamepadDirection={(evt: any) => {
                   const btn = evt?.detail?.button;
-                  if (btn === 9) {
+                  if (btn === 9 || btn === 11 || btn === 12) {
                     try {
                       evt?.preventDefault?.();
                       evt?.stopPropagation?.();
