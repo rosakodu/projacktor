@@ -29,7 +29,7 @@ sshpass -p "${DECK_PASS}" ssh -o StrictHostKeyChecking=no \
 
 # 3. Деплой на Deck
 echo "Копирование файлов на Steam Deck..."
-rsync -avz --no-owner --no-group --no-perms --delete \
+rsync -avz --no-owner --no-group --no-perms --omit-dir-times --delete \
     --exclude='node_modules' \
     --exclude='src' \
     --exclude='.git' \
