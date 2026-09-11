@@ -7,3 +7,5 @@ export * from "./MagicBlackOverlay";
 export * from "./Shelf";
 export * from "./TabBar";
 export * from "./GlobalMagicBlackOverlay";
+export * from "./EpisodesModal";
+

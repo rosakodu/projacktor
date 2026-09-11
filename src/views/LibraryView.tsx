@@ -1,5 +1,5 @@
-import { FC, memo, useEffect, useRef, useState, useCallback } from "react";
-import { Focusable } from "@decky/ui";
+import { FC, memo, useEffect, useRef, useCallback } from "react";
+import { Focusable, showModal } from "@decky/ui";
 import { FaPlay, FaPlayCircle, FaPause, FaDownload, FaList, FaTrash, FaMoon, FaSpinner } from "react-icons/fa";
 import { EpisodeItem, LibraryItem } from "../types";
 import { formatBytes, formatSpeed, getImageUrl } from "../api";
@@ -8,6 +8,8 @@ import { getActiveDocument } from "../runtime/activeDoc";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
 import { playNavSound } from "../runtime/navSound";
 import { isModalOpen } from "../runtime/homeInputBus";
+import { EpisodesModal } from "../components/EpisodesModal";
+
 
 interface LibraryViewProps {
   onPlayVideo: (filePath: string, title: string, isOnline: boolean) => void;
@@ -30,7 +32,6 @@ export const LibraryView: FC<LibraryViewProps> = memo(
     const rowRef = useRef<HTMLDivElement>(null);
     const lastNavAtRef = useRef(0);
     const lastInteractedItemIdRef = useRef<number | string | null>(null);
-    const [episodesModalItem, setEpisodesModalItem] = useState<LibraryItem | null>(null);
 
     const {
       library,
@@ -45,72 +46,50 @@ export const LibraryView: FC<LibraryViewProps> = memo(
       watchOnline,
     } = useLibrary(onPlayVideo);
 
-    // Закрытие модального окна серий по кнопке B или Escape
-    useEffect(() => {
-      if (!episodesModalItem) return;
-
-      const un = subscribeControllerInput((e) => {
-        if (!e.pressed) return;
-        if (e.button === RawButton.B || e.button === 1) {
-          setEpisodesModalItem(null);
+    // Открытие модалки серий через нативный Decky showModal — B кнопка работает автоматически
+    const handleOpenEpisodes = useCallback((item: LibraryItem) => {
+      lastInteractedItemIdRef.current = item.id;
+      toggleEpisodes(item);
+      let modalInstance: any = null;
+      const close = () => {
+        if (modalInstance && typeof modalInstance.Close === "function") {
+          modalInstance.Close();
         }
-      });
-
-      const handleKeyDown = (e: KeyboardEvent) => {
-        if (e.key === "Escape" || e.key === "Backspace") {
-          e.preventDefault();
-          e.stopPropagation();
-          setEpisodesModalItem(null);
-        }
+        // Возвращаем фокус на карточку после закрытия
+        setTimeout(() => {
+          const root = rootRef.current;
+          if (!root) return;
+          const doc = getActiveDocument(root);
+          const card = root.querySelector<HTMLElement>(
+            `[data-item-id="${item.id}"]`
+          );
+          const target = card?.querySelector<HTMLElement>(
+            ".projacktor-dl-poster-btn, .projacktor-dl-btn-play"
+          );
+          if (target) {
+            doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+            target.focus();
+            target.classList.add("gpfocus");
+            scrollCardHorizontal(rowRef.current, card);
+          }
+        }, 80);
       };
+      const episodes = episodesMap[item.id] || [];
+      const loading = !!episodesLoading[item.id];
+      modalInstance = showModal(
+        <EpisodesModal
+          item={item}
+          episodes={episodes}
+          loading={loading}
+          closeModal={close}
+          onWatchOnline={(i, epIdx) => { close(); watchOnline(i, epIdx); }}
+          onDownloadEpisode={(i, ep) => { close(); downloadEpisode(i, ep); }}
+        />,
+        window
+      );
+    }, [episodesMap, episodesLoading, toggleEpisodes, watchOnline, downloadEpisode]);
 
-      window.addEventListener("keydown", handleKeyDown, true);
-      return () => {
-        un();
-        window.removeEventListener("keydown", handleKeyDown, true);
-      };
-    }, [episodesModalItem]);
 
-    // Фокус при открытии модального окна серий
-    useEffect(() => {
-      if (!episodesModalItem) return;
-      const timer = setTimeout(() => {
-        const root = rootRef.current;
-        const doc = getActiveDocument(root);
-        const modalBtn = doc?.querySelector<HTMLElement>(
-          ".projacktor-episodes-modal-list .ds-btn, .projacktor-episodes-modal-header .ds-btn"
-        );
-        if (modalBtn) {
-          doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-          modalBtn.focus();
-          modalBtn.classList.add("gpfocus");
-        }
-      }, 50);
-      return () => clearTimeout(timer);
-    }, [episodesModalItem]);
-
-    // Восстановление фокуса при закрытии модального окна серий
-    useEffect(() => {
-      if (episodesModalItem || lastInteractedItemIdRef.current == null) return;
-      const timer = setTimeout(() => {
-        const root = rootRef.current;
-        if (!root) return;
-        const doc = getActiveDocument(root);
-        const card = root.querySelector<HTMLElement>(
-          `[data-item-id="${lastInteractedItemIdRef.current}"]`
-        );
-        const target = card?.querySelector<HTMLElement>(
-          ".projacktor-dl-poster-btn, .projacktor-dl-btn-play"
-        );
-        if (target) {
-          doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-          target.focus();
-          target.classList.add("gpfocus");
-          scrollCardHorizontal(rowRef.current, card);
-        }
-      }, 40);
-      return () => clearTimeout(timer);
-    }, [episodesModalItem]);
 
     // Авто-фокус на элементе библиотеки при переходе во вкладку (если фокус не на табах)
     useEffect(() => {
@@ -198,19 +177,12 @@ export const LibraryView: FC<LibraryViewProps> = memo(
       return () => root.removeEventListener("focusin", onFocusIn);
     }, []);
 
-    const handleOpenEpisodes = useCallback(
-      (item: LibraryItem) => {
-        lastInteractedItemIdRef.current = item.id;
-        setEpisodesModalItem(item);
-        toggleEpisodes(item);
-      },
-      [toggleEpisodes]
-    );
+
 
     // Основной 2D обработчик перемещения геймпада, стиков и клавиатуры
     const handleDirection = useCallback(
       (dir: "up" | "down" | "left" | "right") => {
-        if (isModalOpen() || episodesModalItem) return;
+        if (isModalOpen()) return;
 
         const now = Date.now();
         if (now - lastNavAtRef.current < NAV_COOLDOWN_MS) return;
@@ -269,13 +241,11 @@ export const LibraryView: FC<LibraryViewProps> = memo(
               doFocus(nextPoster);
             }
           } else if (dir === "down") {
-            // Вниз: переход в панель кнопок этой же карточки
             const playBtn = currentCard.querySelector<HTMLElement>(
               ".projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0']"
             );
             doFocus(playBtn);
           } else if (dir === "up") {
-            // Вверх: переход в TabBar на текущую вкладку «Загрузки»
             const activeTabEl = doc.querySelector<HTMLElement>(
               ".projacktor-tab-item.active, [role='tab'][aria-selected='true']"
             );
@@ -290,14 +260,12 @@ export const LibraryView: FC<LibraryViewProps> = memo(
           const btnIndex = cardButtons.findIndex((b) => b === active || b.contains(active));
 
           if (dir === "up") {
-            // Вверх: возврат на постер этой же карточки
             const poster = currentCard.querySelector<HTMLElement>(".projacktor-dl-poster-btn");
             doFocus(poster);
           } else if (dir === "left") {
             if (btnIndex > 0) {
               doFocus(cardButtons[btnIndex - 1]);
             } else if (cardIndex > 0) {
-              // Переход к последней кнопке предыдущей карточки
               const prevCard = cards[cardIndex - 1];
               const prevBtns = prevCard.querySelectorAll<HTMLElement>(
                 ".projacktor-dl-card-btns .projacktor-dl-btn-play, .projacktor-dl-card-btns .projacktor-dl-btn-icon, .projacktor-dl-card-btns [tabindex='0']"
@@ -310,7 +278,6 @@ export const LibraryView: FC<LibraryViewProps> = memo(
             if (btnIndex !== -1 && btnIndex < cardButtons.length - 1) {
               doFocus(cardButtons[btnIndex + 1]);
             } else if (cardIndex < cards.length - 1) {
-              // Переход к первой кнопке следующей карточки
               const nextCard = cards[cardIndex + 1];
               const nextBtn = nextCard.querySelector<HTMLElement>(
                 ".projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0']"
@@ -320,7 +287,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
           }
         }
       },
-      [episodesModalItem]
+      []
     );
 
     // Слушатель событий Decky onGamepadDirection
@@ -348,7 +315,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
     useEffect(() => {
       const un = subscribeControllerInput((e) => {
         if (!e.pressed) return;
-        if (isModalOpen() || episodesModalItem) return;
+        if (isModalOpen()) return;
 
         const isUp =
           e.button === RawButton.DPAD_UP ||
@@ -380,7 +347,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
         else if (isRight) handleDirection("right");
       });
       return un;
-    }, [handleDirection, episodesModalItem]);
+    }, [handleDirection]);
 
     // Слушатель клавиш стрелок клавиатуры
     useEffect(() => {
@@ -389,7 +356,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
       const doc = getActiveDocument(root);
 
       const handleKeyDown = (e: KeyboardEvent) => {
-        if (isModalOpen() || episodesModalItem) return;
+        if (isModalOpen()) return;
         const active = doc?.activeElement;
         if (!active || !root.contains(active)) return;
 
@@ -418,14 +385,10 @@ export const LibraryView: FC<LibraryViewProps> = memo(
         doc?.removeEventListener?.("keydown", handleKeyDown, true);
         window.removeEventListener("keydown", handleKeyDown, true);
       };
-    }, [handleDirection, episodesModalItem]);
-
-    const activeEpisodes = episodesModalItem ? episodesMap[episodesModalItem.id] || [] : [];
-    const isActiveEpisodesLoading = episodesModalItem
-      ? !!episodesLoading[episodesModalItem.id]
-      : false;
+    }, [handleDirection]);
 
     return (
+
       <Focusable
         ref={rootRef}
         noFocusRing
@@ -624,148 +587,8 @@ export const LibraryView: FC<LibraryViewProps> = memo(
           </div>
         )}
 
-        {/* Модальное окно серий для сериалов */}
-        {episodesModalItem && (
-          <Focusable
-            className="projacktor-episodes-modal-overlay projacktor-modal-root"
-            noFocusRing
-            onButtonDown={(e: any) => {
-              const btn = e?.button ?? e?.detail?.button;
-              if (btn === 1) {
-                // B — закрыть модалку, не выходить из плагина
-                setEpisodesModalItem(null);
-                return false;
-              }
-            }}
-            onGamepadDirection={() => false}
-            onClick={(e: any) => {
-              if (e.target === e.currentTarget) setEpisodesModalItem(null);
-            }}
-          >
-            <Focusable
-              className="projacktor-episodes-modal-box"
-              noFocusRing
-              flow-children="vertical"
-              onButtonDown={(e: any) => {
-                const btn = e?.button ?? e?.detail?.button;
-                if (btn === 1) {
-                  setEpisodesModalItem(null);
-                  return false;
-                }
-              }}
-            >
-              <div className="projacktor-episodes-modal-header">
-                <div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>
-                    {episodesModalItem.title}
-                  </div>
-                  <div style={{ fontSize: 12, color: "var(--ds-text-dim)", marginTop: 2 }}>
-                    Выборочная загрузка и онлайн просмотр серий
-                  </div>
-                </div>
-              </div>
-
-              <div className="projacktor-episodes-modal-list">
-                {isActiveEpisodesLoading ? (
-                  <div style={{ padding: "30px 0", textAlign: "center", color: "var(--ds-text-dim)", fontSize: 13 }}>
-                    <FaSpinner style={{ animation: "projacktor-spin 0.9s linear infinite", marginRight: 8 }} />
-                    Загрузка серий из торрента...
-                  </div>
-                ) : activeEpisodes.length === 0 ? (
-                  <div style={{ padding: "30px 0", textAlign: "center", color: "var(--ds-text-dim)", fontSize: 13 }}>
-                    Серии пока не найдены. Если торрент только добавлен, подождите несколько секунд подключения к раздаче.
-                  </div>
-                ) : (
-                  activeEpisodes.map((ep: EpisodeItem) => {
-                    const isEpCompleted =
-                      ep.downloaded || (ep.size > 0 && ep.completed >= ep.size);
-                    const isEpPartial = ep.completed > 0 && !isEpCompleted;
-
-                    return (
-                      <Focusable
-                        key={ep.index}
-                        noFocusRing
-                        className="projacktor-episode-row"
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          padding: "10px 14px",
-                          background: "var(--ds-surface)",
-                          border: "1px solid var(--ds-border)",
-                          borderRadius: 0,
-                        }}
-                        onButtonDown={(e: any) => {
-                          const btn = e?.button ?? e?.detail?.button;
-                          if (btn === 1) {
-                            setEpisodesModalItem(null);
-                            return false;
-                          }
-                        }}
-                      >
-                        <div style={{ flex: 1, minWidth: 0, marginRight: 12 }}>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={ep.name}>
-                            <span style={{ color: "var(--ds-accent)", marginRight: 6 }}>#{ep.index + 1}</span>
-                            {ep.name}
-                          </div>
-                          <div style={{ fontSize: 11, color: "var(--ds-text-dim)", marginTop: 2 }}>
-                            {ep.size > 0 ? formatBytes(ep.size) : ""}
-                            {isEpCompleted && (
-                              <span style={{ color: "var(--ds-success)", marginLeft: 8, fontWeight: 600 }}>
-                                ✓ Скачано
-                              </span>
-                            )}
-                            {isEpPartial && (
-                              <span style={{ color: "var(--ds-accent)", marginLeft: 8 }}>
-                                {formatBytes(ep.completed)} / {formatBytes(ep.size)} (
-                                {((ep.completed / ep.size) * 100).toFixed(0)}%)
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        <Focusable flow-children="horizontal" noFocusRing style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                          <Focusable
-                            className={`ds-btn ds-btn--compact ${isEpCompleted ? "ds-btn--primary" : ""}`}
-                            noFocusRing
-                            onActivate={() => watchOnline(episodesModalItem, ep.index)}
-                            onClick={() => watchOnline(episodesModalItem, ep.index)}
-                            title={isEpCompleted ? "Смотреть файл" : "Смотреть онлайн"}
-                            onButtonDown={(e: any) => {
-                              const btn = e?.button ?? e?.detail?.button;
-                              if (btn === 1) { setEpisodesModalItem(null); return false; }
-                            }}
-                          >
-                            <FaPlay style={{ fontSize: 10, marginRight: 4 }} />
-                            {isEpCompleted ? "Смотреть" : "Онлайн"}
-                          </Focusable>
-
-                          {!isEpCompleted && (
-                            <Focusable
-                              className="ds-btn ds-btn--compact"
-                              noFocusRing
-                              onActivate={() => downloadEpisode(episodesModalItem, ep)}
-                              onClick={() => downloadEpisode(episodesModalItem, ep)}
-                              title="Скачать эту серию"
-                              onButtonDown={(e: any) => {
-                                const btn = e?.button ?? e?.detail?.button;
-                                if (btn === 1) { setEpisodesModalItem(null); return false; }
-                              }}
-                            >
-                              <FaDownload style={{ fontSize: 10, marginRight: 4 }} />
-                              Скачать
-                            </Focusable>
-                          )}
-                        </Focusable>
-                      </Focusable>
-                    );
-                  })
-                )}
-              </div>
-            </Focusable>
-          </Focusable>
-        )}
       </Focusable>
     );
+
   }
 );
