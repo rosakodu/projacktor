@@ -97,8 +97,10 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
       let nextIdx: number;
       if (curIdx === -1) {
         nextIdx = dir > 0 ? 0 : cards.length - 1;
+      } else if (dir > 0) {
+        nextIdx = curIdx < cards.length - 1 ? curIdx + 1 : 0;
       } else {
-        nextIdx = Math.max(0, Math.min(cards.length - 1, curIdx + dir));
+        nextIdx = curIdx > 0 ? curIdx - 1 : cards.length - 1;
       }
 
       if (nextIdx !== curIdx || curIdx === -1) {
@@ -129,6 +131,7 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
             evt?.stopPropagation?.();
           } catch {}
           triggerPrevSection();
+          return false;
         } else if (btn === 10) {
           // DPAD_DOWN
           try {
@@ -136,6 +139,7 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
             evt?.stopPropagation?.();
           } catch {}
           triggerNextSection();
+          return false;
         } else if (btn === 11) {
           // DPAD_LEFT
           try {
@@ -143,6 +147,7 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
             evt?.stopPropagation?.();
           } catch {}
           stepCard(-1);
+          return false;
         } else if (btn === 12) {
           // DPAD_RIGHT
           try {
@@ -150,7 +155,9 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
             evt?.stopPropagation?.();
           } catch {}
           stepCard(1);
+          return false;
         }
+        return undefined;
       },
       [triggerPrevSection, triggerNextSection, stepCard]
     );
