@@ -15,6 +15,8 @@ import {
 } from "react-icons/fa";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
 import { rpcResumeAllDownloads } from "../api";
+import { getActiveDocument } from "../runtime/activeDoc";
+import { playNavSound } from "../runtime/navSound";
 
 interface AudioTrack {
   index: number;
@@ -92,6 +94,11 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
   const [showControls, setShowControls] = useState<boolean>(true);
   const controlsTimeoutRef = useRef<number | null>(null);
 
+  const subtitleBtnRef = useRef<HTMLDivElement>(null);
+  const audioBtnRef = useRef<HTMLDivElement>(null);
+  const subtitleMenuRef = useRef<HTMLDivElement>(null);
+  const audioMenuRef = useRef<HTMLDivElement>(null);
+
   const showAudioMenuRef = useRef(showAudioMenu);
   showAudioMenuRef.current = showAudioMenu;
 
@@ -100,6 +107,72 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
 
   const closeModalRef = useRef(closeModal);
   closeModalRef.current = closeModal;
+
+  const handleMenuDirection = useCallback((menuEl: HTMLElement | null, dir: "up" | "down") => {
+    if (!menuEl) return;
+    const items = Array.from(menuEl.querySelectorAll<HTMLElement>(".ds-btn, [tabindex='0']"));
+    if (!items.length) return;
+    const doc = getActiveDocument(menuEl) || document;
+    const active = doc.activeElement as HTMLElement | null;
+    const currentIndex = items.findIndex((el) => el === active || el.contains(active));
+    let nextIndex = 0;
+    if (currentIndex === -1) {
+      nextIndex = dir === "down" ? 0 : items.length - 1;
+    } else if (dir === "down") {
+      nextIndex = currentIndex < items.length - 1 ? currentIndex + 1 : 0;
+    } else {
+      nextIndex = currentIndex > 0 ? currentIndex - 1 : items.length - 1;
+    }
+    const target = items[nextIndex];
+    if (target) {
+      doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+      target.focus();
+      target.classList.add("gpfocus");
+      playNavSound();
+    }
+  }, []);
+
+  // Авто-фокус при открытии меню субтитров
+  useEffect(() => {
+    if (showSubtitleMenu) {
+      const t = setTimeout(() => {
+        const menuEl = subtitleMenuRef.current;
+        if (!menuEl) return;
+        const doc = getActiveDocument(menuEl) || document;
+        const activeItem =
+          menuEl.querySelector<HTMLElement>("[data-selected='true']") ||
+          menuEl.querySelector<HTMLElement>(".ds-btn, [tabindex='0']");
+        if (activeItem) {
+          doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+          activeItem.focus();
+          activeItem.classList.add("gpfocus");
+        }
+      }, 60);
+      return () => clearTimeout(t);
+    }
+    return undefined;
+  }, [showSubtitleMenu]);
+
+  // Авто-фокус при открытии меню аудиодорожек
+  useEffect(() => {
+    if (showAudioMenu) {
+      const t = setTimeout(() => {
+        const menuEl = audioMenuRef.current;
+        if (!menuEl) return;
+        const doc = getActiveDocument(menuEl) || document;
+        const activeItem =
+          menuEl.querySelector<HTMLElement>("[data-selected='true']") ||
+          menuEl.querySelector<HTMLElement>(".ds-btn, [tabindex='0']");
+        if (activeItem) {
+          doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+          activeItem.focus();
+          activeItem.classList.add("gpfocus");
+        }
+      }, 60);
+      return () => clearTimeout(t);
+    }
+    return undefined;
+  }, [showAudioMenu]);
 
   // Auto-hide controls after 15 seconds of inactivity
   const resetControlsTimer = useCallback(() => {
@@ -136,6 +209,14 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
     setSelectedSubtitle(trackIndex);
     setShowSubtitleMenu(false);
     resetControlsTimer();
+    setTimeout(() => {
+      if (subtitleBtnRef.current) {
+        const doc = getActiveDocument(subtitleBtnRef.current) || document;
+        doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+        subtitleBtnRef.current.focus();
+        subtitleBtnRef.current.classList.add("gpfocus");
+      }
+    }, 50);
   }, [resetControlsTimer]);
 
   useEffect(() => {
@@ -227,6 +308,14 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
     setVideoTime(0);
     setStreamUrl(getStreamUrl(cur, trackIndex));
     resetControlsTimer();
+    setTimeout(() => {
+      if (audioBtnRef.current) {
+        const doc = getActiveDocument(audioBtnRef.current) || document;
+        doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+        audioBtnRef.current.focus();
+        audioBtnRef.current.classList.add("gpfocus");
+      }
+    }, 50);
   }, [baseTime, getStreamUrl, resetControlsTimer]);
 
   const seekTo = (targetSec: number) => {
@@ -314,8 +403,17 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
       if (!e.pressed) return;
       const now = Date.now();
 
-      // Кнопка A (0): Воспроизведение / Пауза
+      // Кнопка A (0): Воспроизведение / Пауза или выбор в меню
       if (e.button === RawButton.A || e.button === 0) {
+        if (showAudioMenuRef.current || showSubtitleMenuRef.current) {
+          const activeMenu = showAudioMenuRef.current ? audioMenuRef.current : subtitleMenuRef.current;
+          const doc = getActiveDocument(activeMenu) || document;
+          const active = doc.activeElement as HTMLElement | null;
+          if (active && activeMenu && activeMenu.contains(active)) {
+            active.click();
+          }
+          return;
+        }
         if (now - lastToggleAt < 250) return;
         lastToggleAt = now;
         togglePlay();
@@ -330,10 +428,26 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
           setShowAudioMenu(false);
           setShowControls(true);
           resetControlsTimer();
+          setTimeout(() => {
+            if (audioBtnRef.current) {
+              const doc = getActiveDocument(audioBtnRef.current) || document;
+              doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+              audioBtnRef.current.focus();
+              audioBtnRef.current.classList.add("gpfocus");
+            }
+          }, 50);
         } else if (showSubtitleMenuRef.current) {
           setShowSubtitleMenu(false);
           setShowControls(true);
           resetControlsTimer();
+          setTimeout(() => {
+            if (subtitleBtnRef.current) {
+              const doc = getActiveDocument(subtitleBtnRef.current) || document;
+              doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+              subtitleBtnRef.current.focus();
+              subtitleBtnRef.current.classList.add("gpfocus");
+            }
+          }, 50);
         } else if (closeModalRef.current) {
           closeModalRef.current();
         }
@@ -388,13 +502,29 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
         return;
       }
 
-      // D-pad Вверх (4), Стик Вверх (20): Громкость +5%
+      // D-pad Вверх (4), Стик Вверх (20): Навигация по меню или Громкость +5%
       if (
         e.button === RawButton.DPAD_UP ||
         e.button === RawButton.LEFTSTICK_UP ||
         e.button === 4 ||
         e.button === 20
       ) {
+        if (showAudioMenuRef.current) {
+          if (now - lastVolumeAt < 120) return;
+          lastVolumeAt = now;
+          handleMenuDirection(audioMenuRef.current, "up");
+          setShowControls(true);
+          resetControlsTimer();
+          return;
+        }
+        if (showSubtitleMenuRef.current) {
+          if (now - lastVolumeAt < 120) return;
+          lastVolumeAt = now;
+          handleMenuDirection(subtitleMenuRef.current, "up");
+          setShowControls(true);
+          resetControlsTimer();
+          return;
+        }
         if (now - lastVolumeAt < 120) return;
         lastVolumeAt = now;
         changeVolume(0.05);
@@ -403,13 +533,29 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
         return;
       }
 
-      // D-pad Вниз (6), Стик Вниз (21): Громкость -5%
+      // D-pad Вниз (6), Стик Вниз (21): Навигация по меню или Громкость -5%
       if (
         e.button === RawButton.DPAD_DOWN ||
         e.button === RawButton.LEFTSTICK_DOWN ||
         e.button === 6 ||
         e.button === 21
       ) {
+        if (showAudioMenuRef.current) {
+          if (now - lastVolumeAt < 120) return;
+          lastVolumeAt = now;
+          handleMenuDirection(audioMenuRef.current, "down");
+          setShowControls(true);
+          resetControlsTimer();
+          return;
+        }
+        if (showSubtitleMenuRef.current) {
+          if (now - lastVolumeAt < 120) return;
+          lastVolumeAt = now;
+          handleMenuDirection(subtitleMenuRef.current, "down");
+          setShowControls(true);
+          resetControlsTimer();
+          return;
+        }
         if (now - lastVolumeAt < 120) return;
         lastVolumeAt = now;
         changeVolume(-0.05);
@@ -432,10 +578,26 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
           setShowAudioMenu(false);
           setShowControls(true);
           resetControlsTimer();
+          setTimeout(() => {
+            if (audioBtnRef.current) {
+              const doc = getActiveDocument(audioBtnRef.current) || document;
+              doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+              audioBtnRef.current.focus();
+              audioBtnRef.current.classList.add("gpfocus");
+            }
+          }, 50);
         } else if (showSubtitleMenuRef.current) {
           setShowSubtitleMenu(false);
           setShowControls(true);
           resetControlsTimer();
+          setTimeout(() => {
+            if (subtitleBtnRef.current) {
+              const doc = getActiveDocument(subtitleBtnRef.current) || document;
+              doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+              subtitleBtnRef.current.focus();
+              subtitleBtnRef.current.classList.add("gpfocus");
+            }
+          }, 50);
         } else if (closeModalRef.current) {
           closeModalRef.current();
         }
@@ -449,6 +611,15 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
 
       if (e.key === " " || e.key === "Enter" || e.key === "k" || e.key === "K") {
         e.preventDefault();
+        if (showAudioMenuRef.current || showSubtitleMenuRef.current) {
+          const activeMenu = showAudioMenuRef.current ? audioMenuRef.current : subtitleMenuRef.current;
+          const doc = getActiveDocument(activeMenu) || document;
+          const active = doc.activeElement as HTMLElement | null;
+          if (active && activeMenu && activeMenu.contains(active)) {
+            active.click();
+          }
+          return;
+        }
         togglePlay();
       } else if (e.key === "j" || e.key === "J") {
         e.preventDefault();
@@ -458,9 +629,25 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
         seekRelative(15);
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
+        if (showAudioMenuRef.current) {
+          handleMenuDirection(audioMenuRef.current, "up");
+          return;
+        }
+        if (showSubtitleMenuRef.current) {
+          handleMenuDirection(subtitleMenuRef.current, "up");
+          return;
+        }
         changeVolume(0.05);
       } else if (e.key === "ArrowDown") {
         e.preventDefault();
+        if (showAudioMenuRef.current) {
+          handleMenuDirection(audioMenuRef.current, "down");
+          return;
+        }
+        if (showSubtitleMenuRef.current) {
+          handleMenuDirection(subtitleMenuRef.current, "down");
+          return;
+        }
         changeVolume(-0.05);
       } else if (e.key === "y" || e.key === "Y") {
         setShowAudioMenu((prev) => !prev);
@@ -634,6 +821,9 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
           }
         }}
         onGamepadDirection={(evt: any) => {
+          if (showAudioMenuRef.current || showSubtitleMenuRef.current) {
+            return;
+          }
           const btn = evt?.detail?.button;
           if (btn === 9) {
             // DIR_UP - звук +
@@ -936,6 +1126,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
           <div style={{ display: "flex", alignItems: "center", gap: 10, position: "relative", zIndex: 2 }}>
             {/* Кнопка выбора субтитров */}
             <Focusable
+              ref={subtitleBtnRef}
               className="ds-btn ds-btn--compact ds-btn--icon"
               onActivate={() => {
                 setShowSubtitleMenu((prev) => !prev);
@@ -960,7 +1151,21 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
 
             {showSubtitleMenu && (
               <Focusable
+                ref={subtitleMenuRef}
                 flow-children="column"
+                onGamepadDirection={(evt: any) => {
+                  const btn = evt?.detail?.button;
+                  if (btn === 9) {
+                    try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                    handleMenuDirection(subtitleMenuRef.current, "up");
+                    return false;
+                  } else if (btn === 10) {
+                    try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                    handleMenuDirection(subtitleMenuRef.current, "down");
+                    return false;
+                  }
+                  return undefined;
+                }}
                 style={{
                   position: "absolute",
                   bottom: "100%",
@@ -983,6 +1188,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
                 </div>
                 <Focusable
                   className="ds-btn ds-btn--compact"
+                  data-selected={selectedSubtitle === null ? "true" : undefined}
                   onActivate={() => selectSubtitleTrack(null)}
                   onClick={() => selectSubtitleTrack(null)}
                   style={{
@@ -1008,6 +1214,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
                     <Focusable
                       key={sub.index}
                       className="ds-btn ds-btn--compact"
+                      data-selected={sub.index === selectedSubtitle ? "true" : undefined}
                       onActivate={() => selectSubtitleTrack(sub.index)}
                       onClick={() => selectSubtitleTrack(sub.index)}
                       style={{
@@ -1032,6 +1239,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
 
             {/* Кнопка выбора аудиодорожки */}
             <Focusable
+              ref={audioBtnRef}
               className="ds-btn ds-btn--compact ds-btn--icon"
               onActivate={() => {
                 setShowAudioMenu((prev) => !prev);
@@ -1055,7 +1263,21 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
 
             {showAudioMenu && (
               <Focusable
+                ref={audioMenuRef}
                 flow-children="column"
+                onGamepadDirection={(evt: any) => {
+                  const btn = evt?.detail?.button;
+                  if (btn === 9) {
+                    try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                    handleMenuDirection(audioMenuRef.current, "up");
+                    return false;
+                  } else if (btn === 10) {
+                    try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                    handleMenuDirection(audioMenuRef.current, "down");
+                    return false;
+                  }
+                  return undefined;
+                }}
                 style={{
                   position: "absolute",
                   bottom: "100%",
@@ -1085,6 +1307,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
                     <Focusable
                       key={track.index}
                       className="ds-btn ds-btn--compact"
+                      data-selected={track.index === selectedAudio ? "true" : undefined}
                       onActivate={() => selectAudioTrack(track.index)}
                       onClick={() => selectAudioTrack(track.index)}
                       style={{

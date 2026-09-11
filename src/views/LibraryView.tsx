@@ -213,14 +213,8 @@ export const LibraryView: FC<LibraryViewProps> = memo(
           scrollCardHorizontal(rowRef.current, card || target);
         };
 
-        // Если пустая библиотека — переход вверх в TabBar
+        // Если пустая библиотека — переход вверх заблокирован
         if (active.classList.contains("projacktor-empty-lib") || active.closest(".projacktor-empty-lib")) {
-          if (dir === "up") {
-            const activeTabEl = doc.querySelector<HTMLElement>(
-              ".projacktor-tab-item.active, [role='tab'][aria-selected='true']"
-            );
-            if (activeTabEl) doFocus(activeTabEl);
-          }
           return;
         }
 
@@ -238,25 +232,21 @@ export const LibraryView: FC<LibraryViewProps> = memo(
 
         if (isPoster) {
           if (dir === "left") {
-            if (cardIndex > 0) {
-              const prevPoster = cards[cardIndex - 1].querySelector<HTMLElement>(".projacktor-dl-poster-btn");
-              doFocus(prevPoster);
-            }
+            const targetIndex = cardIndex > 0 ? cardIndex - 1 : cards.length - 1;
+            const prevPoster = cards[targetIndex].querySelector<HTMLElement>(".projacktor-dl-poster-btn");
+            doFocus(prevPoster);
           } else if (dir === "right") {
-            if (cardIndex < cards.length - 1) {
-              const nextPoster = cards[cardIndex + 1].querySelector<HTMLElement>(".projacktor-dl-poster-btn");
-              doFocus(nextPoster);
-            }
+            const targetIndex = cardIndex < cards.length - 1 ? cardIndex + 1 : 0;
+            const nextPoster = cards[targetIndex].querySelector<HTMLElement>(".projacktor-dl-poster-btn");
+            doFocus(nextPoster);
           } else if (dir === "down") {
             const playBtn = currentCard.querySelector<HTMLElement>(
               ".projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0']"
             );
             doFocus(playBtn);
           } else if (dir === "up") {
-            const activeTabEl = doc.querySelector<HTMLElement>(
-              ".projacktor-tab-item.active, [role='tab'][aria-selected='true']"
-            );
-            if (activeTabEl) doFocus(activeTabEl);
+            // Заблокировано: не выходим в табы через D-pad вверх
+            return;
           }
         } else if (isButton) {
           const cardButtons = Array.from(
@@ -272,8 +262,9 @@ export const LibraryView: FC<LibraryViewProps> = memo(
           } else if (dir === "left") {
             if (btnIndex > 0) {
               doFocus(cardButtons[btnIndex - 1]);
-            } else if (cardIndex > 0) {
-              const prevCard = cards[cardIndex - 1];
+            } else {
+              const prevCardIndex = cardIndex > 0 ? cardIndex - 1 : cards.length - 1;
+              const prevCard = cards[prevCardIndex];
               const prevBtns = prevCard.querySelectorAll<HTMLElement>(
                 ".projacktor-dl-card-btns .projacktor-dl-btn-play, .projacktor-dl-card-btns .projacktor-dl-btn-icon, .projacktor-dl-card-btns [tabindex='0']"
               );
@@ -284,8 +275,9 @@ export const LibraryView: FC<LibraryViewProps> = memo(
           } else if (dir === "right") {
             if (btnIndex !== -1 && btnIndex < cardButtons.length - 1) {
               doFocus(cardButtons[btnIndex + 1]);
-            } else if (cardIndex < cards.length - 1) {
-              const nextCard = cards[cardIndex + 1];
+            } else {
+              const nextCardIndex = cardIndex < cards.length - 1 ? cardIndex + 1 : 0;
+              const nextCard = cards[nextCardIndex];
               const nextBtn = nextCard.querySelector<HTMLElement>(
                 ".projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0']"
               );
@@ -304,16 +296,21 @@ export const LibraryView: FC<LibraryViewProps> = memo(
         if (btn === 9) {
           try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
           handleDirection("up");
+          return false;
         } else if (btn === 10) {
           try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
           handleDirection("down");
+          return false;
         } else if (btn === 11) {
           try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
           handleDirection("left");
+          return false;
         } else if (btn === 12) {
           try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
           handleDirection("right");
+          return false;
         }
+        return undefined;
       },
       [handleDirection]
     );
