@@ -595,7 +595,30 @@ class DownloadManager:
             elif raw_status == 'paused':
                 new_status = 'paused'
             elif raw_status == 'error':
-                new_status = 'error'
+                err_code = str(t.get('errorCode', ''))
+                err_msg = t.get('errorMessage', '')
+                # aria2 errorCode 13: "File exists, but a control file(*.aria2) does not exist."
+                # Это означает, что готовый файл уже присутствует на диске целиком.
+                row_dir = row['download_dir']
+                is_file_ready = err_code == '13' or 'exists, but a control file' in err_msg
+                if not is_file_ready and row_dir and os.path.isdir(row_dir):
+                    video_exts = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov'}
+                    has_aria2 = any(f.endswith('.aria2') for _, _, fs in os.walk(row_dir) for f in fs)
+                    has_video = any(os.path.splitext(f)[1].lower() in video_exts for _, _, fs in os.walk(row_dir) for f in fs)
+                    if not has_aria2 and has_video:
+                        is_file_ready = True
+                
+                if is_file_ready:
+                    new_status = 'completed'
+                    prog = 100.0
+                    down_speed = 0
+                    up_speed = 0
+                    if total <= 0:
+                        total = int(t.get('totalLength', 0))
+                    if completed <= 0:
+                        completed = total
+                else:
+                    new_status = 'error'
             else:
                 new_status = 'queued'
                 
