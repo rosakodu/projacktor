@@ -104,7 +104,14 @@ else:
 
 _db_projacktor = os.path.join(CONFIG_DIR, "projacktor.db")
 _db_legacy = os.path.join(CONFIG_DIR, "projactor.db")
-DB_PATH = _db_legacy if os.path.isfile(_db_legacy) and not os.path.isfile(_db_projacktor) else _db_projacktor
+if os.path.isfile(_db_legacy) and os.path.getsize(_db_legacy) > 0:
+    if not os.path.isfile(_db_projacktor) or os.path.getsize(_db_projacktor) == 0:
+        try:
+            shutil.copy2(_db_legacy, _db_projacktor)
+            logger.info(f"Migrated legacy database {_db_legacy} -> {_db_projacktor}")
+        except Exception as e:
+            logger.error(f"Failed to migrate legacy db: {e}")
+DB_PATH = _db_projacktor if os.path.isfile(_db_projacktor) and os.path.getsize(_db_projacktor) > 0 else _db_legacy
 SETTINGS_PATH = os.path.join(CONFIG_DIR, "settings.json")
 
 # Default Video path: Projacktor (fall back to legacy paths if they exist)
@@ -483,7 +490,7 @@ class DownloadManager:
         db = get_db()
         cursor = db.cursor()
         
-        cursor.execute("SELECT id, aria2_gid, status, download_dir, media_id FROM downloads WHERE status NOT IN ('completed', 'error')")
+        cursor.execute("SELECT id, aria2_gid, status, download_dir, media_id, magnet_uri FROM downloads WHERE status NOT IN ('completed', 'error')")
         for row in cursor.fetchall():
             row_id = row['id']
             gid = row['aria2_gid']
@@ -506,6 +513,27 @@ class DownloadManager:
                         cursor.execute("UPDATE downloads SET aria2_gid=? WHERE id=?", (new_gid, row_id))
                         gid = new_gid
                         t = cand
+                        break
+
+            # Fallback: re-link if aria2 restarted and restored tasks under new GIDs
+            if not t:
+                magnet = (row['magnet_uri'] or "").lower()
+                row_dir = os.path.normpath(row['download_dir']) if row['download_dir'] else ""
+                target_hash = ""
+                if "xt=urn:btih:" in magnet:
+                    try:
+                        target_hash = magnet.split("xt=urn:btih:")[1].split("&")[0].strip()
+                    except: pass
+
+                for cand in all_tasks:
+                    cand_hash = cand.get('infoHash', '').lower()
+                    cand_dir = os.path.normpath(cand.get('dir', '')) if cand.get('dir') else ""
+                    if (target_hash and cand_hash == target_hash) or (row_dir and cand_dir == row_dir):
+                        new_gid = cand['gid']
+                        cursor.execute("UPDATE downloads SET aria2_gid=? WHERE id=?", (new_gid, row_id))
+                        gid = new_gid
+                        t = cand
+                        logger.info(f"Re-linked download id={row_id} to new aria2 GID={new_gid}")
                         break
             
             if not t:
@@ -2155,6 +2183,11 @@ class Plugin:
             return False
 
     async def get_library(self):
+        if self.dm:
+            try:
+                self.dm._update_db()
+            except Exception as e:
+                logger.error(f"get_library _update_db error: {e}")
         db = get_db()
         rows = db.execute("""
             SELECT m.*, 
