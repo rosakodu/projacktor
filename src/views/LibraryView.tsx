@@ -43,6 +43,19 @@ export const LibraryView: FC<LibraryViewProps> = memo(
       watchOnline,
     } = useLibrary(onPlayVideo);
 
+    const getParentWindow = (): EventTarget => {
+      try {
+        const win =
+          (window as any).SteamUIStore?.WindowStore?.GamepadUIMainWindowInstance?.BrowserWindow ||
+          (window as any).SteamUIStore?.GetFocusedWindowInstance?.()?.BrowserWindow ||
+          document.defaultView ||
+          window;
+        return win as EventTarget;
+      } catch {
+        return window as EventTarget;
+      }
+    };
+
     // Открытие модалки серий через нативный Decky showModal — B кнопка работает автоматически
     const handleOpenEpisodes = useCallback((item: LibraryItem) => {
       lastInteractedItemIdRef.current = item.id;
@@ -77,7 +90,8 @@ export const LibraryView: FC<LibraryViewProps> = memo(
           onWatchOnline={(i, epIdx) => { close(); watchOnline(i, epIdx); }}
           onDownloadEpisode={(i, ep) => { downloadEpisode(i, ep); }}
         />,
-        window
+        getParentWindow(),
+        { bHideActionIcons: true }
       );
     }, [watchOnline, downloadEpisode]);
 

@@ -1,8 +1,9 @@
 import { FC, useState, useEffect, useRef, useCallback } from "react";
-import { ModalRoot, Focusable } from "@decky/ui";
+import { ModalRoot, Focusable, Spinner } from "@decky/ui";
 import { FaPlay, FaDownload, FaSpinner } from "react-icons/fa";
 import { EpisodeItem, LibraryItem } from "../types";
 import { formatBytes, rpcGetEpisodes, sortEpisodes } from "../api";
+import { PROJACKTOR_STYLES } from "../styles";
 
 interface EpisodesModalProps {
   item: LibraryItem;
@@ -21,6 +22,10 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
   const [episodes, setEpisodes] = useState<EpisodeItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [downloadingEpIdx, setDownloadingEpIdx] = useState<number | null>(null);
+
+  const title = item.title || "Без названия";
+  const date = item.year || "";
+  const year = date ? date.split("-")[0] : "";
 
   const fetchEpisodes = useCallback(async (showSpinner = true) => {
     if (showSpinner) setLoading(true);
@@ -90,171 +95,289 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
       bHideCloseIcon={true}
     >
       <Focusable
-        noFocusRing
-        style={{ display: "flex", flexDirection: "column", gap: 0 }}
+        className="projacktor-modal-root"
+        style={{ margin: "auto", alignSelf: "center" }}
         onCancelButton={closeModal}
       >
-        {/* Шапка */}
+        <style>{PROJACKTOR_STYLES}</style>
+
+        {/* Clean Info Header — стиль 1-в-1 как в MovieModal */}
         <div
           style={{
-            padding: "10px 14px 8px",
+            padding: "8px 12px 6px 12px",
             borderBottom: "1px solid rgba(255,255,255,0.08)",
+            flexShrink: 0,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 12,
           }}
         >
-          <div style={{ fontSize: 15, fontWeight: 700, color: "#fff" }}>
-            {item.title}
-          </div>
-          <div style={{ fontSize: 11, color: "var(--ds-text-dim)", marginTop: 2 }}>
-            Выбор серии · нажмите B для закрытия
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
+            {/* Название */}
+            <div
+              style={{
+                fontSize: 14,
+                fontWeight: 700,
+                color: "#fff",
+                lineHeight: 1.2,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {title}
+            </div>
+
+            {/* Мета-информация (Год, Тип медиа, Качество) */}
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                fontSize: 10.5,
+                opacity: 0.85,
+                alignItems: "center",
+              }}
+            >
+              {year && <span>{year}</span>}
+              <span
+                style={{
+                  textTransform: "uppercase",
+                  fontSize: 9,
+                  padding: "1px 4px",
+                  background: "rgba(255,255,255,0.1)",
+                  fontWeight: 600,
+                  letterSpacing: 0.4,
+                }}
+              >
+                {item.media_type === "tv" ? "Сериал" : "Фильм"}
+              </span>
+              {item.effective_quality && (
+                <span
+                  style={{
+                    fontSize: 9,
+                    padding: "1px 4px",
+                    background: "rgba(102, 192, 244, 0.15)",
+                    color: "var(--ds-accent)",
+                    fontWeight: 600,
+                  }}
+                >
+                  {item.effective_quality}
+                </span>
+              )}
+            </div>
+
+            {/* Компактное 2-строчное описание */}
+            {item.overview && (
+              <div
+                style={{
+                  fontSize: 10.5,
+                  lineHeight: 1.25,
+                  color: "rgba(255,255,255,0.7)",
+                  display: "-webkit-box",
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: "vertical",
+                  overflow: "hidden",
+                  maxHeight: 28,
+                }}
+              >
+                {item.overview}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Список серий */}
+        {/* Episodes Section — стиль 1-в-1 как в MovieModal */}
         <div
-          ref={listRef}
-          style={{ maxHeight: 380, overflowY: "auto", padding: "4px 0" }}
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            minHeight: 120,
+            overflow: "hidden",
+            padding: "4px 12px 8px 12px",
+          }}
         >
-          {loading ? (
-            <div
-              style={{
-                padding: "28px 0",
-                textAlign: "center",
-                color: "var(--ds-text-dim)",
-                fontSize: 13,
-              }}
-            >
-              <FaSpinner
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              marginBottom: 4,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              color: "#fff",
+            }}
+          >
+            <span>Серии</span>
+            {episodes.length > 0 && (
+              <span style={{ fontSize: 10, opacity: 0.5 }}>Найдено: {episodes.length}</span>
+            )}
+          </div>
+
+          <div
+            ref={listRef}
+            style={{
+              flex: 1,
+              overflowY: "auto",
+              overflowX: "hidden",
+              minHeight: 0,
+              padding: "2px 6px",
+            }}
+          >
+            {loading ? (
+              <div
                 style={{
-                  animation: "projacktor-spin 0.9s linear infinite",
-                  marginRight: 8,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: 28,
+                  gap: 8,
                 }}
-              />
-              Загрузка серий из торрента...
-            </div>
-          ) : episodes.length === 0 ? (
-            <div
-              style={{
-                padding: "24px 16px",
-                textAlign: "center",
-                color: "var(--ds-text-dim)",
-                fontSize: 13,
-              }}
-            >
-              <div>Серии пока не найдены. Если торрент только добавлен, подождите несколько секунд подключения к раздаче.</div>
-              <Focusable
-                className="ds-btn ds-btn--compact ds-btn--primary"
-                noFocusRing
-                onActivate={() => fetchEpisodes(true)}
-                onClick={() => fetchEpisodes(true)}
-                onCancelButton={closeModal}
-                style={{ marginTop: 12 }}
               >
-                Проверить снова
-              </Focusable>
-            </div>
-          ) : (
-            episodes.map((ep: EpisodeItem, idx: number) => {
-              const isEpCompleted =
-                ep.downloaded || (ep.size > 0 && ep.completed >= ep.size);
-              const isEpPartial = ep.completed > 0 && !isEpCompleted;
-              const isEpDownloading = downloadingEpIdx === ep.index;
-
-              return (
-                <Focusable
-                  key={ep.index}
-                  noFocusRing
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    padding: "9px 14px",
-                    borderBottom: "1px solid rgba(255,255,255,0.05)",
-                  }}
-                  onCancelButton={closeModal}
-                >
-                  {/* Информация о серии: отображаем #1, #2, #3 по порядку */}
-                  <div style={{ flex: 1, minWidth: 0, marginRight: 12 }}>
-                    <div
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 600,
-                        color: "#fff",
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
-                      title={ep.name}
-                    >
-                      <span style={{ color: "var(--ds-accent)", marginRight: 6 }}>
-                        #{idx + 1}
-                      </span>
-                      {ep.name}
-                    </div>
-                    <div
-                      style={{ fontSize: 11, color: "var(--ds-text-dim)", marginTop: 2 }}
-                    >
-                      {ep.size > 0 ? formatBytes(ep.size) : ""}
-                      {isEpCompleted && (
-                        <span
-                          style={{
-                            color: "var(--ds-success)",
-                            marginLeft: 8,
-                            fontWeight: 600,
-                          }}
-                        >
-                          ✓ Скачано
-                        </span>
-                      )}
-                      {isEpPartial && (
-                        <span style={{ color: "var(--ds-accent)", marginLeft: 8 }}>
-                          {formatBytes(ep.completed)} / {formatBytes(ep.size)} (
-                          {((ep.completed / ep.size) * 100).toFixed(0)}%)
-                        </span>
-                      )}
-                    </div>
+                <Spinner />
+                <span style={{ fontSize: 12, opacity: 0.6 }}>Загрузка серий из торрента...</span>
+              </div>
+            ) : episodes.length === 0 ? (
+              <div
+                style={{
+                  textAlign: "center",
+                  padding: "24px 16px",
+                  color: "rgba(255,255,255,0.4)",
+                  fontSize: 12,
+                  lineHeight: "1.4",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 12,
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "#fff", marginBottom: 3 }}>
+                    Серии пока не найдены
                   </div>
-
-                  {/* Кнопки действий */}
-                  <Focusable
-                    flow-children="horizontal"
-                    noFocusRing
-                    style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}
-                    onCancelButton={closeModal}
-                  >
-                    <Focusable
-                      className={`ds-btn ds-btn--compact${isEpCompleted ? " ds-btn--primary" : ""}`}
-                      noFocusRing
-                      onActivate={() => onWatchOnline(item, ep.index)}
-                      onClick={() => onWatchOnline(item, ep.index)}
-                      onCancelButton={closeModal}
-                      title={isEpCompleted ? "Смотреть файл" : "Смотреть онлайн"}
-                    >
-                      <FaPlay style={{ fontSize: 10, marginRight: 4 }} />
-                      {isEpCompleted ? "Смотреть" : "Онлайн"}
-                    </Focusable>
-
-                    {!isEpCompleted && (
-                      <Focusable
-                        className="ds-btn ds-btn--compact"
-                        noFocusRing
-                        onActivate={() => handleDownload(ep)}
-                        onClick={() => handleDownload(ep)}
-                        onCancelButton={closeModal}
-                        title="Скачать эту серию"
-                      >
-                        {isEpDownloading ? (
-                          <FaSpinner style={{ animation: "projacktor-spin 0.9s linear infinite", fontSize: 10, marginRight: 4 }} />
-                        ) : (
-                          <FaDownload style={{ fontSize: 10, marginRight: 4 }} />
-                        )}
-                        Скачать
-                      </Focusable>
-                    )}
-                  </Focusable>
+                  <div>
+                    Если торрент только добавлен, подождите несколько секунд подключения к раздаче.
+                  </div>
+                </div>
+                <Focusable
+                  className="ds-btn ds-btn--primary"
+                  noFocusRing
+                  onActivate={() => fetchEpisodes(true)}
+                  onClick={() => fetchEpisodes(true)}
+                  onCancelButton={closeModal}
+                  style={{ padding: "6px 20px", fontSize: 12 }}
+                >
+                  Проверить снова
                 </Focusable>
-              );
-            })
-          )}
+              </div>
+            ) : (
+              episodes.map((ep: EpisodeItem, idx: number) => {
+                const isEpCompleted =
+                  ep.downloaded || (ep.size > 0 && ep.completed >= ep.size);
+                const isEpPartial = ep.completed > 0 && !isEpCompleted;
+                const isEpDownloading = downloadingEpIdx === ep.index;
+
+                return (
+                  <div
+                    key={ep.index}
+                    className="projacktor-torrent-ep-row"
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "6px 10px",
+                      marginBottom: 4,
+                      background: "rgba(255, 255, 255, 0.04)",
+                      border: "1px solid rgba(255, 255, 255, 0.06)",
+                    }}
+                  >
+                    {/* Информация о серии: нумерация по порядку с #1 */}
+                    <div style={{ flex: 1, minWidth: 0, marginRight: 10 }}>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: "#fff",
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                        title={ep.name}
+                      >
+                        <span style={{ color: "var(--ds-accent)", marginRight: 6 }}>
+                          #{idx + 1}
+                        </span>
+                        {ep.name}
+                      </div>
+                      <div
+                        style={{ fontSize: 10.5, color: "var(--ds-text-dim)", marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}
+                      >
+                        {ep.size > 0 && <span>{formatBytes(ep.size)}</span>}
+                        {isEpCompleted && (
+                          <span
+                            style={{
+                              color: "var(--ds-success)",
+                              fontWeight: 600,
+                            }}
+                          >
+                            ✓ Скачано
+                          </span>
+                        )}
+                        {isEpPartial && (
+                          <span style={{ color: "var(--ds-accent)" }}>
+                            {formatBytes(ep.completed)} / {formatBytes(ep.size)} (
+                            {((ep.completed / ep.size) * 100).toFixed(0)}%)
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Кнопки действий */}
+                    <Focusable
+                      flow-children="horizontal"
+                      noFocusRing
+                      style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}
+                      onCancelButton={closeModal}
+                    >
+                      <Focusable
+                        className={`ds-btn ds-btn--compact${isEpCompleted ? " ds-btn--primary" : ""}`}
+                        noFocusRing
+                        onActivate={() => onWatchOnline(item, ep.index)}
+                        onClick={() => onWatchOnline(item, ep.index)}
+                        onCancelButton={closeModal}
+                        title={isEpCompleted ? "Смотреть файл" : "Смотреть онлайн"}
+                        style={{ padding: "4px 10px", fontSize: 11 }}
+                      >
+                        <FaPlay style={{ fontSize: 9, marginRight: 4 }} />
+                        {isEpCompleted ? "Смотреть" : "Онлайн"}
+                      </Focusable>
+
+                      {!isEpCompleted && (
+                        <Focusable
+                          className="ds-btn ds-btn--compact"
+                          noFocusRing
+                          onActivate={() => handleDownload(ep)}
+                          onClick={() => handleDownload(ep)}
+                          onCancelButton={closeModal}
+                          title="Скачать эту серию"
+                          style={{ padding: "4px 10px", fontSize: 11 }}
+                        >
+                          {isEpDownloading ? (
+                            <FaSpinner style={{ animation: "projacktor-spin 0.9s linear infinite", fontSize: 9, marginRight: 4 }} />
+                          ) : (
+                            <FaDownload style={{ fontSize: 9, marginRight: 4 }} />
+                          )}
+                          Скачать
+                        </Focusable>
+                      )}
+                    </Focusable>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
       </Focusable>
     </ModalRoot>

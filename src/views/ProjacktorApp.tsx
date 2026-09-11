@@ -95,7 +95,8 @@ export const ProjacktorApp: FC = () => {
           onWatchOnline={onWatchOnline}
           onStartMagicBlack={onStartMagicBlack}
         />,
-        getParentWindow()
+        getParentWindow(),
+        { bHideActionIcons: true }
       );
     },
     [handlePlayVideo]

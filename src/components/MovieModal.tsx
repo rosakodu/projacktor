@@ -1,7 +1,7 @@
 import { FC, useState, useEffect, useRef, useCallback } from "react";
 import { ModalRoot, Focusable, Spinner } from "@decky/ui";
 import { toaster } from "@decky/api";
-import { FaPlay, FaDownload, FaList, FaSpinner, FaMoon, FaTimes } from "react-icons/fa";
+import { FaPlay, FaDownload, FaList, FaSpinner, FaMoon } from "react-icons/fa";
 import { PROJACKTOR_STYLES } from "../styles";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
 import { getActiveDocument } from "../runtime/activeDoc";
@@ -441,27 +441,6 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
               </div>
             )}
           </div>
-
-          {closeModal && (
-            <Focusable
-              className="ds-btn ds-btn--compact ds-btn--icon"
-              onClick={closeModal}
-              onActivate={closeModal}
-              title="Закрыть (B)"
-              style={{
-                width: 28,
-                height: 28,
-                borderRadius: "50%",
-                background: "rgba(255,255,255,0.12)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}
-            >
-              <FaTimes size={12} />
-            </Focusable>
-          )}
         </div>
 
         {/* Torrents Section */}
