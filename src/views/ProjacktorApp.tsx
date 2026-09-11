@@ -29,6 +29,18 @@ const TAB_IDS = TABS_CONFIG.map((t) => t.id);
 export const ProjacktorApp: FC = () => {
   const rootRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<string>("movies");
+  const [ready, setReady] = useState(false);
+
+  // Ждём 2 кадра рендера, чтобы <style> полностью применился до показа UI
+  useEffect(() => {
+    let cancelled = false;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!cancelled) setReady(true);
+      });
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   const getParentWindow = (): EventTarget => {
     try {
@@ -120,6 +132,7 @@ export const ProjacktorApp: FC = () => {
 
   // Гарантированная фокусировка при переключении вкладок или потере фокуса
   const ensureContentFocus = useCallback((forceContent = false) => {
+    if (!ready) return false;
     const root = rootRef.current;
     if (!root) return false;
 
@@ -189,7 +202,7 @@ export const ProjacktorApp: FC = () => {
       return true;
     }
     return false;
-  }, [activeTab]);
+  }, [activeTab, ready]);
 
   useEffect(() => {
     ensureContentFocus(false);
@@ -201,7 +214,7 @@ export const ProjacktorApp: FC = () => {
       clearTimeout(t2);
       clearTimeout(t3);
     };
-  }, [activeTab, ensureContentFocus]);
+  }, [activeTab, ready, ensureContentFocus]);
 
   // Зацикленное переключение вкладок через L1/R1 в любой момент
   useEffect(() => {
@@ -244,6 +257,7 @@ export const ProjacktorApp: FC = () => {
         display: "flex",
         flexDirection: "column",
         color: "var(--ds-text, #fff)",
+        opacity: ready ? 1 : 0,
       }}
     >
       <style>{PROJACKTOR_STYLES}</style>
