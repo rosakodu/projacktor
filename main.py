@@ -490,7 +490,7 @@ class DownloadManager:
         db = get_db()
         cursor = db.cursor()
         
-        cursor.execute("SELECT id, aria2_gid, status, download_dir, media_id, magnet_uri FROM downloads WHERE status NOT IN ('completed', 'error')")
+        cursor.execute("SELECT id, aria2_gid, status, download_dir, media_id, magnet_uri FROM downloads WHERE status NOT IN ('completed')")
         for row in cursor.fetchall():
             row_id = row['id']
             gid = row['aria2_gid']
@@ -537,6 +537,43 @@ class DownloadManager:
                         break
             
             if not t:
+                # Проверяем, завершилась ли загрузка на диске (готовый видеофайл без .aria2)
+                row_dir = row['download_dir']
+                if row_dir and os.path.isdir(row_dir):
+                    video_exts = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov'}
+                    has_aria2 = False
+                    found_videos = []
+                    for r_root, _, r_files in os.walk(row_dir):
+                        for r_f in r_files:
+                            if r_f.endswith('.aria2'):
+                                has_aria2 = True
+                            if os.path.splitext(r_f)[1].lower() in video_exts:
+                                fp = os.path.join(r_root, r_f)
+                                try:
+                                    sz = os.path.getsize(fp)
+                                    if sz > 10 * 1024 * 1024:
+                                        found_videos.append((fp, sz))
+                                except: pass
+                    
+                    if found_videos and not has_aria2:
+                        total_sz = sum(sz for _, sz in found_videos)
+                        logger.info(f"Download id={row_id} confirmed complete on disk ({total_sz} bytes), updating DB")
+                        cursor.execute("""
+                            UPDATE downloads 
+                            SET status='completed', progress=100.0, download_speed=0, upload_speed=0,
+                                total_size=CASE WHEN total_size > 0 THEN total_size ELSE ? END,
+                                downloaded_size=CASE WHEN total_size > 0 THEN total_size ELSE ? END,
+                                completed_at=COALESCE(completed_at, CURRENT_TIMESTAMP),
+                                error_message=NULL
+                            WHERE id=?
+                        """, (total_sz, total_sz, row_id))
+                        if row['media_id']:
+                            self._scan_and_add_files(cursor, row['media_id'], row_dir)
+                        continue
+
+                # Если задачи нет в aria2 и файл не готов на диске, сбрасываем скорость
+                if row['status'] == 'downloading':
+                    cursor.execute("UPDATE downloads SET download_speed=0, upload_speed=0, status='paused' WHERE id=?", (row_id,))
                 continue
                 
             total = int(t.get('totalLength', 0))
@@ -2228,6 +2265,12 @@ class Plugin:
                                     sz = 0
                                 files_list.append({"file_path": fp, "file_name": fn, "file_size": sz})
             d['files'] = files_list
+            if files_list and d.get('download_status') not in ('completed',):
+                has_active_aria2 = any(os.path.exists(f['file_path'] + '.aria2') for f in files_list)
+                if not has_active_aria2:
+                    d['download_status'] = 'completed'
+                    d['download_progress'] = 100.0
+                    d['download_speed'] = 0
             result.append(d)
         db.close()
         return result

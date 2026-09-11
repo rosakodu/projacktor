@@ -528,6 +528,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
               const localFilePath = hasLocalFiles && item.files ? item.files[0].file_path : null;
               const isCompleted =
                 item.download_status === "completed" ||
+                (item.download_progress !== undefined && item.download_progress >= 99.9) ||
                 (!isDownloading && !isPaused && hasLocalFiles);
               const canPlayDirect = isCompleted && !!localFilePath;
               const isTv = item.media_type === "tv";
