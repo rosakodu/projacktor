@@ -1,12 +1,30 @@
 import { FC, useState, useRef, useEffect, useCallback } from "react";
 import { ModalRoot, Focusable } from "@decky/ui";
-import { FaPlay, FaPause, FaBackward, FaForward, FaCheck, FaHeadphones, FaTimes } from "react-icons/fa";
+import {
+  FaPlay,
+  FaPause,
+  FaBackward,
+  FaForward,
+  FaCheck,
+  FaHeadphones,
+  FaTimes,
+  FaClosedCaptioning,
+  FaVolumeUp,
+  FaVolumeMute,
+} from "react-icons/fa";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
 
 interface AudioTrack {
   index: number;
   codec: string;
   channels: number;
+  lang: string;
+  title: string;
+}
+
+interface SubtitleTrack {
+  index: number;
+  codec: string;
   lang: string;
   title: string;
 }
@@ -40,6 +58,11 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
   const [volume, setVolume] = useState<number>(1);
   const [audioTracks, setAudioTracks] = useState<AudioTrack[]>([]);
   const [selectedAudio, setSelectedAudio] = useState<number | undefined>(undefined);
+  const [subtitleTracks, setSubtitleTracks] = useState<SubtitleTrack[]>([]);
+  const [selectedSubtitle, setSelectedSubtitle] = useState<number | null>(null);
+  const [showSubtitleMenu, setShowSubtitleMenu] = useState<boolean>(false);
+  const [volumeHudVisible, setVolumeHudVisible] = useState<boolean>(false);
+  const volumeHudTimerRef = useRef<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isBuffering, setIsBuffering] = useState<boolean>(true);
   const [showAudioMenu, setShowAudioMenu] = useState<boolean>(false);
@@ -48,6 +71,9 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
 
   const showAudioMenuRef = useRef(showAudioMenu);
   showAudioMenuRef.current = showAudioMenu;
+
+  const showSubtitleMenuRef = useRef(showSubtitleMenu);
+  showSubtitleMenuRef.current = showSubtitleMenu;
 
   const closeModalRef = useRef(closeModal);
   closeModalRef.current = closeModal;
@@ -59,12 +85,12 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
       window.clearTimeout(controlsTimeoutRef.current);
       controlsTimeoutRef.current = null;
     }
-    if (isPlaying && !showAudioMenu) {
+    if (isPlaying && !showAudioMenu && !showSubtitleMenu) {
       controlsTimeoutRef.current = window.setTimeout(() => {
         setShowControls(false);
       }, 15000);
     }
-  }, [isPlaying, showAudioMenu]);
+  }, [isPlaying, showAudioMenu, showSubtitleMenu]);
 
   const changeVolume = useCallback((delta: number) => {
     setVolume((prev) => {
@@ -74,6 +100,18 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
       }
       return next;
     });
+    setVolumeHudVisible(true);
+    if (volumeHudTimerRef.current !== null) {
+      window.clearTimeout(volumeHudTimerRef.current);
+    }
+    volumeHudTimerRef.current = window.setTimeout(() => {
+      setVolumeHudVisible(false);
+    }, 1200);
+  }, []);
+
+  const selectSubtitleTrack = useCallback((trackIndex: number | null) => {
+    setSelectedSubtitle(trackIndex);
+    setShowSubtitleMenu(false);
     resetControlsTimer();
   }, [resetControlsTimer]);
 
@@ -235,10 +273,14 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
         return;
       }
 
-      // Кнопка B (1): Закрыть меню аудио или выйти из плеера
+      // Кнопка B (1): Закрыть меню аудио/субтитров или выйти из плеера
       if (e.button === RawButton.B || e.button === 1) {
         if (showAudioMenuRef.current) {
           setShowAudioMenu(false);
+          setShowControls(true);
+          resetControlsTimer();
+        } else if (showSubtitleMenuRef.current) {
+          setShowSubtitleMenu(false);
           setShowControls(true);
           resetControlsTimer();
         } else if (closeModalRef.current) {
@@ -249,11 +291,19 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
 
       // Кнопка Y (3): Переключение меню аудиодорожек
       if (e.button === RawButton.Y || e.button === 3) {
-        if (audioTracks.length > 1) {
-          setShowAudioMenu((prev) => !prev);
-          setShowControls(true);
-          resetControlsTimer();
-        }
+        setShowAudioMenu((prev) => !prev);
+        setShowSubtitleMenu(false);
+        setShowControls(true);
+        resetControlsTimer();
+        return;
+      }
+
+      // Кнопка X (2): Переключение меню субтитров
+      if (e.button === RawButton.X || e.button === 2) {
+        setShowSubtitleMenu((prev) => !prev);
+        setShowAudioMenu(false);
+        setShowControls(true);
+        resetControlsTimer();
         return;
       }
 
@@ -335,6 +385,10 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
           setShowAudioMenu(false);
           setShowControls(true);
           resetControlsTimer();
+        } else if (showSubtitleMenuRef.current) {
+          setShowSubtitleMenu(false);
+          setShowControls(true);
+          resetControlsTimer();
         } else if (closeModalRef.current) {
           closeModalRef.current();
         }
@@ -357,9 +411,11 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
         e.preventDefault();
         changeVolume(-0.05);
       } else if (e.key === "y" || e.key === "Y") {
-        if (audioTracks.length > 1) {
-          setShowAudioMenu((prev) => !prev);
-        }
+        setShowAudioMenu((prev) => !prev);
+        setShowSubtitleMenu(false);
+      } else if (e.key === "c" || e.key === "C" || e.key === "x" || e.key === "X") {
+        setShowSubtitleMenu((prev) => !prev);
+        setShowAudioMenu(false);
       }
     };
 
@@ -414,12 +470,24 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
             setSelectedAudio(data.audio_tracks[0].index);
           }
         }
+        if (Array.isArray(data.subtitle_tracks) && data.subtitle_tracks.length > 0) {
+          setSubtitleTracks(data.subtitle_tracks);
+        }
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
   }, [filePath]);
+
+  // Управление активной дорожкой субтитров в <video>
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    for (let i = 0; i < video.textTracks.length; i++) {
+      video.textTracks[i].mode = selectedSubtitle !== null ? "showing" : "disabled";
+    }
+  }, [selectedSubtitle]);
 
   const handleVideoError = () => {
     setErrorMsg("Ошибка воспроизведения потока. Проверьте файл.");
@@ -476,6 +544,8 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
         onCancelButton={() => {
           if (showAudioMenuRef.current) {
             setShowAudioMenu(false);
+          } else if (showSubtitleMenuRef.current) {
+            setShowSubtitleMenu(false);
           } else if (closeModalRef.current) {
             closeModalRef.current();
           }
@@ -496,13 +566,12 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
           cursor: showControls ? "default" : "none",
         }}
       >
-        {/* Top Header Bar */}
+        {/* Top Header Bar: ТОЛЬКО НАЗВАНИЕ */}
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            justifyContent: "space-between",
-            padding: "10px 20px",
+            padding: "14px 24px",
             background: "rgba(0, 0, 0, 0.85)",
             flexShrink: 0,
             opacity: showControls ? 1 : 0,
@@ -517,33 +586,12 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
-              flex: 1,
+              color: "#ffffff",
+              letterSpacing: 0.2,
             }}
           >
             {title}
           </div>
-
-          {closeModal && (
-            <Focusable
-              className="ds-btn ds-btn--compact ds-btn--icon"
-              onActivate={closeModal}
-              onClick={closeModal}
-              title="Закрыть плеер (B)"
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: "50%",
-                background: "rgba(255, 255, 255, 0.15)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                marginLeft: 12,
-                flexShrink: 0,
-              }}
-            >
-              <FaTimes />
-            </Focusable>
-          )}
         </div>
 
         {/* Video Canvas */}
@@ -563,6 +611,39 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
             cursor: "pointer",
           }}
         >
+          {/* Индикатор изменения громкости (HUD) */}
+          {volumeHudVisible && (
+            <div
+              style={{
+                position: "absolute",
+                top: 24,
+                right: 24,
+                background: "rgba(18, 23, 33, 0.92)",
+                border: "1px solid rgba(255, 255, 255, 0.2)",
+                borderRadius: 0,
+                padding: "8px 16px",
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                zIndex: 20,
+                pointerEvents: "none",
+                boxShadow: "0 4px 14px rgba(0, 0, 0, 0.6)",
+              }}
+            >
+              {volume > 0 ? (
+                <FaVolumeUp style={{ color: "var(--ds-accent)", fontSize: 15 }} />
+              ) : (
+                <FaVolumeMute style={{ color: "rgba(255,255,255,0.5)", fontSize: 15 }} />
+              )}
+              <div style={{ width: 80, height: 6, background: "rgba(255,255,255,0.15)", position: "relative" }}>
+                <div style={{ width: `${Math.round(volume * 100)}%`, height: "100%", background: "var(--ds-accent)" }} />
+              </div>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "#fff", fontFamily: "monospace", minWidth: 36 }}>
+                {Math.round(volume * 100)}%
+              </span>
+            </div>
+          )}
+
           {isBuffering && !errorMsg && (
             <div
               style={{
@@ -607,6 +688,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
               src={streamUrl}
               autoPlay
               onError={handleVideoError}
+              crossOrigin="anonymous"
               style={{
                 width: "100%",
                 height: "100%",
@@ -614,7 +696,18 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
                 outline: "none",
                 pointerEvents: "none",
               }}
-            />
+            >
+              {selectedSubtitle !== null && (
+                <track
+                  key={selectedSubtitle}
+                  kind="subtitles"
+                  label={subtitleTracks.find((s) => s.index === selectedSubtitle)?.title || "Субтитры"}
+                  srcLang={subtitleTracks.find((s) => s.index === selectedSubtitle)?.lang || "ru"}
+                  src={`http://127.0.0.1:8400/api/stream/subtitles?file=${encodeURIComponent(filePath)}&track=${selectedSubtitle}`}
+                  default
+                />
+              )}
+            </video>
           )}
         </div>
 
@@ -623,7 +716,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
           onClick={handleProgressBarTouch}
           onTouchStart={handleProgressBarTouch}
           style={{
-            padding: "8px 20px",
+            padding: "8px 24px",
             background: "rgba(0, 0, 0, 0.85)",
             opacity: showControls ? 1 : 0,
             pointerEvents: showControls ? "auto" : "none",
@@ -659,21 +752,24 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            padding: "10px 20px 14px",
+            padding: "10px 24px 16px",
             background: "rgba(0, 0, 0, 0.85)",
             flexShrink: 0,
-            gap: 12,
+            gap: 16,
             opacity: showControls ? 1 : 0,
             pointerEvents: showControls ? "auto" : "none",
             transition: "opacity 0.3s ease",
+            position: "relative",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {/* Слева: Перемотка назад (-15с), Пауза / Плей, Перемотка вперед (+15с) */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, zIndex: 2 }}>
             <Focusable
               className="ds-btn ds-btn--compact ds-btn--icon"
               onActivate={() => seekRelative(-15)}
               onClick={() => seekRelative(-15)}
               style={{ width: 36, height: 32 }}
+              title="Перемотка назад (-15с)"
             >
               <FaBackward />
             </Focusable>
@@ -683,6 +779,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
               onActivate={togglePlay}
               onClick={togglePlay}
               style={{ width: 36, height: 32 }}
+              title={isPlaying ? "Пауза" : "Воспроизведение"}
             >
               {isPlaying ? <FaPause /> : <FaPlay />}
             </Focusable>
@@ -692,131 +789,225 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
               onActivate={() => seekRelative(15)}
               onClick={() => seekRelative(15)}
               style={{ width: 36, height: 32 }}
+              title="Перемотка вперед (+15с)"
             >
               <FaForward />
             </Focusable>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            {/* Volume Slider with - and + buttons (controlled also by D-pad Up/Down) */}
-            <Focusable
-              flow-children="horizontal"
-              noFocusRing
-              style={{ display: "flex", alignItems: "center", gap: 6 }}
-            >
-              <Focusable
-                className="ds-btn ds-btn--compact ds-btn--icon"
-                onActivate={() => changeVolume(-0.05)}
-                onClick={() => changeVolume(-0.05)}
-                style={{ width: 28, height: 28, fontSize: 14, fontWeight: 700 }}
-                title="Уменьшить громкость (D-Pad Вниз)"
-              >
-                -
-              </Focusable>
-
-              <div
-                style={{
-                  width: 70,
-                  height: 6,
-                  background: "rgba(255,255,255,0.18)",
-                  borderRadius: 0,
-                  position: "relative",
-                  overflow: "hidden",
-                }}
-              >
-                <div
-                  style={{
-                    height: "100%",
-                    width: `${Math.round(volume * 100)}%`,
-                    background: volume > 0 ? "var(--ds-accent)" : "transparent",
-                    transition: "width 0.1s ease",
-                  }}
-                />
-              </div>
-
-              <Focusable
-                className="ds-btn ds-btn--compact ds-btn--icon"
-                onActivate={() => changeVolume(0.05)}
-                onClick={() => changeVolume(0.05)}
-                style={{ width: 28, height: 28, fontSize: 14, fontWeight: 700 }}
-                title="Увеличить громкость (D-Pad Вверх)"
-              >
-                +
-              </Focusable>
-              <span style={{ fontSize: 11, color: "var(--ds-text-dim)", minWidth: 30, fontFamily: "monospace" }}>
-                {Math.round(volume * 100)}%
-              </span>
-            </Focusable>
-
-            <div style={{ fontSize: 13, color: "var(--ds-text-dim)", fontFamily: "monospace" }}>
-              {formatTime(currentPlayhead)} / {duration > 0 ? formatTime(duration) : (isOnline ? "Онлайн" : "--:--")}
-            </div>
+          {/* По центру: Время */}
+          <div
+            style={{
+              position: "absolute",
+              left: "50%",
+              transform: "translateX(-50%)",
+              fontSize: 14,
+              fontWeight: 500,
+              color: "rgba(255, 255, 255, 0.9)",
+              fontFamily: "monospace",
+              pointerEvents: "none",
+              whiteSpace: "nowrap",
+              zIndex: 1,
+            }}
+          >
+            {formatTime(currentPlayhead)} / {duration > 0 ? formatTime(duration) : (isOnline ? "Онлайн" : "--:--")}
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 8, position: "relative" }}>
-            {audioTracks.length > 1 && (
-              <>
+          {/* Справа: Выбор субтитров, Выбор аудиодорожки, Закрыть */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, position: "relative", zIndex: 2 }}>
+            {/* Кнопка выбора субтитров */}
+            <Focusable
+              className="ds-btn ds-btn--compact ds-btn--icon"
+              onActivate={() => {
+                setShowSubtitleMenu((prev) => !prev);
+                setShowAudioMenu(false);
+              }}
+              onClick={() => {
+                setShowSubtitleMenu((prev) => !prev);
+                setShowAudioMenu(false);
+              }}
+              title="Выбор субтитров (X)"
+              style={{
+                borderRadius: 0,
+                background: showSubtitleMenu || selectedSubtitle !== null ? "var(--ds-surface-hi)" : "var(--ds-surface)",
+                borderColor: showSubtitleMenu || selectedSubtitle !== null ? "rgba(255,255,255,0.4)" : "var(--ds-border)",
+                color: selectedSubtitle !== null ? "var(--ds-accent)" : "#fff",
+                width: 34,
+                height: 32,
+              }}
+            >
+              <FaClosedCaptioning style={{ fontSize: 14 }} />
+            </Focusable>
+
+            {showSubtitleMenu && (
+              <Focusable
+                flow-children="column"
+                style={{
+                  position: "absolute",
+                  bottom: "100%",
+                  right: 44,
+                  marginBottom: 8,
+                  background: "#121721",
+                  border: "1px solid rgba(255,255,255,0.2)",
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.8)",
+                  minWidth: 220,
+                  maxWidth: 340,
+                  zIndex: 1000,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                  padding: 6,
+                }}
+              >
+                <div style={{ padding: "4px 8px", fontSize: 11, fontWeight: 700, color: "var(--ds-text-dim)", textTransform: "uppercase" }}>
+                  Субтитры
+                </div>
                 <Focusable
-                  className="ds-btn ds-btn--compact ds-btn--icon"
-                  onActivate={() => setShowAudioMenu((prev) => !prev)}
-                  onClick={() => setShowAudioMenu((prev) => !prev)}
-                  title="Выбор звуковой дорожки"
+                  className="ds-btn ds-btn--compact"
+                  onActivate={() => selectSubtitleTrack(null)}
+                  onClick={() => selectSubtitleTrack(null)}
                   style={{
-                    borderRadius: 0,
-                    background: showAudioMenu ? "var(--ds-surface-hi)" : "var(--ds-surface)",
-                    borderColor: showAudioMenu ? "rgba(255,255,255,0.4)" : "var(--ds-border)",
-                    width: 32,
-                    height: 28,
+                    justifyContent: "flex-start",
+                    width: "100%",
+                    height: 32,
+                    background: selectedSubtitle === null ? "var(--ds-surface-hi)" : "transparent",
+                    borderColor: selectedSubtitle === null ? "rgba(255,255,255,0.3)" : "transparent",
+                    gap: 8,
+                    textAlign: "left",
                   }}
                 >
-                  <FaHeadphones style={{ fontSize: 13 }} />
+                  <FaCheck style={{ fontSize: 10, opacity: selectedSubtitle === null ? 1 : 0, flexShrink: 0 }} />
+                  <span style={{ fontSize: 12 }}>Отключить субтитры</span>
                 </Focusable>
 
-                {showAudioMenu && (
-                  <Focusable
-                    flow-children="column"
-                    style={{
-                      position: "absolute",
-                      bottom: "100%",
-                      right: 0,
-                      marginBottom: 8,
-                      background: "#121721",
-                      border: "1px solid rgba(255,255,255,0.2)",
-                      boxShadow: "0 8px 24px rgba(0,0,0,0.8)",
-                      minWidth: 220,
-                      maxWidth: 340,
-                      zIndex: 1000,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 4,
-                      padding: 6,
-                    }}
-                  >
-                    {audioTracks.map((track) => (
-                      <Focusable
-                        key={track.index}
-                        className="ds-btn ds-btn--compact"
-                        onActivate={() => selectAudioTrack(track.index)}
-                        onClick={() => selectAudioTrack(track.index)}
-                        style={{
-                          justifyContent: "flex-start",
-                          width: "100%",
-                          height: 32,
-                          background: track.index === selectedAudio ? "var(--ds-surface-hi)" : "transparent",
-                          borderColor: track.index === selectedAudio ? "rgba(255,255,255,0.3)" : "transparent",
-                          gap: 8,
-                          textAlign: "left",
-                        }}
-                      >
-                        <FaCheck style={{ fontSize: 10, opacity: track.index === selectedAudio ? 1 : 0, flexShrink: 0 }} />
-                        <span style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {track.title || `Дорожка #${track.index}`}
-                        </span>
-                      </Focusable>
-                    ))}
-                  </Focusable>
+                {subtitleTracks.length === 0 ? (
+                  <div style={{ padding: "8px 10px", fontSize: 12, color: "rgba(255,255,255,0.4)" }}>
+                    Субтитры в раздаче не найдены
+                  </div>
+                ) : (
+                  subtitleTracks.map((sub) => (
+                    <Focusable
+                      key={sub.index}
+                      className="ds-btn ds-btn--compact"
+                      onActivate={() => selectSubtitleTrack(sub.index)}
+                      onClick={() => selectSubtitleTrack(sub.index)}
+                      style={{
+                        justifyContent: "flex-start",
+                        width: "100%",
+                        height: 32,
+                        background: sub.index === selectedSubtitle ? "var(--ds-surface-hi)" : "transparent",
+                        borderColor: sub.index === selectedSubtitle ? "rgba(255,255,255,0.3)" : "transparent",
+                        gap: 8,
+                        textAlign: "left",
+                      }}
+                    >
+                      <FaCheck style={{ fontSize: 10, opacity: sub.index === selectedSubtitle ? 1 : 0, flexShrink: 0 }} />
+                      <span style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {sub.title || (sub.lang ? `Субтитры (${sub.lang.toUpperCase()})` : `Субтитры #${sub.index}`)}
+                      </span>
+                    </Focusable>
+                  ))
                 )}
-              </>
+              </Focusable>
+            )}
+
+            {/* Кнопка выбора аудиодорожки */}
+            <Focusable
+              className="ds-btn ds-btn--compact ds-btn--icon"
+              onActivate={() => {
+                setShowAudioMenu((prev) => !prev);
+                setShowSubtitleMenu(false);
+              }}
+              onClick={() => {
+                setShowAudioMenu((prev) => !prev);
+                setShowSubtitleMenu(false);
+              }}
+              title="Выбор звуковой дорожки (Y)"
+              style={{
+                borderRadius: 0,
+                background: showAudioMenu ? "var(--ds-surface-hi)" : "var(--ds-surface)",
+                borderColor: showAudioMenu ? "rgba(255,255,255,0.4)" : "var(--ds-border)",
+                width: 34,
+                height: 32,
+              }}
+            >
+              <FaHeadphones style={{ fontSize: 13 }} />
+            </Focusable>
+
+            {showAudioMenu && (
+              <Focusable
+                flow-children="column"
+                style={{
+                  position: "absolute",
+                  bottom: "100%",
+                  right: 44,
+                  marginBottom: 8,
+                  background: "#121721",
+                  border: "1px solid rgba(255,255,255,0.2)",
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.8)",
+                  minWidth: 220,
+                  maxWidth: 340,
+                  zIndex: 1000,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                  padding: 6,
+                }}
+              >
+                <div style={{ padding: "4px 8px", fontSize: 11, fontWeight: 700, color: "var(--ds-text-dim)", textTransform: "uppercase" }}>
+                  Аудиодорожка
+                </div>
+                {audioTracks.length === 0 ? (
+                  <div style={{ padding: "8px 10px", fontSize: 12, color: "rgba(255,255,255,0.4)" }}>
+                    Дорожка по умолчанию
+                  </div>
+                ) : (
+                  audioTracks.map((track) => (
+                    <Focusable
+                      key={track.index}
+                      className="ds-btn ds-btn--compact"
+                      onActivate={() => selectAudioTrack(track.index)}
+                      onClick={() => selectAudioTrack(track.index)}
+                      style={{
+                        justifyContent: "flex-start",
+                        width: "100%",
+                        height: 32,
+                        background: track.index === selectedAudio ? "var(--ds-surface-hi)" : "transparent",
+                        borderColor: track.index === selectedAudio ? "rgba(255,255,255,0.3)" : "transparent",
+                        gap: 8,
+                        textAlign: "left",
+                      }}
+                    >
+                      <FaCheck style={{ fontSize: 10, opacity: track.index === selectedAudio ? 1 : 0, flexShrink: 0 }} />
+                      <span style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {track.title || (track.lang ? `Аудио (${track.lang.toUpperCase()})` : `Дорожка #${track.index}`)}
+                      </span>
+                    </Focusable>
+                  ))
+                )}
+              </Focusable>
+            )}
+
+            {/* Кнопка закрытия плеера в правом нижнем углу */}
+            {closeModal && (
+              <Focusable
+                className="ds-btn ds-btn--compact ds-btn--icon"
+                onActivate={closeModal}
+                onClick={closeModal}
+                title="Закрыть плеер (B)"
+                style={{
+                  width: 34,
+                  height: 32,
+                  borderRadius: 0,
+                  background: "rgba(255, 255, 255, 0.12)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <FaTimes style={{ fontSize: 14 }} />
+              </Focusable>
             )}
           </div>
         </Focusable>

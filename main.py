@@ -629,6 +629,7 @@ def probe_media_file(filepath):
         except:
             pass
         audio_tracks = []
+        subtitle_tracks = []
         for s in data.get('streams', []):
             if s.get('codec_type') == 'video' and not vcodec:
                 vcodec = s.get('codec_name')
@@ -643,6 +644,14 @@ def probe_media_file(filepath):
                     "lang": tags.get('language', tags.get('lang', '')),
                     "title": tags.get('title', f"Аудио #{s.get('index')}")
                 })
+            elif s.get('codec_type') == 'subtitle':
+                tags = s.get('tags', {})
+                subtitle_tracks.append({
+                    "index": s.get('index'),
+                    "codec": s.get('codec_name'),
+                    "lang": tags.get('language', tags.get('lang', '')),
+                    "title": tags.get('title', f"Субтитры #{s.get('index')}")
+                })
         direct = (vcodec in ['h264', 'avc1']) and (acodec in ['aac', 'mp3', 'opus']) and filepath.lower().endswith('.mp4')
         res = {
             "vcodec": vcodec,
@@ -650,6 +659,7 @@ def probe_media_file(filepath):
             "duration": duration,
             "direct": direct,
             "audio_tracks": audio_tracks,
+            "subtitle_tracks": subtitle_tracks,
             "status": "direct_play" if direct else "needs_transcode"
         }
         if vcodec:
@@ -781,6 +791,8 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             self._handle_stream(query)
         elif path == '/api/stream/probe':
             self._handle_stream_probe(query)
+        elif path == '/api/stream/subtitles':
+            self._handle_stream_subtitles(query)
         elif path == '/api/settings':
             self._send_json(load_settings())
         elif path == '/api/status':
@@ -1339,6 +1351,34 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             return
         info = probe_media_file(filepath)
         self._send_json(info)
+
+    def _handle_stream_subtitles(self, query):
+        filepath = query.get('file', [''])[0]
+        track_idx = query.get('track', [''])[0]
+        if not os.path.exists(filepath):
+            self.send_response(404)
+            self.end_headers()
+            return
+        self.send_response(200)
+        self.send_cors_headers()
+        self.send_header('Content-Type', 'text/vtt; charset=utf-8')
+        self.send_header('Cache-Control', 'no-cache')
+        self.end_headers()
+        ffmpeg_bin = get_bin_path("ffmpeg")
+        cmd = [ffmpeg_bin, "-hide_banner", "-loglevel", "warning", "-i", filepath]
+        if track_idx:
+            cmd += ["-map", f"0:{track_idx}"]
+        else:
+            cmd += ["-map", "0:s:0?"]
+        cmd += ["-f", "webvtt", "pipe:1"]
+        env = _clean_env()
+        try:
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+            out, _ = proc.communicate(timeout=10)
+            self.wfile.write(out)
+        except Exception as e:
+            logger.error(f"stream_subtitles error: {e}")
+            self.wfile.write(b"WEBVTT\n\n")
 
 plugin_instance = None
 
