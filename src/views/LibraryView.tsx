@@ -1,6 +1,6 @@
 import { FC, memo, useEffect, useRef, useState, useCallback } from "react";
 import { Focusable } from "@decky/ui";
-import { FaPlay, FaPlayCircle, FaPause, FaDownload, FaList, FaTrash, FaMoon, FaSpinner, FaTimes } from "react-icons/fa";
+import { FaPlay, FaPlayCircle, FaPause, FaDownload, FaList, FaTrash, FaMoon, FaSpinner } from "react-icons/fa";
 import { EpisodeItem, LibraryItem } from "../types";
 import { formatBytes, formatSpeed, getImageUrl } from "../api";
 import { useLibrary } from "../hooks/useLibrary";
@@ -431,6 +431,13 @@ export const LibraryView: FC<LibraryViewProps> = memo(
         noFocusRing
         className="projacktor-library-content"
         onGamepadDirection={handleGamepadDir}
+        onButtonDown={(e: any) => {
+          // Перехватываем B при открытой модалке серий — до глобального обработчика Decky
+          if (episodesModalItem && (e?.button === 1 || e?.detail?.button === 1)) {
+            setEpisodesModalItem(null);
+            return false;
+          }
+        }}
       >
         {library.length === 0 ? (
           <Focusable
@@ -644,15 +651,6 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                     Выборочная загрузка и онлайн просмотр серий
                   </div>
                 </div>
-                <Focusable
-                  className="ds-btn ds-btn--compact ds-btn--icon"
-                  noFocusRing
-                  onActivate={() => setEpisodesModalItem(null)}
-                  onClick={() => setEpisodesModalItem(null)}
-                  title="Закрыть (B)"
-                >
-                  <FaTimes style={{ fontSize: 12 }} />
-                </Focusable>
               </div>
 
               <div className="projacktor-episodes-modal-list">
@@ -709,7 +707,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
 
                         <Focusable flow-children="horizontal" noFocusRing style={{ display: "flex", gap: 8, alignItems: "center" }}>
                           <Focusable
-                            className="ds-btn ds-btn--compact ds-btn--primary"
+                            className={`ds-btn ds-btn--compact ${isEpCompleted ? "ds-btn--primary" : ""}`}
                             noFocusRing
                             onActivate={() => {
                               watchOnline(episodesModalItem, ep.index);
@@ -717,10 +715,10 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                             onClick={() => {
                               watchOnline(episodesModalItem, ep.index);
                             }}
-                            title="Смотреть онлайн"
+                            title={isEpCompleted ? "Смотреть файл" : "Смотреть онлайн"}
                           >
                             <FaPlay style={{ fontSize: 10, marginRight: 4 }} />
-                            Онлайн
+                            {isEpCompleted ? "Смотреть" : "Онлайн"}
                           </Focusable>
 
                           {!isEpCompleted && (
