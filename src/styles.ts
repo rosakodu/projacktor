@@ -509,7 +509,7 @@ export const PROJACKTOR_STYLES = `
   display: flex !important;
   flex-direction: column !important;
   background: #141a23 !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border: 2px solid rgba(255, 255, 255, 0.08) !important;
   border-radius: 0px !important;
   overflow: hidden !important;
   cursor: pointer !important;
@@ -531,10 +531,21 @@ export const PROJACKTOR_STYLES = `
   content: none !important;
 }
 
+.projacktor-card [class*="focus-ring"],
+.projacktor-card [class*="_1wPplsegQqCoe06wXPhzKT"],
+.projacktor-card [class*="_3FIjYetykQsFYR08l1v7Ls"] {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
 .projacktor-card:focus,
 .projacktor-card.gpfocus {
   transform: none !important;
-  border: 2px solid #ffffff !important;
+  border-color: #ffffff !important;
   outline: none !important;
   box-shadow: none !important;
 }
@@ -706,14 +717,36 @@ export const PROJACKTOR_STYLES = `
   padding: 12px;
   margin-bottom: 12px;
   gap: 10px;
-  outline: none;
+  outline: none !important;
   position: relative;
+}
+
+.projacktor-lib-card::before,
+.projacktor-lib-card::after,
+.projacktor-lib-card:focus::before,
+.projacktor-lib-card:focus::after,
+.projacktor-lib-card.gpfocus::before,
+.projacktor-lib-card.gpfocus::after {
+  display: none !important;
+  content: none !important;
+}
+
+.projacktor-lib-card [class*="focus-ring"],
+.projacktor-lib-card [class*="_1wPplsegQqCoe06wXPhzKT"],
+.projacktor-lib-card [class*="_3FIjYetykQsFYR08l1v7Ls"] {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 
 .projacktor-lib-card:focus-within {
   border-color: #ffffff !important;
   box-shadow: inset 0 0 0 1.5px #ffffff !important;
   background: var(--ds-surface-hi);
+  outline: none !important;
 }
 
 .projacktor-lib-main {
@@ -962,6 +995,20 @@ div:has(> .projacktor-modal-root) {
 .projacktor-icon-btn.gpfocus::after {
   display: none !important;
   content: none !important;
+}
+
+.projacktor-icon-btn [class*="focus-ring"],
+.projacktor-icon-btn [class*="_1wPplsegQqCoe06wXPhzKT"],
+.projacktor-icon-btn [class*="_3FIjYetykQsFYR08l1v7Ls"],
+.projacktor-episode-row [class*="focus-ring"],
+.projacktor-episode-row [class*="_1wPplsegQqCoe06wXPhzKT"],
+.projacktor-episode-row [class*="_3FIjYetykQsFYR08l1v7Ls"] {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 
 .projacktor-icon-btn:focus,

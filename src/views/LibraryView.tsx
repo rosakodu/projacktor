@@ -94,6 +94,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
           >
             <Focusable
               className="ds-btn ds-btn--compact projacktor-magicblack-btn"
+              noFocusRing
               onActivate={onActivateMagicBlack}
               onClick={onActivateMagicBlack}
               title="Выключить экран для фоновой загрузки"
@@ -130,7 +131,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
             const isStreamStarting = streamLoading === item.id;
 
             return (
-              <Focusable key={item.id} tabIndex={0} className="projacktor-lib-card">
+              <Focusable key={item.id} tabIndex={0} noFocusRing className="projacktor-lib-card">
                 <div className="projacktor-lib-main">
                   <img
                     src={getImageUrl(item.poster_path)}
@@ -264,6 +265,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                         (canPlayDirect ? (
                           <Focusable
                             className="projacktor-icon-btn projacktor-icon-btn--primary"
+                            noFocusRing
                             onActivate={() =>
                               onPlayVideo(localFilePath!, item.title, false)
                             }
@@ -277,6 +279,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                         ) : (
                           <Focusable
                             className="projacktor-icon-btn projacktor-icon-btn--primary"
+                            noFocusRing
                             onActivate={() => watchOnline(item)}
                             onClick={() => watchOnline(item)}
                             title="Смотреть онлайн"
@@ -298,6 +301,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                           {isDownloading && item.download_id && (
                             <Focusable
                               className="projacktor-icon-btn"
+                              noFocusRing
                               onActivate={() =>
                                 item.download_id && pauseDownload(item.download_id)
                               }
@@ -312,6 +316,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                           {isPaused && item.download_id && (
                             <Focusable
                               className="projacktor-icon-btn"
+                              noFocusRing
                               onActivate={() =>
                                 item.download_id && resumeDownload(item.download_id)
                               }
@@ -326,6 +331,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                           {!isDownloading && !isPaused && (
                             <Focusable
                               className="projacktor-icon-btn"
+                              noFocusRing
                               onActivate={() => startDownload(item)}
                               onClick={() => startDownload(item)}
                               title="Загрузить"
@@ -337,6 +343,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                           {/* Screen-off OLED background downloading */}
                           <Focusable
                             className="projacktor-icon-btn projacktor-magicblack-btn"
+                            noFocusRing
                             title="Загрузка в фоне с отключением экрана"
                             onActivate={() => {
                               if (!isDownloading && !isPaused) {
@@ -367,6 +374,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                           className={`projacktor-icon-btn ${
                             isEpisodesOpen ? "projacktor-icon-btn--primary" : ""
                           }`}
+                          noFocusRing
                           onActivate={() => toggleEpisodes(item)}
                           onClick={() => toggleEpisodes(item)}
                           title={isEpisodesOpen ? "Скрыть серии" : "Серии"}
@@ -377,6 +385,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
 
                       <Focusable
                         className="projacktor-icon-btn ds-btn--danger"
+                        noFocusRing
                         onActivate={() => deleteItem(item.id)}
                         onClick={() => deleteItem(item.id)}
                         title="Удалить"
@@ -428,6 +437,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                         return (
                           <Focusable
                             key={ep.index}
+                            noFocusRing
                             className="projacktor-episode-row"
                           >
                             <div
@@ -486,6 +496,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                               {isEpCompleted && ep.path ? (
                                 <Focusable
                                   className="projacktor-icon-btn projacktor-icon-btn--compact projacktor-icon-btn--primary"
+                                  noFocusRing
                                   onActivate={() =>
                                     onPlayVideo(
                                       ep.path,
@@ -509,6 +520,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                               ) : (
                                 <Focusable
                                   className="projacktor-icon-btn projacktor-icon-btn--compact projacktor-icon-btn--primary"
+                                  noFocusRing
                                   onActivate={() =>
                                     watchOnline(item, ep.index)
                                   }
@@ -526,6 +538,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                               {!isEpCompleted && (
                                 <Focusable
                                   className="projacktor-icon-btn projacktor-icon-btn--compact"
+                                  noFocusRing
                                   onActivate={() =>
                                     downloadEpisode(item, ep)
                                   }

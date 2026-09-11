@@ -89,6 +89,7 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
         </div>
         <Focusable
           className="ds-btn ds-btn--primary"
+          noFocusRing
           onActivate={handleSearch}
           onClick={handleSearch}
         >

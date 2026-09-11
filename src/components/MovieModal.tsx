@@ -588,6 +588,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                             /* TV Series: Toggle Episodes button */
                             <Focusable
                               className={`projacktor-icon-btn ${isExpanded ? "projacktor-icon-btn--primary" : ""}`}
+                              noFocusRing
                               onActivate={() => handleToggleEpisodes(tor)}
                               onClick={() => handleToggleEpisodes(tor)}
                               title={isExpanded ? "Скрыть серии" : "Выбор серии"}
@@ -602,6 +603,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                             /* Movies: Direct Watch Online button */
                             <Focusable
                               className="projacktor-icon-btn projacktor-icon-btn--primary"
+                              noFocusRing
                               onActivate={() => handleWatchOnlineMovie(tor)}
                               onClick={() => handleWatchOnlineMovie(tor)}
                               title="Смотреть онлайн"
@@ -617,6 +619,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                           {/* Universal Download Button (Strict fixed 30x30, no text) */}
                           <Focusable
                             className="projacktor-icon-btn"
+                            noFocusRing
                             onActivate={() => handleDownloadTorrent(tor)}
                             onClick={() => handleDownloadTorrent(tor)}
                             title="Загрузить в библиотеку"
@@ -631,6 +634,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                           {/* Download with screen-off (OLED background) */}
                           <Focusable
                             className="projacktor-icon-btn projacktor-magicblack-btn"
+                            noFocusRing
                             onActivate={() => handleDownloadWithMagicBlack(tor)}
                             onClick={() => handleDownloadWithMagicBlack(tor)}
                             title="Скачать с выключенным экраном"
@@ -670,6 +674,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                                     {/* Watch episode online (Fixed 26x26) */}
                                     <Focusable
                                       className="projacktor-icon-btn projacktor-icon-btn--compact projacktor-icon-btn--primary"
+                                      noFocusRing
                                       onActivate={() => handleWatchEpisodeOnline(tor, ep)}
                                       onClick={() => handleWatchEpisodeOnline(tor, ep)}
                                       title="Смотреть серию онлайн"
@@ -683,6 +688,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                                     {/* Download episode (Fixed 26x26) */}
                                     <Focusable
                                       className="projacktor-icon-btn projacktor-icon-btn--compact"
+                                      noFocusRing
                                       onActivate={() => handleDownloadEpisode(tor, ep)}
                                       onClick={() => handleDownloadEpisode(tor, ep)}
                                       title="Загрузить серию"
@@ -696,6 +702,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                                     {/* Download episode with screen-off */}
                                     <Focusable
                                       className="projacktor-icon-btn projacktor-icon-btn--compact projacktor-magicblack-btn"
+                                      noFocusRing
                                       onActivate={() => handleDownloadEpisodeWithMagicBlack(tor, ep)}
                                       onClick={() => handleDownloadEpisodeWithMagicBlack(tor, ep)}
                                       title="Скачать серию с выключенным экраном"

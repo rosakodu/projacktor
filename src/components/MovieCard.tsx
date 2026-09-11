@@ -18,6 +18,7 @@ export const MovieCard: FC<MovieCardProps> = memo(({ movie, onActivate, onGamepa
   return (
     <Focusable
       className="projacktor-card"
+      noFocusRing
       onActivate={() => onActivate(movie)}
       onClick={() => onActivate(movie)}
       onOKActionDescription="Подробнее"
