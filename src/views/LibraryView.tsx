@@ -1,6 +1,6 @@
 import { FC, memo, useEffect, useRef, useState, useCallback } from "react";
 import { Focusable } from "@decky/ui";
-import { FaPlay, FaPause, FaDownload, FaList, FaTrash, FaMoon, FaSpinner, FaTimes } from "react-icons/fa";
+import { FaPlay, FaPause, FaDownload, FaList, FaTrash, FaSpinner, FaTimes } from "react-icons/fa";
 import { EpisodeItem, LibraryItem } from "../types";
 import { formatBytes, formatSpeed, getImageUrl } from "../api";
 import { useLibrary } from "../hooks/useLibrary";
@@ -9,11 +9,11 @@ import { RawButton, subscribeControllerInput } from "../runtime/controllerInput"
 
 interface LibraryViewProps {
   onPlayVideo: (filePath: string, title: string, isOnline: boolean) => void;
-  onActivateMagicBlack: () => void;
+  onActivateMagicBlack?: () => void;
 }
 
 export const LibraryView: FC<LibraryViewProps> = memo(
-  ({ onPlayVideo, onActivateMagicBlack }) => {
+  ({ onPlayVideo }) => {
     const rootRef = useRef<HTMLDivElement>(null);
     const [episodesModalItem, setEpisodesModalItem] = useState<LibraryItem | null>(null);
 
@@ -29,8 +29,6 @@ export const LibraryView: FC<LibraryViewProps> = memo(
       downloadEpisode,
       watchOnline,
     } = useLibrary(onPlayVideo);
-
-    const hasDownloading = library.some((i) => i.download_status === "downloading");
 
     // Закрытие модального окна серий по кнопке B или Escape
     useEffect(() => {
@@ -75,7 +73,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
 
         const target = root
           ? root.querySelector<HTMLElement>(
-              ".projacktor-magicblack-btn, .projacktor-dl-poster-btn, .projacktor-dl-btn-play, .projacktor-empty-lib"
+              ".projacktor-dl-poster-btn, .projacktor-dl-btn-play, .projacktor-empty-lib"
             )
           : null;
         if (target) {
@@ -101,7 +99,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
       return () => {
         cancelled = true;
       };
-    }, [library.length, hasDownloading]);
+    }, [library.length]);
 
     const handleOpenEpisodes = useCallback(
       (item: LibraryItem) => {
@@ -123,41 +121,6 @@ export const LibraryView: FC<LibraryViewProps> = memo(
         noFocusRing
         className="projacktor-library-content"
       >
-        {/* Верхняя статусная панель */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 16,
-            minHeight: 34,
-          }}
-        >
-          <div style={{ fontSize: 13, color: "var(--ds-text-dim)", fontWeight: 600 }}>
-            {library.length === 0
-              ? ""
-              : `${library.length} ${
-                  library.length === 1
-                    ? "элемент"
-                    : library.length < 5
-                    ? "элемента"
-                    : "элементов"
-                }${hasDownloading ? " • Загрузка активна" : ""}`}
-          </div>
-
-          {hasDownloading && (
-            <Focusable
-              className="ds-btn ds-btn--compact projacktor-magicblack-btn"
-              noFocusRing
-              onActivate={onActivateMagicBlack}
-              onClick={onActivateMagicBlack}
-              title="Выключить экран для фоновой загрузки"
-            >
-              <FaMoon style={{ marginRight: 6, fontSize: 11 }} />
-              Выключить экран
-            </Focusable>
-          )}
-        </div>
 
         {library.length === 0 ? (
           <Focusable
