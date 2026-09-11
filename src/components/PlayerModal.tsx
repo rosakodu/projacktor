@@ -307,12 +307,12 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
         return;
       }
 
-      // Перемотка назад (-15с): Стик Влево (22), L1 (30), L2 (28) (D-Pad отключен)
+      // Перемотка назад (-15с): только бампер L1 (30) и триггер L2 (28) (D-Pad и стики отключены)
       if (
-        e.button === RawButton.LEFTSTICK_LEFT ||
-        e.button === 22 ||
         e.button === RawButton.L1 ||
-        e.button === RawButton.L2
+        e.button === RawButton.L2 ||
+        e.button === 30 ||
+        e.button === 28
       ) {
         if (now - lastSeekAt < 180) return;
         lastSeekAt = now;
@@ -322,12 +322,12 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
         return;
       }
 
-      // Перемотка вперёд (+15с): Стик Вправо (23), R1 (31), R2 (29) (D-Pad отключен)
+      // Перемотка вперёд (+15с): только бампер R1 (31) и триггер R2 (29) (D-Pad и стики отключены)
       if (
-        e.button === RawButton.LEFTSTICK_RIGHT ||
-        e.button === 23 ||
         e.button === RawButton.R1 ||
-        e.button === RawButton.R2
+        e.button === RawButton.R2 ||
+        e.button === 31 ||
+        e.button === 29
       ) {
         if (now - lastSeekAt < 180) return;
         lastSeekAt = now;
@@ -553,13 +553,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
         }}
         onGamepadDirection={(evt: any) => {
           const btn = evt?.detail?.button;
-          if (btn === 11 || btn === 12) {
-            // DIR_LEFT, DIR_RIGHT - блокируем перемотку дпадом
-            try {
-              evt?.preventDefault?.();
-              evt?.stopPropagation?.();
-            } catch {}
-          } else if (btn === 9) {
+          if (btn === 9) {
             // DIR_UP - звук +
             try {
               evt?.preventDefault?.();
