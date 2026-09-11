@@ -1,6 +1,5 @@
 import { FC, useState, useEffect, useRef, useCallback } from "react";
 import { ModalRoot, Focusable, Spinner } from "@decky/ui";
-import { toaster } from "@decky/api";
 import { FaPlay, FaDownload, FaList, FaSpinner, FaMoon } from "react-icons/fa";
 import { PROJACKTOR_STYLES } from "../styles";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
@@ -208,11 +207,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
         throw new Error(streamRes?.error || "Не удалось подготовить онлайн поток");
       }
     } catch (err: any) {
-      toaster.toast({
-        title: "Онлайн просмотр",
-        body: String(err?.message || err),
-        duration: 4000,
-      });
+      console.error("Ошибка онлайн просмотра:", err);
     } finally {
       setStreamingTorrentId(null);
     }
@@ -229,11 +224,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
       await rpcStartDownload(mid);
       if (closeModal) closeModal();
     } catch (err: any) {
-      toaster.toast({
-        title: "Ошибка загрузки",
-        body: String(err?.message || err),
-        duration: 4000,
-      });
+      console.error("Ошибка загрузки:", err);
     } finally {
       setDownloadingTorrentId(null);
     }
@@ -260,11 +251,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
           setEpisodesMap((prev) => ({ ...prev, [tId]: sortEpisodes(eps) }));
         }
       } catch (err: any) {
-        toaster.toast({
-          title: "Ошибка получения серий",
-          body: String(err?.message || err),
-          duration: 3500,
-        });
+        console.error("Ошибка получения серий:", err);
       } finally {
         setLoadingEpisodesMap((prev) => ({ ...prev, [tId]: false }));
       }
@@ -288,11 +275,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
         throw new Error(res?.error || "Не удалось подготовить серию");
       }
     } catch (err: any) {
-      toaster.toast({
-        title: "Ошибка",
-        body: String(err?.message || err),
-        duration: 3500,
-      });
+      console.error("Ошибка просмотра серии:", err);
     } finally {
       setStreamingEpIdx(null);
     }
@@ -312,11 +295,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
         onStartMagicBlack();
       }
     } catch (err: any) {
-      toaster.toast({
-        title: "Ошибка загрузки",
-        body: String(err?.message || err),
-        duration: 4000,
-      });
+      console.error("Ошибка загрузки:", err);
     } finally {
       setDownloadingTorrentId(null);
     }
@@ -331,11 +310,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
       await rpcDownloadEpisode(mid, ep.index);
       if (closeModal) closeModal();
     } catch (err: any) {
-      toaster.toast({
-        title: "Ошибка",
-        body: String(err?.message || err),
-        duration: 3500,
-      });
+      console.error("Ошибка загрузки серии:", err);
     } finally {
       setDownloadingEpIdx(null);
     }
@@ -353,11 +328,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
         onStartMagicBlack();
       }
     } catch (err: any) {
-      toaster.toast({
-        title: "Ошибка загрузки серии",
-        body: String(err?.message || err),
-        duration: 3500,
-      });
+      console.error("Ошибка загрузки серии:", err);
     } finally {
       setDownloadingEpIdx(null);
     }

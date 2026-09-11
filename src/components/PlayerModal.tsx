@@ -1,6 +1,5 @@
 import { FC, useState, useRef, useEffect, useCallback } from "react";
 import { ModalRoot, Focusable } from "@decky/ui";
-import { toaster } from "@decky/api";
 import {
   FaPlay,
   FaPause,
@@ -1090,11 +1089,9 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
                 className="ds-btn ds-btn--compact ds-btn--icon"
                 onActivate={() => {
                   seekTo(0);
-                  toaster.toast({ title: title || "Загрузки", body: "С самого начала", duration: 2000 });
                 }}
                 onClick={() => {
                   seekTo(0);
-                  toaster.toast({ title: title || "Загрузки", body: "С самого начала", duration: 2000 });
                 }}
                 style={{ width: 36, height: 32 }}
                 title="Начать сначала"

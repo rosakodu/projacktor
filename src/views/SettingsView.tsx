@@ -7,7 +7,6 @@ import {
   TextField,
   Focusable,
 } from "@decky/ui";
-import { toaster } from "@decky/api";
 import { FaTrash, FaCheck, FaTimes, FaSpinner } from "react-icons/fa";
 import {
   rpcGetSettings,
@@ -121,16 +120,8 @@ export const SettingsView: FC = memo(() => {
       cachedJacredUrl = cleanUrl;
       setJacredOk(ok);
       await rpcSaveSettings(JSON.stringify({ jacred_url: cleanUrl }));
-      toaster.toast({
-        title: "Настройки",
-        body: !cleanUrl
-          ? "Настройки сохранены (URL парсера очищен)"
-          : ok
-          ? "Сохранено! Соединение с Jackett успешно."
-          : "Сохранено, но сервер Jackett недоступен.",
-      });
-    } catch {
-      toaster.toast({ title: "Ошибка", body: "Не удалось сохранить настройки" });
+    } catch (err) {
+      console.error("Не удалось сохранить настройки:", err);
     } finally {
       setSettingsSaving(false);
     }
@@ -141,23 +132,9 @@ export const SettingsView: FC = memo(() => {
     setClearingCache(true);
     try {
       clearLocalCache();
-      const res = await rpcClearCache();
-      if (res) {
-        toaster.toast({
-          title: "Очистка кэша",
-          body: "Кэш каталога и изображений успешно сброшен.",
-        });
-      } else {
-        toaster.toast({
-          title: "Очистка кэша",
-          body: "Локальный кэш очищен, ошибка очистки дискового кэша.",
-        });
-      }
-    } catch {
-      toaster.toast({
-        title: "Ошибка",
-        body: "Не удалось полностью очистить кэш",
-      });
+      await rpcClearCache();
+    } catch (err) {
+      console.error("Не удалось полностью очистить кэш:", err);
     } finally {
       setClearingCache(false);
     }

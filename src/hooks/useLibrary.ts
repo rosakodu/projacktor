@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { toaster } from "@decky/api";
 import {
   LibraryItem,
   EpisodeItem,
@@ -81,18 +80,10 @@ export function useLibrary(onPlayVideo?: (filePath: string, title: string, isOnl
   const startDownload = useCallback(
     async (item: LibraryItem) => {
       try {
-        toaster.toast({
-          title: item.title,
-          body: "Загрузка начата",
-          duration: 2500,
-        });
         await rpcStartDownload(item.id);
         refreshLibrary();
       } catch (err: any) {
-        toaster.toast({
-          title: "Ошибка",
-          body: String(err?.message || "Не удалось начать загрузку"),
-        });
+        console.error("Не удалось начать загрузку:", err);
       }
     },
     [refreshLibrary]
@@ -110,8 +101,8 @@ export function useLibrary(onPlayVideo?: (filePath: string, title: string, isOnl
           if (mountedRef.current) {
             setEpisodesMap((prev) => ({ ...prev, [item.id]: sortEpisodes(eps) }));
           }
-        } catch {
-          toaster.toast({ title: "Ошибка", body: "Не удалось получить список серий" });
+        } catch (err) {
+          console.error("Не удалось получить список серий:", err);
         } finally {
           if (mountedRef.current) {
             setEpisodesLoading((prev) => ({ ...prev, [item.id]: false }));
@@ -125,11 +116,6 @@ export function useLibrary(onPlayVideo?: (filePath: string, title: string, isOnl
   const downloadEpisode = useCallback(
     async (item: LibraryItem, ep: EpisodeItem) => {
       try {
-        toaster.toast({
-          title: item.title,
-          body: `Загрузка: ${ep.name}`,
-          duration: 3000,
-        });
         await rpcDownloadEpisode(item.id, ep.index);
         refreshLibrary();
         const eps = await rpcGetEpisodes(item.id);
@@ -137,10 +123,7 @@ export function useLibrary(onPlayVideo?: (filePath: string, title: string, isOnl
           setEpisodesMap((prev) => ({ ...prev, [item.id]: sortEpisodes(eps) }));
         }
       } catch (err: any) {
-        toaster.toast({
-          title: "Ошибка",
-          body: String(err?.message || "Не удалось начать загрузку серии"),
-        });
+        console.error("Не удалось начать загрузку серии:", err);
       }
     },
     [refreshLibrary]
@@ -156,17 +139,10 @@ export function useLibrary(onPlayVideo?: (filePath: string, title: string, isOnl
             onPlayVideo(res.file_path, res.title || item.title, true);
           }
         } else if (res && !res.success && res.error) {
-          toaster.toast({
-            title: "Ошибка",
-            body: res.error,
-            duration: 3500,
-          });
+          console.error("Ошибка подготовки онлайн потока:", res.error);
         }
       } catch (err: any) {
-        toaster.toast({
-          title: "Ошибка запуска",
-          body: String(err?.message || "Не удалось запустить онлайн просмотр"),
-        });
+        console.error("Не удалось запустить онлайн просмотр:", err);
       } finally {
         if (mountedRef.current) {
           setStreamLoading(null);
