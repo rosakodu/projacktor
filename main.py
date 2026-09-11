@@ -2192,9 +2192,14 @@ class Plugin:
         try:
             db = get_db()
             row = db.execute("SELECT aria2_gid FROM downloads WHERE id=?", (did,)).fetchone()
-            db.close()
             if row and row['aria2_gid'] and self.dm:
-                self.dm.pause(row['aria2_gid'])
+                try:
+                    self.dm.pause(row['aria2_gid'])
+                except Exception as e:
+                    logger.warning(f"aria2 pause warning: {e}")
+            db.execute("UPDATE downloads SET status='paused', download_speed=0, upload_speed=0 WHERE id=?", (did,))
+            db.commit()
+            db.close()
             return True
         except:
             return False
@@ -2202,10 +2207,25 @@ class Plugin:
     async def resume_download(self, did: int):
         try:
             db = get_db()
-            row = db.execute("SELECT aria2_gid FROM downloads WHERE id=?", (did,)).fetchone()
+            row = db.execute("SELECT aria2_gid, magnet_uri, download_dir FROM downloads WHERE id=?", (did,)).fetchone()
+            if row and self.dm:
+                res = None
+                if row['aria2_gid']:
+                    try:
+                        res = self.dm.resume(row['aria2_gid'])
+                    except:
+                        res = None
+                # Если задача выпала из памяти aria2, повторно подключаем magnet к той же папке
+                if not res and row.get('magnet_uri') and row.get('download_dir'):
+                    try:
+                        new_gid = self.dm.add_uri(row['magnet_uri'], row['download_dir'])
+                        if new_gid:
+                            db.execute("UPDATE downloads SET aria2_gid=? WHERE id=?", (new_gid, did))
+                    except Exception as e:
+                        logger.error(f"Failed to re-add torrent on resume: {e}")
+            db.execute("UPDATE downloads SET status='downloading' WHERE id=?", (did,))
+            db.commit()
             db.close()
-            if row and row['aria2_gid'] and self.dm:
-                self.dm.resume(row['aria2_gid'])
             return True
         except:
             return False
