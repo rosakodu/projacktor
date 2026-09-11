@@ -322,9 +322,12 @@ export const PROJACKTOR_STYLES = `
   width: 100% !important;
   flex: 1 1 0 !important;
   min-height: 0 !important;
-  overflow-y: auto !important;
+  overflow-y: hidden !important;
   overflow-x: hidden !important;
-  padding: 6px 52px 140px 52px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: flex-start !important;
+  padding: 16px 0 32px 0 !important;
   margin: 0 !important;
   box-sizing: border-box !important;
 }
@@ -707,16 +710,40 @@ export const PROJACKTOR_STYLES = `
   margin-top: 4px;
 }
 
-/* ───── Downloads Poster Grid (Native Steam UI Spec) ───── */
+/* ───── Downloads Shelf Row (Infinite Single Line matching Catalog) ───── */
 .projacktor-downloads-grid {
+  position: relative !important;
   display: flex !important;
-  flex-wrap: wrap !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
   gap: 14px !important;
   width: 100% !important;
-  max-width: 100% !important;
   box-sizing: border-box !important;
-  justify-content: flex-start !important;
-  overflow: hidden !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  padding: 8px 52px 24px 52px !important;
+  scroll-padding: 0 52px !important;
+  margin: 0 !important;
+  scrollbar-width: none !important;
+  mask-image: linear-gradient(
+    to right,
+    transparent 0px,
+    black 40px,
+    black calc(100% - 60px),
+    transparent 100%
+  ) !important;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0px,
+    black 40px,
+    black calc(100% - 60px),
+    transparent 100%
+  ) !important;
+}
+
+.projacktor-downloads-grid::-webkit-scrollbar {
+  display: none !important;
+  height: 0px !important;
 }
 
 .projacktor-dl-grid-card {

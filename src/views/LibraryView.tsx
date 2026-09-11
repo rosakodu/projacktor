@@ -16,78 +16,18 @@ interface LibraryViewProps {
 
 const NAV_COOLDOWN_MS = 110;
 
-function scrollCardVerticalOnly(root: HTMLElement | null, card: HTMLElement | null) {
-  if (!root || !card) return;
-  root.scrollLeft = 0;
-  const rootRect = root.getBoundingClientRect();
-  const cardRect = card.getBoundingClientRect();
-
-  if (cardRect.top < rootRect.top + 10) {
-    const delta = cardRect.top - rootRect.top - 16;
-    root.scrollTop += delta;
-  } else if (cardRect.bottom > rootRect.bottom - 10) {
-    const delta = cardRect.bottom - rootRect.bottom + 16;
-    root.scrollTop += delta;
-  }
-}
-
-function findCardAbove(cards: HTMLElement[], currentIndex: number): HTMLElement | null {
-  if (currentIndex < 0 || currentIndex >= cards.length) return null;
-  const currentCard = cards[currentIndex];
-  const currentRect = currentCard.getBoundingClientRect();
-  const currentCenter = currentRect.left + currentRect.width / 2;
-
-  const aboveCards = cards.filter((c, i) => {
-    if (i === currentIndex) return false;
-    const r = c.getBoundingClientRect();
-    return r.bottom <= currentRect.top + 20;
-  });
-  if (aboveCards.length === 0) return null;
-
-  const maxBottom = Math.max(...aboveCards.map((c) => c.getBoundingClientRect().bottom));
-  const rowAboveCards = aboveCards.filter(
-    (c) => Math.abs(c.getBoundingClientRect().bottom - maxBottom) < 30
-  );
-
-  rowAboveCards.sort((a, b) => {
-    const aCenter = a.getBoundingClientRect().left + a.getBoundingClientRect().width / 2;
-    const bCenter = b.getBoundingClientRect().left + b.getBoundingClientRect().width / 2;
-    return Math.abs(aCenter - currentCenter) - Math.abs(bCenter - currentCenter);
-  });
-
-  return rowAboveCards[0] || null;
-}
-
-function findCardBelow(cards: HTMLElement[], currentIndex: number): HTMLElement | null {
-  if (currentIndex < 0 || currentIndex >= cards.length) return null;
-  const currentCard = cards[currentIndex];
-  const currentRect = currentCard.getBoundingClientRect();
-  const currentCenter = currentRect.left + currentRect.width / 2;
-
-  const belowCards = cards.filter((c, i) => {
-    if (i === currentIndex) return false;
-    const r = c.getBoundingClientRect();
-    return r.top >= currentRect.bottom - 20;
-  });
-  if (belowCards.length === 0) return null;
-
-  const minTop = Math.min(...belowCards.map((c) => c.getBoundingClientRect().top));
-  const rowBelowCards = belowCards.filter(
-    (c) => Math.abs(c.getBoundingClientRect().top - minTop) < 30
-  );
-
-  rowBelowCards.sort((a, b) => {
-    const aCenter = a.getBoundingClientRect().left + a.getBoundingClientRect().width / 2;
-    const bCenter = b.getBoundingClientRect().left + b.getBoundingClientRect().width / 2;
-    return Math.abs(aCenter - currentCenter) - Math.abs(bCenter - currentCenter);
-  });
-
-  return rowBelowCards[0] || null;
+function scrollCardHorizontal(row: HTMLElement | null, card: HTMLElement | null) {
+  if (!row || !card) return;
+  const target = card.offsetLeft - row.clientWidth / 2 + card.offsetWidth / 2;
+  const maxScroll = Math.max(0, row.scrollWidth - row.clientWidth);
+  const final = Math.max(0, Math.min(target, maxScroll));
+  row.scrollTo({ left: final, behavior: "smooth" });
 }
 
 export const LibraryView: FC<LibraryViewProps> = memo(
   ({ onPlayVideo, onActivateMagicBlack }) => {
     const rootRef = useRef<HTMLDivElement>(null);
+    const rowRef = useRef<HTMLDivElement>(null);
     const lastNavAtRef = useRef(0);
     const lastInteractedItemIdRef = useRef<number | string | null>(null);
     const [episodesModalItem, setEpisodesModalItem] = useState<LibraryItem | null>(null);
@@ -166,7 +106,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
           doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
           target.focus();
           target.classList.add("gpfocus");
-          scrollCardVerticalOnly(root, card);
+          scrollCardHorizontal(rowRef.current, card);
         }
       }, 40);
       return () => clearTimeout(timer);
@@ -246,12 +186,11 @@ export const LibraryView: FC<LibraryViewProps> = memo(
       if (!root) return;
 
       const onFocusIn = (e: FocusEvent) => {
-        root.scrollLeft = 0;
         const target = e.target as HTMLElement | null;
         if (!target || !root.contains(target)) return;
         const card = target.closest(".projacktor-dl-grid-card") as HTMLElement | null;
         if (card) {
-          scrollCardVerticalOnly(root, card);
+          scrollCardHorizontal(rowRef.current, card);
         }
       };
 
@@ -292,7 +231,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
           target.classList.add("gpfocus");
           playNavSound();
           const card = target.closest(".projacktor-dl-grid-card") as HTMLElement | null;
-          scrollCardVerticalOnly(root, card || target);
+          scrollCardHorizontal(rowRef.current, card || target);
         };
 
         // Если пустая библиотека — переход вверх в TabBar
@@ -336,20 +275,11 @@ export const LibraryView: FC<LibraryViewProps> = memo(
             );
             doFocus(playBtn);
           } else if (dir === "up") {
-            const cardAbove = findCardAbove(cards, cardIndex);
-            if (cardAbove) {
-              // Переход к кнопкам карточки строкой выше для плавного реверсивного перехода
-              const aboveBtn = cardAbove.querySelector<HTMLElement>(
-                ".projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0']"
-              );
-              doFocus(aboveBtn || cardAbove.querySelector<HTMLElement>(".projacktor-dl-poster-btn"));
-            } else {
-              // Верхний ряд: переход в TabBar на текущую вкладку
-              const activeTabEl = doc.querySelector<HTMLElement>(
-                ".projacktor-tab-item.active, [role='tab'][aria-selected='true']"
-              );
-              if (activeTabEl) doFocus(activeTabEl);
-            }
+            // Вверх: переход в TabBar на текущую вкладку «Загрузки»
+            const activeTabEl = doc.querySelector<HTMLElement>(
+              ".projacktor-tab-item.active, [role='tab'][aria-selected='true']"
+            );
+            if (activeTabEl) doFocus(activeTabEl);
           }
         } else if (isButton) {
           const cardButtons = Array.from(
@@ -363,13 +293,6 @@ export const LibraryView: FC<LibraryViewProps> = memo(
             // Вверх: возврат на постер этой же карточки
             const poster = currentCard.querySelector<HTMLElement>(".projacktor-dl-poster-btn");
             doFocus(poster);
-          } else if (dir === "down") {
-            // Вниз: переход на постер карточки строкой ниже
-            const cardBelow = findCardBelow(cards, cardIndex);
-            if (cardBelow) {
-              const belowPoster = cardBelow.querySelector<HTMLElement>(".projacktor-dl-poster-btn");
-              doFocus(belowPoster);
-            }
           } else if (dir === "left") {
             if (btnIndex > 0) {
               doFocus(cardButtons[btnIndex - 1]);
@@ -520,7 +443,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
             Загрузки пусты. Добавьте фильмы или сериалы из каталога.
           </Focusable>
         ) : (
-          <div className="projacktor-downloads-grid">
+          <div ref={rowRef} className="projacktor-downloads-grid">
             {library.map((item, index) => {
               const isDownloading = item.download_status === "downloading";
               const isPaused = item.download_status === "paused";
