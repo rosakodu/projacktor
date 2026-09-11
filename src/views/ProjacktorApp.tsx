@@ -33,7 +33,7 @@ export const ProjacktorApp: FC = () => {
 
   // Задержка перед показом UI — даём время на применение <style> и первый рендер
   useEffect(() => {
-    const timer = setTimeout(() => setReady(true), 150);
+    const timer = setTimeout(() => setReady(true), 200);
     return () => clearTimeout(timer);
   }, []);
 
@@ -240,6 +240,15 @@ export const ProjacktorApp: FC = () => {
     return un;
   }, [prevTab, nextTab, ensureContentFocus]);
 
+  // Пока не ready — показываем только фон + стили, без контента (нет фокусируемых элементов = нет обводки)
+  if (!ready) {
+    return (
+      <div className="projacktor-app-root">
+        <style>{PROJACKTOR_STYLES}</style>
+      </div>
+    );
+  }
+
   return (
     <Focusable
       ref={rootRef}
@@ -252,7 +261,6 @@ export const ProjacktorApp: FC = () => {
         display: "flex",
         flexDirection: "column",
         color: "var(--ds-text, #fff)",
-        opacity: ready ? 1 : 0,
       }}
     >
       <style>{PROJACKTOR_STYLES}</style>
