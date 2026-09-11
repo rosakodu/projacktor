@@ -59,6 +59,8 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
       }
       if (onPrevSection) {
         playNavSound();
+        const doc = getActiveDocument(rowRef.current);
+        doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
         onPrevSection();
       }
     }, [hasPrevSection, onPrevSection]);
@@ -70,6 +72,8 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
       if (now - lastSectionChangeAtRef.current < SECTION_COOLDOWN_MS) return;
       lastSectionChangeAtRef.current = now;
       playNavSound();
+      const doc = getActiveDocument(rowRef.current);
+      doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
       onNextSection();
     }, [hasNextSection, onNextSection]);
 
@@ -339,9 +343,9 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
           className="projacktor-shelf-row"
           onGamepadDirection={handleGamepadDirection}
         >
-          {items.map((item) => (
+          {items.map((item, index) => (
             <MovieCard
-              key={`${item.media_type || "item"}-${item.id}`}
+              key={`${title}-${item.media_type || "item"}-${item.id}-${index}`}
               movie={item}
               onActivate={onSelectMovie}
               onGamepadDirection={handleGamepadDirection}

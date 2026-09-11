@@ -50,7 +50,7 @@ export const CatalogView: FC<CatalogViewProps> = memo(({ category, onSelectMovie
   return (
     <div className="projacktor-content">
       <SectorShelf
-        key={category}
+        key={`${category}-${currentSection.key}`}
         title={currentSection.title}
         items={currentItems}
         onSelectMovie={onSelectMovie}
