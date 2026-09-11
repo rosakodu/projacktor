@@ -431,13 +431,6 @@ export const LibraryView: FC<LibraryViewProps> = memo(
         noFocusRing
         className="projacktor-library-content"
         onGamepadDirection={handleGamepadDir}
-        onButtonDown={(e: any) => {
-          // Перехватываем B при открытой модалке серий — до глобального обработчика Decky
-          if (episodesModalItem && (e?.button === 1 || e?.detail?.button === 1)) {
-            setEpisodesModalItem(null);
-            return false;
-          }
-        }}
       >
         {library.length === 0 ? (
           <Focusable
@@ -633,15 +626,34 @@ export const LibraryView: FC<LibraryViewProps> = memo(
 
         {/* Модальное окно серий для сериалов */}
         {episodesModalItem && (
-          <div
+          <Focusable
             className="projacktor-episodes-modal-overlay projacktor-modal-root"
-            onClick={(e) => {
-              if (e.target === e.currentTarget) {
+            noFocusRing
+            onButtonDown={(e: any) => {
+              const btn = e?.button ?? e?.detail?.button;
+              if (btn === 1) {
+                // B — закрыть модалку, не выходить из плагина
                 setEpisodesModalItem(null);
+                return false;
               }
             }}
+            onGamepadDirection={() => false}
+            onClick={(e: any) => {
+              if (e.target === e.currentTarget) setEpisodesModalItem(null);
+            }}
           >
-            <div className="projacktor-episodes-modal-box">
+            <Focusable
+              className="projacktor-episodes-modal-box"
+              noFocusRing
+              flow-children="vertical"
+              onButtonDown={(e: any) => {
+                const btn = e?.button ?? e?.detail?.button;
+                if (btn === 1) {
+                  setEpisodesModalItem(null);
+                  return false;
+                }
+              }}
+            >
               <div className="projacktor-episodes-modal-header">
                 <div>
                   <div style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>
@@ -683,6 +695,13 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                           border: "1px solid var(--ds-border)",
                           borderRadius: 0,
                         }}
+                        onButtonDown={(e: any) => {
+                          const btn = e?.button ?? e?.detail?.button;
+                          if (btn === 1) {
+                            setEpisodesModalItem(null);
+                            return false;
+                          }
+                        }}
                       >
                         <div style={{ flex: 1, minWidth: 0, marginRight: 12 }}>
                           <div style={{ fontSize: 13, fontWeight: 600, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={ep.name}>
@@ -709,13 +728,13 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                           <Focusable
                             className={`ds-btn ds-btn--compact ${isEpCompleted ? "ds-btn--primary" : ""}`}
                             noFocusRing
-                            onActivate={() => {
-                              watchOnline(episodesModalItem, ep.index);
-                            }}
-                            onClick={() => {
-                              watchOnline(episodesModalItem, ep.index);
-                            }}
+                            onActivate={() => watchOnline(episodesModalItem, ep.index)}
+                            onClick={() => watchOnline(episodesModalItem, ep.index)}
                             title={isEpCompleted ? "Смотреть файл" : "Смотреть онлайн"}
+                            onButtonDown={(e: any) => {
+                              const btn = e?.button ?? e?.detail?.button;
+                              if (btn === 1) { setEpisodesModalItem(null); return false; }
+                            }}
                           >
                             <FaPlay style={{ fontSize: 10, marginRight: 4 }} />
                             {isEpCompleted ? "Смотреть" : "Онлайн"}
@@ -728,6 +747,10 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                               onActivate={() => downloadEpisode(episodesModalItem, ep)}
                               onClick={() => downloadEpisode(episodesModalItem, ep)}
                               title="Скачать эту серию"
+                              onButtonDown={(e: any) => {
+                                const btn = e?.button ?? e?.detail?.button;
+                                if (btn === 1) { setEpisodesModalItem(null); return false; }
+                              }}
                             >
                               <FaDownload style={{ fontSize: 10, marginRight: 4 }} />
                               Скачать
@@ -739,8 +762,8 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                   })
                 )}
               </div>
-            </div>
-          </div>
+            </Focusable>
+          </Focusable>
         )}
       </Focusable>
     );
