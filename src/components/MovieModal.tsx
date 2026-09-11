@@ -16,6 +16,7 @@ import {
   rpcGetEpisodes,
   rpcDownloadEpisode,
   formatBytes,
+  sortEpisodes,
 } from "../api";
 
 interface MovieModalProps {
@@ -256,7 +257,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
         const mid = await getOrCreateMediaId(torrent, false);
         const eps = await rpcGetEpisodes(mid);
         if (Array.isArray(eps)) {
-          setEpisodesMap((prev) => ({ ...prev, [tId]: eps }));
+          setEpisodesMap((prev) => ({ ...prev, [tId]: sortEpisodes(eps) }));
         }
       } catch (err: any) {
         toaster.toast({
@@ -656,14 +657,14 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                               Серии загружаются. Подождите пару секунд и нажмите снова.
                             </div>
                           ) : (
-                            episodes.map((ep) => {
+                            episodes.map((ep, idx) => {
                               const isEpStreaming = streamingEpIdx === ep.index;
                               const isEpDownloading = downloadingEpIdx === ep.index;
                               return (
                                 <div key={ep.index} className="projacktor-torrent-ep-row">
                                   <div className="projacktor-torrent-ep-title" title={ep.name}>
                                     <span style={{ fontWeight: 700, marginRight: 6, color: "var(--ds-accent)" }}>
-                                      #{ep.index}
+                                      #{idx + 1}
                                     </span>
                                     {ep.name}
                                   </div>

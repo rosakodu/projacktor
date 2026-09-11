@@ -1773,6 +1773,35 @@ class Plugin:
             logger.error(f"Plugin start_download error: {e}")
             return {"success": False, "error": str(e)}
 
+    @staticmethod
+    def _natural_keys(text):
+        return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', str(text))]
+
+    @classmethod
+    def _episode_sort_key(cls, ep):
+        name = ep.get('name', '') or ep.get('path', '') or ''
+        # 1. Match S01E02, s1e2, s01.e02, etc.
+        m = re.search(r'[sS](\d+)[\.\s_-]*[eE](\d+)', name)
+        if m:
+            return (int(m.group(1)), int(m.group(2)), cls._natural_keys(name))
+        # 2. Match 1x02, 01x02
+        m = re.search(r'(\d+)[xX](\d+)', name)
+        if m:
+            return (int(m.group(1)), int(m.group(2)), cls._natural_keys(name))
+        # 3. Match Season/Сезон
+        s_m = re.search(r'(?:[sS]eason|[сС]езон)\s*(\d+)', name, re.I)
+        season = int(s_m.group(1)) if s_m else 1
+        # 4. Match Episode/Серия/Сер/Эпизод/Ep/E
+        e_m = re.search(r'(?:[eE]pisode|[eE]p\.?|[сС]ерия|[сС]ер\.?|[эЭ]пизод)\s*(\d+)', name, re.I)
+        if e_m:
+            return (season, int(e_m.group(1)), cls._natural_keys(name))
+        # 5. Match number before серия (e.g. "5 серия")
+        e_m2 = re.search(r'(\d+)\s*(?:серия|сер|выпуск|эпизод)', name, re.I)
+        if e_m2:
+            return (season, int(e_m2.group(1)), cls._natural_keys(name))
+        # 6. Fallback: natural sort
+        return (season, 999999, cls._natural_keys(name))
+
     async def get_episodes(self, mid: int):
         try:
             db = get_db()
@@ -1799,6 +1828,7 @@ class Plugin:
                         "selected": True,
                         "downloaded": True
                     })
+                episodes.sort(key=self._episode_sort_key)
                 return episodes
 
             # 2. Check download_dir for already downloaded video files
@@ -1825,6 +1855,7 @@ class Plugin:
                             })
                 if disk_episodes and all(e['downloaded'] for e in disk_episodes):
                     db.close()
+                    disk_episodes.sort(key=self._episode_sort_key)
                     return disk_episodes
 
             # 3. Check cached episodes in media table
@@ -1850,6 +1881,7 @@ class Plugin:
                                         ep['selected'] = af.get('selected', 'false') == 'true'
                                         ep['downloaded'] = (ep['completed'] >= ep['size']) and ep['size'] > 0
                         db.close()
+                        cached_eps.sort(key=self._episode_sort_key)
                         return cached_eps
                 except Exception as e:
                     logger.error(f"Error reading cached episodes: {e}")
@@ -1931,6 +1963,7 @@ class Plugin:
                             "selected": selected,
                             "downloaded": downloaded
                         })
+                episodes.sort(key=self._episode_sort_key)
                 # Cache episodes into DB
                 if episodes:
                     try:

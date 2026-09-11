@@ -1,8 +1,8 @@
 import { FC, memo, useEffect, useRef, useCallback } from "react";
 import { Focusable, showModal } from "@decky/ui";
 import { FaPlay, FaPlayCircle, FaPause, FaDownload, FaList, FaTrash, FaMoon, FaSpinner } from "react-icons/fa";
-import { EpisodeItem, LibraryItem } from "../types";
-import { formatBytes, formatSpeed, getImageUrl } from "../api";
+import { LibraryItem } from "../types";
+import { formatSpeed, getImageUrl } from "../api";
 import { useLibrary } from "../hooks/useLibrary";
 import { getActiveDocument } from "../runtime/activeDoc";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
@@ -35,13 +35,10 @@ export const LibraryView: FC<LibraryViewProps> = memo(
 
     const {
       library,
-      episodesMap,
-      episodesLoading,
       streamLoading,
       pauseDownload,
       resumeDownload,
       deleteItem,
-      toggleEpisodes,
       downloadEpisode,
       watchOnline,
     } = useLibrary(onPlayVideo);
@@ -49,7 +46,6 @@ export const LibraryView: FC<LibraryViewProps> = memo(
     // Открытие модалки серий через нативный Decky showModal — B кнопка работает автоматически
     const handleOpenEpisodes = useCallback((item: LibraryItem) => {
       lastInteractedItemIdRef.current = item.id;
-      toggleEpisodes(item);
       let modalInstance: any = null;
       const close = () => {
         if (modalInstance && typeof modalInstance.Close === "function") {
@@ -74,20 +70,17 @@ export const LibraryView: FC<LibraryViewProps> = memo(
           }
         }, 80);
       };
-      const episodes = episodesMap[item.id] || [];
-      const loading = !!episodesLoading[item.id];
       modalInstance = showModal(
         <EpisodesModal
           item={item}
-          episodes={episodes}
-          loading={loading}
           closeModal={close}
           onWatchOnline={(i, epIdx) => { close(); watchOnline(i, epIdx); }}
-          onDownloadEpisode={(i, ep) => { close(); downloadEpisode(i, ep); }}
+          onDownloadEpisode={(i, ep) => { downloadEpisode(i, ep); }}
         />,
         window
       );
-    }, [episodesMap, episodesLoading, toggleEpisodes, watchOnline, downloadEpisode]);
+    }, [watchOnline, downloadEpisode]);
+
 
 
 

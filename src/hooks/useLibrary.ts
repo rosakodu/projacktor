@@ -12,6 +12,7 @@ import {
   rpcGetEpisodes,
   rpcDownloadEpisode,
   rpcPrepareStream,
+  sortEpisodes,
 } from "../api";
 
 export function useLibrary(onPlayVideo?: (filePath: string, title: string, isOnline: boolean) => void) {
@@ -107,7 +108,7 @@ export function useLibrary(onPlayVideo?: (filePath: string, title: string, isOnl
         try {
           const eps = await rpcGetEpisodes(item.id);
           if (mountedRef.current) {
-            setEpisodesMap((prev) => ({ ...prev, [item.id]: eps }));
+            setEpisodesMap((prev) => ({ ...prev, [item.id]: sortEpisodes(eps) }));
           }
         } catch {
           toaster.toast({ title: "Ошибка", body: "Не удалось получить список серий" });
@@ -133,7 +134,7 @@ export function useLibrary(onPlayVideo?: (filePath: string, title: string, isOnl
         refreshLibrary();
         const eps = await rpcGetEpisodes(item.id);
         if (mountedRef.current && Array.isArray(eps)) {
-          setEpisodesMap((prev) => ({ ...prev, [item.id]: eps }));
+          setEpisodesMap((prev) => ({ ...prev, [item.id]: sortEpisodes(eps) }));
         }
       } catch (err: any) {
         toaster.toast({

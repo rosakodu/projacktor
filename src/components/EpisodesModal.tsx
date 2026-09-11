@@ -1,13 +1,11 @@
-import { FC, useEffect, useRef } from "react";
+import { FC, useState, useEffect, useRef, useCallback } from "react";
 import { ModalRoot, Focusable } from "@decky/ui";
 import { FaPlay, FaDownload, FaSpinner } from "react-icons/fa";
 import { EpisodeItem, LibraryItem } from "../types";
-import { formatBytes } from "../api";
+import { formatBytes, rpcGetEpisodes, sortEpisodes } from "../api";
 
 interface EpisodesModalProps {
   item: LibraryItem;
-  episodes: EpisodeItem[];
-  loading: boolean;
   closeModal?: () => void;
   onWatchOnline: (item: LibraryItem, epIndex: number) => void;
   onDownloadEpisode: (item: LibraryItem, ep: EpisodeItem) => void;
@@ -15,16 +13,53 @@ interface EpisodesModalProps {
 
 export const EpisodesModal: FC<EpisodesModalProps> = ({
   item,
-  episodes,
-  loading,
   closeModal,
   onWatchOnline,
   onDownloadEpisode,
 }) => {
   const listRef = useRef<HTMLDivElement>(null);
+  const [episodes, setEpisodes] = useState<EpisodeItem[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [downloadingEpIdx, setDownloadingEpIdx] = useState<number | null>(null);
 
-  // Фокус на первой кнопке при открытии
+  const fetchEpisodes = useCallback(async (showSpinner = true) => {
+    if (showSpinner) setLoading(true);
+    try {
+      const eps = await rpcGetEpisodes(item.id);
+      if (Array.isArray(eps)) {
+        setEpisodes(sortEpisodes(eps));
+      }
+    } catch (e) {
+      console.error("Failed to load episodes:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, [item.id]);
+
   useEffect(() => {
+    let active = true;
+    setLoading(true);
+    rpcGetEpisodes(item.id)
+      .then((eps) => {
+        if (active && Array.isArray(eps)) {
+          setEpisodes(sortEpisodes(eps));
+        }
+      })
+      .catch((err) => {
+        console.error("Error loading episodes:", err);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [item.id]);
+
+  // Фокус на первой кнопке при загрузке серий
+  useEffect(() => {
+    if (loading || episodes.length === 0) return;
     const t = setTimeout(() => {
       const first = listRef.current?.querySelector<HTMLElement>(
         ".ds-btn, [tabindex='0'], button"
@@ -35,7 +70,17 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
       }
     }, 60);
     return () => clearTimeout(t);
-  }, [episodes.length]);
+  }, [loading, episodes.length]);
+
+  const handleDownload = async (ep: EpisodeItem) => {
+    setDownloadingEpIdx(ep.index);
+    try {
+      await onDownloadEpisode(item, ep);
+      await fetchEpisodes(false);
+    } finally {
+      setDownloadingEpIdx(null);
+    }
+  };
 
   return (
     <ModalRoot
@@ -60,7 +105,7 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
             {item.title}
           </div>
           <div style={{ fontSize: 11, color: "var(--ds-text-dim)", marginTop: 2 }}>
-            Серии · нажмите B для закрытия
+            Выбор серии · нажмите B для закрытия
           </div>
         </div>
 
@@ -84,24 +129,35 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                   marginRight: 8,
                 }}
               />
-              Загрузка серий...
+              Загрузка серий из торрента...
             </div>
           ) : episodes.length === 0 ? (
             <div
               style={{
-                padding: "28px 0",
+                padding: "24px 16px",
                 textAlign: "center",
                 color: "var(--ds-text-dim)",
                 fontSize: 13,
               }}
             >
-              Серии пока не найдены. Подождите несколько секунд.
+              <div>Серии пока не найдены. Если торрент только добавлен, подождите несколько секунд подключения к раздаче.</div>
+              <Focusable
+                className="ds-btn ds-btn--compact ds-btn--primary"
+                noFocusRing
+                onActivate={() => fetchEpisodes(true)}
+                onClick={() => fetchEpisodes(true)}
+                onCancelButton={closeModal}
+                style={{ marginTop: 12 }}
+              >
+                Проверить снова
+              </Focusable>
             </div>
           ) : (
-            episodes.map((ep: EpisodeItem) => {
+            episodes.map((ep: EpisodeItem, idx: number) => {
               const isEpCompleted =
                 ep.downloaded || (ep.size > 0 && ep.completed >= ep.size);
               const isEpPartial = ep.completed > 0 && !isEpCompleted;
+              const isEpDownloading = downloadingEpIdx === ep.index;
 
               return (
                 <Focusable
@@ -116,7 +172,7 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                   }}
                   onCancelButton={closeModal}
                 >
-                  {/* Информация о серии */}
+                  {/* Информация о серии: отображаем #1, #2, #3 по порядку */}
                   <div style={{ flex: 1, minWidth: 0, marginRight: 12 }}>
                     <div
                       style={{
@@ -130,7 +186,7 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                       title={ep.name}
                     >
                       <span style={{ color: "var(--ds-accent)", marginRight: 6 }}>
-                        #{ep.index + 1}
+                        #{idx + 1}
                       </span>
                       {ep.name}
                     </div>
@@ -158,7 +214,7 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Кнопки */}
+                  {/* Кнопки действий */}
                   <Focusable
                     flow-children="horizontal"
                     noFocusRing
@@ -181,12 +237,16 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                       <Focusable
                         className="ds-btn ds-btn--compact"
                         noFocusRing
-                        onActivate={() => onDownloadEpisode(item, ep)}
-                        onClick={() => onDownloadEpisode(item, ep)}
+                        onActivate={() => handleDownload(ep)}
+                        onClick={() => handleDownload(ep)}
                         onCancelButton={closeModal}
                         title="Скачать эту серию"
                       >
-                        <FaDownload style={{ fontSize: 10, marginRight: 4 }} />
+                        {isEpDownloading ? (
+                          <FaSpinner style={{ animation: "projacktor-spin 0.9s linear infinite", fontSize: 10, marginRight: 4 }} />
+                        ) : (
+                          <FaDownload style={{ fontSize: 10, marginRight: 4 }} />
+                        )}
                         Скачать
                       </Focusable>
                     )}
