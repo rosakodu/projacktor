@@ -174,10 +174,9 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                 const sz = item.total_file_size || item.download_total_size || 0;
                 subText = sz > 0 ? formatBytes(sz) : "Локальный файл";
               } else if (isDownloading) {
-                const spd = formatSpeed(item.download_speed || 0);
-                subText = `${spd} • ${progress.toFixed(0)}%`;
+                subText = formatSpeed(item.download_speed || 0);
               } else if (isPaused) {
-                subText = `Пауза • ${progress.toFixed(0)}%`;
+                subText = "На паузе";
               }
 
               return (
@@ -362,7 +361,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                           padding: "10px 14px",
                           background: "var(--ds-surface)",
                           border: "1px solid var(--ds-border)",
-                          borderRadius: 4,
+                          borderRadius: 0,
                         }}
                       >
                         <div style={{ flex: 1, minWidth: 0, marginRight: 12 }}>

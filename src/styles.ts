@@ -707,33 +707,36 @@ export const PROJACKTOR_STYLES = `
   margin-top: 4px;
 }
 
-/* ───── Downloads Poster Grid (New Visual Specification) ───── */
+/* ───── Downloads Poster Grid (Native Steam UI Spec) ───── */
 .projacktor-downloads-grid {
-  display: grid !important;
-  grid-template-columns: repeat(auto-fill, 156px) !important;
-  gap: 16px !important;
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 14px !important;
   width: 100% !important;
   box-sizing: border-box !important;
   justify-content: flex-start !important;
 }
 
 .projacktor-dl-grid-card {
-  width: 156px !important;
+  width: 140px !important;
+  min-width: 140px !important;
+  max-width: 140px !important;
+  flex: 0 0 140px !important;
   display: flex !important;
   flex-direction: column !important;
   background: #141a23 !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
-  border-radius: 4px !important;
-  padding: 6px !important;
-  box-sizing: border-box !important;
-  outline: none !important;
+  border: 2px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 0px !important;
+  overflow: hidden !important;
   position: relative !important;
-  transition: border-color 0.15s ease, background-color 0.15s ease !important;
+  outline: none !important;
+  user-select: none !important;
+  box-sizing: border-box !important;
+  transition: border-color 0.1s ease !important;
 }
 
 .projacktor-dl-grid-card:focus-within {
-  border-color: rgba(255, 255, 255, 0.25) !important;
-  background: #18202c !important;
+  border-color: rgba(255, 255, 255, 0.3) !important;
 }
 
 .projacktor-dl-grid-card::before,
@@ -759,11 +762,11 @@ export const PROJACKTOR_STYLES = `
 
 .projacktor-dl-poster-btn {
   width: 100% !important;
-  height: 218px !important;
+  height: 186px !important;
   position: relative !important;
   overflow: hidden !important;
-  border-radius: 2px !important;
-  border: 2px solid transparent !important;
+  border: none !important;
+  border-radius: 0px !important;
   background: #0f141c !important;
   cursor: pointer !important;
   outline: none !important;
@@ -775,33 +778,35 @@ export const PROJACKTOR_STYLES = `
 
 .projacktor-dl-poster-btn:focus,
 .projacktor-dl-poster-btn.gpfocus {
-  border-color: #ffffff !important;
-  box-shadow: 0 0 12px rgba(26, 159, 255, 0.4) !important;
+  outline: 2px solid #ffffff !important;
+  outline-offset: -2px !important;
 }
 
 .projacktor-dl-poster-img {
   width: 100% !important;
-  height: 100% !important;
+  height: 186px !important;
   object-fit: cover !important;
   display: block !important;
+  background: #0f141c !important;
 }
 
 .projacktor-dl-badge-status {
   position: absolute !important;
   top: 6px !important;
   left: 6px !important;
-  font-size: 10px !important;
+  font-size: 9.5px !important;
   font-weight: 700 !important;
-  padding: 2px 6px !important;
-  border-radius: 2px !important;
+  padding: 2px 5px !important;
+  border-radius: 0px !important;
   color: #fff !important;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.6) !important;
   z-index: 2 !important;
   line-height: 1.2 !important;
+  letter-spacing: 0.3px !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
 }
 
 .projacktor-dl-badge-status.downloading {
-  background: rgba(2, 132, 199, 0.9) !important;
+  background: rgba(26, 159, 255, 0.9) !important;
 }
 
 .projacktor-dl-badge-status.completed {
@@ -814,20 +819,20 @@ export const PROJACKTOR_STYLES = `
 }
 
 .projacktor-dl-badge-status.queued {
-  background: rgba(100, 116, 139, 0.8) !important;
+  background: rgba(0, 0, 0, 0.78) !important;
 }
 
 .projacktor-dl-badge-quality {
   position: absolute !important;
   top: 6px !important;
   right: 6px !important;
-  font-size: 9.5px !important;
+  font-size: 8.5px !important;
   font-weight: 700 !important;
-  padding: 2px 5px !important;
-  border-radius: 2px !important;
-  background: rgba(0, 0, 0, 0.75) !important;
-  color: #e2e8f0 !important;
-  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  padding: 1px 4px !important;
+  border-radius: 0px !important;
+  background: rgba(0, 0, 0, 0.78) !important;
+  color: #fff !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
   z-index: 2 !important;
   line-height: 1.2 !important;
 }
@@ -837,19 +842,19 @@ export const PROJACKTOR_STYLES = `
   bottom: 0 !important;
   left: 0 !important;
   right: 0 !important;
-  height: 4px !important;
-  background: rgba(0, 0, 0, 0.7) !important;
+  height: 3px !important;
+  background: rgba(0, 0, 0, 0.75) !important;
   overflow: hidden !important;
   z-index: 2 !important;
 }
 
 .projacktor-dl-bar-fill {
   height: 100% !important;
-  transition: width 0.3s ease !important;
+  transition: width 0.2s ease !important;
 }
 
 .projacktor-dl-bar-fill.downloading {
-  background: linear-gradient(90deg, #0284c7 0%, #38bdf8 100%) !important;
+  background: #1a9fff !important;
 }
 
 .projacktor-dl-bar-fill.paused {
@@ -861,10 +866,11 @@ export const PROJACKTOR_STYLES = `
 }
 
 .projacktor-dl-info {
-  padding: 5px 2px 4px 2px !important;
+  padding: 5px 8px 4px 8px !important;
   display: flex !important;
   flex-direction: column !important;
-  width: 100% !important;
+  justify-content: flex-start !important;
+  background: #141a23 !important;
   box-sizing: border-box !important;
 }
 
@@ -886,7 +892,7 @@ export const PROJACKTOR_STYLES = `
 
 .projacktor-dl-subtext {
   font-size: 10.5px !important;
-  color: var(--ds-text-dim) !important;
+  color: #8b929a !important;
   margin-top: 2px !important;
   line-height: 1.15 !important;
   white-space: nowrap !important;
@@ -898,41 +904,43 @@ export const PROJACKTOR_STYLES = `
   display: flex !important;
   align-items: center !important;
   gap: 4px !important;
-  width: 100% !important;
-  margin-top: 4px !important;
+  padding: 0 6px 6px 6px !important;
+  background: #141a23 !important;
   box-sizing: border-box !important;
 }
 
 .projacktor-dl-btn-play {
   flex: 1 !important;
-  height: 28px !important;
-  padding: 0 6px !important;
+  height: 26px !important;
+  padding: 0 4px !important;
   font-size: 11px !important;
-  font-weight: 700 !important;
+  font-weight: 600 !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
   gap: 4px !important;
-  background: var(--ds-surface-hi) !important;
-  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  background: var(--ds-surface) !important;
+  border: 1px solid var(--ds-border) !important;
   color: #fff !important;
-  border-radius: 2px !important;
+  border-radius: 0px !important;
   cursor: pointer !important;
   outline: none !important;
+  box-sizing: border-box !important;
 }
 
 .projacktor-dl-btn-play:focus,
 .projacktor-dl-btn-play.gpfocus {
-  background: var(--ds-accent) !important;
-  border-color: #fff !important;
+  background: var(--ds-surface-hi) !important;
+  border-color: #ffffff !important;
   color: #fff !important;
-  box-shadow: 0 0 10px rgba(26, 159, 255, 0.5) !important;
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 .projacktor-dl-btn-icon {
-  width: 28px !important;
-  height: 28px !important;
-  flex: 0 0 28px !important;
+  width: 26px !important;
+  height: 26px !important;
+  flex: 0 0 26px !important;
   padding: 0 !important;
   display: inline-flex !important;
   align-items: center !important;
@@ -940,9 +948,10 @@ export const PROJACKTOR_STYLES = `
   background: var(--ds-surface) !important;
   border: 1px solid var(--ds-border) !important;
   color: var(--ds-text) !important;
-  border-radius: 2px !important;
+  border-radius: 0px !important;
   cursor: pointer !important;
   outline: none !important;
+  box-sizing: border-box !important;
 }
 
 .projacktor-dl-btn-icon:focus,
@@ -950,6 +959,7 @@ export const PROJACKTOR_STYLES = `
   background: var(--ds-surface-hi) !important;
   border-color: #ffffff !important;
   color: #fff !important;
+  outline: none !important;
   box-shadow: none !important;
 }
 
@@ -958,14 +968,16 @@ export const PROJACKTOR_STYLES = `
   background: var(--ds-danger) !important;
   border-color: var(--ds-danger) !important;
   color: #fff !important;
+  outline: none !important;
+  box-shadow: none !important;
 }
 
-/* ───── Episodes Dialog Modal ───── */
+/* ───── Episodes Dialog Modal (Native Steam UI Spec) ───── */
 .projacktor-episodes-modal-overlay {
   position: fixed !important;
   inset: 0 !important;
   background: rgba(0, 0, 0, 0.82) !important;
-  backdrop-filter: blur(8px) !important;
+  backdrop-filter: blur(4px) !important;
   z-index: 9999 !important;
   display: flex !important;
   align-items: center !important;
@@ -976,32 +988,33 @@ export const PROJACKTOR_STYLES = `
 
 .projacktor-episodes-modal-box {
   background: #111722 !important;
-  border: 1px solid rgba(255, 255, 255, 0.15) !important;
-  border-radius: 6px !important;
-  max-width: 680px !important;
+  border: 1px solid var(--ds-border) !important;
+  border-radius: 0px !important;
+  max-width: 640px !important;
   width: 100% !important;
   max-height: 80vh !important;
   display: flex !important;
   flex-direction: column !important;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8) !important;
+  box-shadow: none !important;
   overflow: hidden !important;
 }
 
 .projacktor-episodes-modal-header {
-  padding: 14px 20px !important;
+  padding: 12px 16px !important;
   background: #161e2b !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-bottom: 1px solid var(--ds-border) !important;
+  border-radius: 0px !important;
   display: flex !important;
   justify-content: space-between !important;
   align-items: center !important;
 }
 
 .projacktor-episodes-modal-list {
-  padding: 12px 20px !important;
+  padding: 12px 16px !important;
   overflow-y: auto !important;
   display: flex !important;
   flex-direction: column !important;
-  gap: 8px !important;
+  gap: 6px !important;
   flex: 1 !important;
 }
 
