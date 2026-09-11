@@ -5,9 +5,10 @@ import { MediaItem, getImageUrl } from "../api";
 interface MovieCardProps {
   movie: MediaItem;
   onActivate: (movie: MediaItem) => void;
+  onGamepadDirection?: (evt: any) => void;
 }
 
-export const MovieCard: FC<MovieCardProps> = memo(({ movie, onActivate }) => {
+export const MovieCard: FC<MovieCardProps> = memo(({ movie, onActivate, onGamepadDirection }) => {
   const title = movie.title || movie.name || "Без названия";
   const date = movie.release_date || movie.first_air_date || "";
   const year = date ? date.split("-")[0] : "";
@@ -20,6 +21,7 @@ export const MovieCard: FC<MovieCardProps> = memo(({ movie, onActivate }) => {
       onActivate={() => onActivate(movie)}
       onClick={() => onActivate(movie)}
       onOKActionDescription="Подробнее"
+      onGamepadDirection={onGamepadDirection}
     >
       {rating && <div className="projacktor-card-rating">★ {rating}</div>}
       <img

@@ -259,6 +259,12 @@ export const TabBar: FC<TabBarProps> = memo(
                       evt?.preventDefault?.();
                       evt?.stopPropagation?.();
                     } catch {}
+                  } else if (btn === 10) {
+                    try {
+                      evt?.preventDefault?.();
+                      evt?.stopPropagation?.();
+                    } catch {}
+                    moveFocusDown();
                   }
                 }}
               >
