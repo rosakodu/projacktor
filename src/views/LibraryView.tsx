@@ -6,15 +6,73 @@ import { formatBytes, formatSpeed, getImageUrl } from "../api";
 import { useLibrary } from "../hooks/useLibrary";
 import { getActiveDocument } from "../runtime/activeDoc";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
+import { playNavSound } from "../runtime/navSound";
+import { isModalOpen } from "../runtime/homeInputBus";
 
 interface LibraryViewProps {
   onPlayVideo: (filePath: string, title: string, isOnline: boolean) => void;
   onActivateMagicBlack?: () => void;
 }
 
+const NAV_COOLDOWN_MS = 110;
+
+function findCardAbove(cards: HTMLElement[], currentIndex: number): HTMLElement | null {
+  const currentCard = cards[currentIndex];
+  if (!currentCard) return null;
+  const currentRect = currentCard.getBoundingClientRect();
+  const currentCenter = currentRect.left + currentRect.width / 2;
+
+  const aboveCards = cards.filter((card) => {
+    const rect = card.getBoundingClientRect();
+    return rect.bottom <= currentRect.top + 15;
+  });
+  if (aboveCards.length === 0) return null;
+
+  const maxBottom = Math.max(...aboveCards.map((c) => c.getBoundingClientRect().bottom));
+  const rowAboveCards = aboveCards.filter(
+    (c) => Math.abs(c.getBoundingClientRect().bottom - maxBottom) < 30
+  );
+
+  rowAboveCards.sort((a, b) => {
+    const aCenter = a.getBoundingClientRect().left + a.getBoundingClientRect().width / 2;
+    const bCenter = b.getBoundingClientRect().left + b.getBoundingClientRect().width / 2;
+    return Math.abs(aCenter - currentCenter) - Math.abs(bCenter - currentCenter);
+  });
+
+  return rowAboveCards[0] || null;
+}
+
+function findCardBelow(cards: HTMLElement[], currentIndex: number): HTMLElement | null {
+  const currentCard = cards[currentIndex];
+  if (!currentCard) return null;
+  const currentRect = currentCard.getBoundingClientRect();
+  const currentCenter = currentRect.left + currentRect.width / 2;
+
+  const belowCards = cards.filter((card) => {
+    const rect = card.getBoundingClientRect();
+    return rect.top >= currentRect.bottom - 15;
+  });
+  if (belowCards.length === 0) return null;
+
+  const minTop = Math.min(...belowCards.map((c) => c.getBoundingClientRect().top));
+  const rowBelowCards = belowCards.filter(
+    (c) => Math.abs(c.getBoundingClientRect().top - minTop) < 30
+  );
+
+  rowBelowCards.sort((a, b) => {
+    const aCenter = a.getBoundingClientRect().left + a.getBoundingClientRect().width / 2;
+    const bCenter = b.getBoundingClientRect().left + b.getBoundingClientRect().width / 2;
+    return Math.abs(aCenter - currentCenter) - Math.abs(bCenter - currentCenter);
+  });
+
+  return rowBelowCards[0] || null;
+}
+
 export const LibraryView: FC<LibraryViewProps> = memo(
   ({ onPlayVideo }) => {
     const rootRef = useRef<HTMLDivElement>(null);
+    const lastNavAtRef = useRef(0);
+    const lastInteractedItemIdRef = useRef<number | string | null>(null);
     const [episodesModalItem, setEpisodesModalItem] = useState<LibraryItem | null>(null);
 
     const {
@@ -56,6 +114,47 @@ export const LibraryView: FC<LibraryViewProps> = memo(
       };
     }, [episodesModalItem]);
 
+    // Фокус при открытии модального окна серий
+    useEffect(() => {
+      if (!episodesModalItem) return;
+      const timer = setTimeout(() => {
+        const root = rootRef.current;
+        const doc = getActiveDocument(root);
+        const modalBtn = doc?.querySelector<HTMLElement>(
+          ".projacktor-episodes-modal-list .ds-btn, .projacktor-episodes-modal-header .ds-btn"
+        );
+        if (modalBtn) {
+          doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+          modalBtn.focus();
+          modalBtn.classList.add("gpfocus");
+        }
+      }, 50);
+      return () => clearTimeout(timer);
+    }, [episodesModalItem]);
+
+    // Восстановление фокуса при закрытии модального окна серий
+    useEffect(() => {
+      if (episodesModalItem || lastInteractedItemIdRef.current == null) return;
+      const timer = setTimeout(() => {
+        const root = rootRef.current;
+        if (!root) return;
+        const doc = getActiveDocument(root);
+        const card = root.querySelector<HTMLElement>(
+          `[data-item-id="${lastInteractedItemIdRef.current}"]`
+        );
+        const target = card?.querySelector<HTMLElement>(
+          ".projacktor-dl-poster-btn, .projacktor-dl-btn-play"
+        );
+        if (target) {
+          doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+          target.focus();
+          target.classList.add("gpfocus");
+          target.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+        }
+      }, 40);
+      return () => clearTimeout(timer);
+    }, [episodesModalItem]);
+
     // Авто-фокус на элементе библиотеки при переходе во вкладку (если фокус не на табах)
     useEffect(() => {
       let cancelled = false;
@@ -78,7 +177,9 @@ export const LibraryView: FC<LibraryViewProps> = memo(
           : null;
         if (target) {
           try {
+            doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
             target.focus();
+            target.classList.add("gpfocus");
           } catch {}
           return true;
         }
@@ -101,13 +202,260 @@ export const LibraryView: FC<LibraryViewProps> = memo(
       };
     }, [library.length]);
 
+    // Авто-скролл карточки в поле видимости при получении фокуса
+    useEffect(() => {
+      const root = rootRef.current;
+      if (!root) return;
+
+      const onFocusIn = (e: FocusEvent) => {
+        const target = e.target as HTMLElement | null;
+        if (!target || !root.contains(target)) return;
+        const card = target.closest(".projacktor-dl-grid-card") as HTMLElement | null;
+        if (card) {
+          card.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+        }
+      };
+
+      root.addEventListener("focusin", onFocusIn);
+      return () => root.removeEventListener("focusin", onFocusIn);
+    }, []);
+
     const handleOpenEpisodes = useCallback(
       (item: LibraryItem) => {
+        lastInteractedItemIdRef.current = item.id;
         setEpisodesModalItem(item);
         toggleEpisodes(item);
       },
       [toggleEpisodes]
     );
+
+    // Основной 2D обработчик перемещения геймпада, стиков и клавиатуры
+    const handleDirection = useCallback(
+      (dir: "up" | "down" | "left" | "right") => {
+        if (isModalOpen() || episodesModalItem) return;
+
+        const now = Date.now();
+        if (now - lastNavAtRef.current < NAV_COOLDOWN_MS) return;
+
+        const root = rootRef.current;
+        if (!root) return;
+        const doc = getActiveDocument(root);
+        if (!doc) return;
+
+        const active = doc.activeElement as HTMLElement | null;
+        if (!active || !root.contains(active)) return;
+
+        const doFocus = (target: HTMLElement | null) => {
+          if (!target) return;
+          lastNavAtRef.current = Date.now();
+          doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+          target.focus();
+          target.classList.add("gpfocus");
+          playNavSound();
+          target.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+        };
+
+        // Если пустая библиотека — переход вверх в TabBar
+        if (active.classList.contains("projacktor-empty-lib") || active.closest(".projacktor-empty-lib")) {
+          if (dir === "up") {
+            const activeTabEl = doc.querySelector<HTMLElement>(
+              ".projacktor-tab-item.active, [role='tab'][aria-selected='true']"
+            );
+            if (activeTabEl) doFocus(activeTabEl);
+          }
+          return;
+        }
+
+        const cards = Array.from(root.querySelectorAll<HTMLElement>(".projacktor-dl-grid-card"));
+        if (!cards.length) return;
+
+        const currentCard = active.closest(".projacktor-dl-grid-card") as HTMLElement | null;
+        if (!currentCard) return;
+
+        const cardIndex = cards.indexOf(currentCard);
+        if (cardIndex === -1) return;
+
+        const isPoster = !!active.closest(".projacktor-dl-poster-btn");
+        const isButton = !isPoster && !!active.closest(".projacktor-dl-card-btns");
+
+        if (isPoster) {
+          if (dir === "left") {
+            if (cardIndex > 0) {
+              const prevPoster = cards[cardIndex - 1].querySelector<HTMLElement>(".projacktor-dl-poster-btn");
+              doFocus(prevPoster);
+            }
+          } else if (dir === "right") {
+            if (cardIndex < cards.length - 1) {
+              const nextPoster = cards[cardIndex + 1].querySelector<HTMLElement>(".projacktor-dl-poster-btn");
+              doFocus(nextPoster);
+            }
+          } else if (dir === "down") {
+            // Вниз: переход в панель кнопок этой же карточки
+            const playBtn = currentCard.querySelector<HTMLElement>(
+              ".projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0']"
+            );
+            doFocus(playBtn);
+          } else if (dir === "up") {
+            const cardAbove = findCardAbove(cards, cardIndex);
+            if (cardAbove) {
+              // Переход к кнопкам карточки строкой выше для плавного реверсивного перехода
+              const aboveBtn = cardAbove.querySelector<HTMLElement>(
+                ".projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0']"
+              );
+              doFocus(aboveBtn || cardAbove.querySelector<HTMLElement>(".projacktor-dl-poster-btn"));
+            } else {
+              // Верхний ряд: переход в TabBar на текущую вкладку
+              const activeTabEl = doc.querySelector<HTMLElement>(
+                ".projacktor-tab-item.active, [role='tab'][aria-selected='true']"
+              );
+              if (activeTabEl) doFocus(activeTabEl);
+            }
+          }
+        } else if (isButton) {
+          const cardButtons = Array.from(
+            currentCard.querySelectorAll<HTMLElement>(
+              ".projacktor-dl-card-btns .projacktor-dl-btn-play, .projacktor-dl-card-btns .projacktor-dl-btn-icon, .projacktor-dl-card-btns [tabindex='0']"
+            )
+          );
+          const btnIndex = cardButtons.findIndex((b) => b === active || b.contains(active));
+
+          if (dir === "up") {
+            // Вверх: возврат на постер этой же карточки
+            const poster = currentCard.querySelector<HTMLElement>(".projacktor-dl-poster-btn");
+            doFocus(poster);
+          } else if (dir === "down") {
+            // Вниз: переход на постер карточки строкой ниже
+            const cardBelow = findCardBelow(cards, cardIndex);
+            if (cardBelow) {
+              const belowPoster = cardBelow.querySelector<HTMLElement>(".projacktor-dl-poster-btn");
+              doFocus(belowPoster);
+            }
+          } else if (dir === "left") {
+            if (btnIndex > 0) {
+              doFocus(cardButtons[btnIndex - 1]);
+            } else if (cardIndex > 0) {
+              // Переход к последней кнопке предыдущей карточки
+              const prevCard = cards[cardIndex - 1];
+              const prevBtns = prevCard.querySelectorAll<HTMLElement>(
+                ".projacktor-dl-card-btns .projacktor-dl-btn-play, .projacktor-dl-card-btns .projacktor-dl-btn-icon, .projacktor-dl-card-btns [tabindex='0']"
+              );
+              if (prevBtns.length > 0) {
+                doFocus(prevBtns[prevBtns.length - 1]);
+              }
+            }
+          } else if (dir === "right") {
+            if (btnIndex !== -1 && btnIndex < cardButtons.length - 1) {
+              doFocus(cardButtons[btnIndex + 1]);
+            } else if (cardIndex < cards.length - 1) {
+              // Переход к первой кнопке следующей карточки
+              const nextCard = cards[cardIndex + 1];
+              const nextBtn = nextCard.querySelector<HTMLElement>(
+                ".projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0']"
+              );
+              if (nextBtn) doFocus(nextBtn);
+            }
+          }
+        }
+      },
+      [episodesModalItem]
+    );
+
+    // Слушатель событий Decky onGamepadDirection
+    const handleGamepadDir = useCallback(
+      (evt: any) => {
+        const btn = evt?.detail?.button;
+        if (btn === 9) {
+          try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+          handleDirection("up");
+        } else if (btn === 10) {
+          try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+          handleDirection("down");
+        } else if (btn === 11) {
+          try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+          handleDirection("left");
+        } else if (btn === 12) {
+          try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+          handleDirection("right");
+        }
+      },
+      [handleDirection]
+    );
+
+    // Слушатель событий геймпада и стиков через SteamClient.Input (RawButton)
+    useEffect(() => {
+      const un = subscribeControllerInput((e) => {
+        if (!e.pressed) return;
+        if (isModalOpen() || episodesModalItem) return;
+
+        const isUp =
+          e.button === RawButton.DPAD_UP ||
+          e.button === RawButton.LEFTSTICK_UP ||
+          e.button === 4 ||
+          e.button === 20;
+
+        const isDown =
+          e.button === RawButton.DPAD_DOWN ||
+          e.button === RawButton.LEFTSTICK_DOWN ||
+          e.button === 6 ||
+          e.button === 21;
+
+        const isLeft =
+          e.button === RawButton.DPAD_LEFT ||
+          e.button === RawButton.LEFTSTICK_LEFT ||
+          e.button === 7 ||
+          e.button === 22;
+
+        const isRight =
+          e.button === RawButton.DPAD_RIGHT ||
+          e.button === RawButton.LEFTSTICK_RIGHT ||
+          e.button === 5 ||
+          e.button === 23;
+
+        if (isUp) handleDirection("up");
+        else if (isDown) handleDirection("down");
+        else if (isLeft) handleDirection("left");
+        else if (isRight) handleDirection("right");
+      });
+      return un;
+    }, [handleDirection, episodesModalItem]);
+
+    // Слушатель клавиш стрелок клавиатуры
+    useEffect(() => {
+      const root = rootRef.current;
+      if (!root) return;
+      const doc = getActiveDocument(root);
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (isModalOpen() || episodesModalItem) return;
+        const active = doc?.activeElement;
+        if (!active || !root.contains(active)) return;
+
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          e.stopPropagation();
+          handleDirection("up");
+        } else if (e.key === "ArrowDown") {
+          e.preventDefault();
+          e.stopPropagation();
+          handleDirection("down");
+        } else if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          e.stopPropagation();
+          handleDirection("left");
+        } else if (e.key === "ArrowRight") {
+          e.preventDefault();
+          e.stopPropagation();
+          handleDirection("right");
+        }
+      };
+
+      doc?.addEventListener?.("keydown", handleKeyDown, true);
+      window.addEventListener("keydown", handleKeyDown, true);
+      return () => {
+        doc?.removeEventListener?.("keydown", handleKeyDown, true);
+        window.removeEventListener("keydown", handleKeyDown, true);
+      };
+    }, [handleDirection, episodesModalItem]);
 
     const activeEpisodes = episodesModalItem ? episodesMap[episodesModalItem.id] || [] : [];
     const isActiveEpisodesLoading = episodesModalItem
@@ -117,23 +465,23 @@ export const LibraryView: FC<LibraryViewProps> = memo(
     return (
       <Focusable
         ref={rootRef}
-        flow-children="vertical"
         noFocusRing
         className="projacktor-library-content"
+        onGamepadDirection={handleGamepadDir}
       >
-
         {library.length === 0 ? (
           <Focusable
             className="projacktor-empty-lib"
             tabIndex={0}
             noFocusRing
+            onGamepadDirection={handleGamepadDir}
             style={{ textAlign: "center", padding: 50, color: "rgba(255,255,255,0.4)" }}
           >
             Загрузки пусты. Добавьте фильмы или сериалы из каталога.
           </Focusable>
         ) : (
           <div className="projacktor-downloads-grid">
-            {library.map((item) => {
+            {library.map((item, index) => {
               const isDownloading = item.download_status === "downloading";
               const isPaused = item.download_status === "paused";
               const hasLocalFiles = !!(item.files && item.files.length > 0);
@@ -147,6 +495,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
               const progress = Math.min(100, Math.max(0, item.download_progress || 0));
 
               const handlePrimaryAction = () => {
+                lastInteractedItemIdRef.current = item.id;
                 if (isTv) {
                   handleOpenEpisodes(item);
                 } else if (canPlayDirect) {
@@ -180,13 +529,19 @@ export const LibraryView: FC<LibraryViewProps> = memo(
               }
 
               return (
-                <div key={item.id} className="projacktor-dl-grid-card">
+                <div
+                  key={item.id}
+                  className="projacktor-dl-grid-card"
+                  data-item-id={item.id}
+                  data-card-index={index}
+                >
                   {/* Постер + бейджи + полоса загрузки */}
                   <Focusable
                     className="projacktor-dl-poster-btn"
                     noFocusRing
                     onActivate={handlePrimaryAction}
                     onClick={handlePrimaryAction}
+                    onGamepadDirection={handleGamepadDir}
                     title={canPlayDirect ? "Смотреть файл" : isTv ? "Открыть серии" : "Смотреть онлайн"}
                   >
                     <img
@@ -236,13 +591,14 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                   </div>
 
                   {/* Кнопки действий */}
-                  <Focusable flow-children="horizontal" noFocusRing className="projacktor-dl-card-btns">
+                  <div className="projacktor-dl-card-btns">
                     {/* Кнопка Смотреть / Онлайн / Файл */}
                     <Focusable
                       className="projacktor-dl-btn-play"
                       noFocusRing
                       onActivate={handlePrimaryAction}
                       onClick={handlePrimaryAction}
+                      onGamepadDirection={handleGamepadDir}
                       title={canPlayDirect ? "Смотреть файл" : isTv ? "Серии" : "Смотреть онлайн"}
                     >
                       {isStreamStarting ? (
@@ -266,6 +622,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                         onClick={() =>
                           isDownloading ? pauseDownload(item.id) : resumeDownload(item.id)
                         }
+                        onGamepadDirection={handleGamepadDir}
                         title={isDownloading ? "Приостановить" : "Возобновить"}
                       >
                         {isDownloading ? <FaPause style={{ fontSize: 10 }} /> : <FaDownload style={{ fontSize: 10 }} />}
@@ -279,6 +636,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                         noFocusRing
                         onActivate={() => handleOpenEpisodes(item)}
                         onClick={() => handleOpenEpisodes(item)}
+                        onGamepadDirection={handleGamepadDir}
                         title="Список серий"
                       >
                         <FaList style={{ fontSize: 10 }} />
@@ -291,11 +649,12 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                       noFocusRing
                       onActivate={() => deleteItem(item.id)}
                       onClick={() => deleteItem(item.id)}
+                      onGamepadDirection={handleGamepadDir}
                       title="Удалить"
                     >
                       <FaTrash style={{ fontSize: 10 }} />
                     </Focusable>
-                  </Focusable>
+                  </div>
                 </div>
               );
             })}

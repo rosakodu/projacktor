@@ -174,7 +174,7 @@ export const ProjacktorApp: FC = () => {
       );
     } else if (activeTab === "library") {
       target = root.querySelector<HTMLElement>(
-        ".projacktor-library-content .projacktor-magicblack-btn, .projacktor-library-content .projacktor-dl-poster-btn, .projacktor-library-content .projacktor-dl-btn-play, .projacktor-library-content .projacktor-dl-grid-card, .projacktor-library-content .projacktor-empty-lib"
+        ".projacktor-library-content .projacktor-dl-poster-btn, .projacktor-library-content .projacktor-dl-btn-play, .projacktor-library-content .projacktor-empty-lib"
       );
     } else if (activeTab === "settings") {
       target = root.querySelector<HTMLElement>(

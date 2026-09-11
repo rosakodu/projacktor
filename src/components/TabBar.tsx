@@ -44,24 +44,37 @@ export const TabBar: FC<TabBarProps> = memo(
       if (!doc) return;
       doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
 
-      // 1. Try focusing the first movie card in the active shelf
-      const firstCard = doc.querySelector<HTMLElement>(
-        ".projacktor-shelf-row .projacktor-card, .projacktor-card"
-      );
-      if (firstCard) {
-        firstCard.focus();
-        firstCard.classList.add("gpfocus");
-        return;
+      let target: HTMLElement | null = null;
+      if (activeTab === "library") {
+        target = doc.querySelector<HTMLElement>(
+          ".projacktor-library-content .projacktor-dl-poster-btn, .projacktor-library-content .projacktor-dl-btn-play, .projacktor-library-content .projacktor-empty-lib"
+        );
+      } else if (activeTab === "search") {
+        target = doc.querySelector<HTMLElement>(
+          ".projacktor-content input, .projacktor-content button, .projacktor-content .ds-btn"
+        );
+      } else if (activeTab === "settings") {
+        target = doc.querySelector<HTMLElement>(
+          ".projacktor-content button, .projacktor-content input, .projacktor-content .DialogButton, .projacktor-content [tabindex='0']"
+        );
+      } else {
+        target = doc.querySelector<HTMLElement>(
+          ".projacktor-shelf-row .projacktor-card, .projacktor-card"
+        );
       }
-      // 2. Fallback for search, library, or settings views
-      const fallback = doc.querySelector<HTMLElement>(
-        ".projacktor-library-content .projacktor-magicblack-btn, .projacktor-library-content .projacktor-lib-card, .projacktor-library-content .projacktor-icon-btn, .projacktor-library-content .projacktor-empty-lib, .projacktor-content input, .projacktor-content button, .projacktor-content .DialogButton, .projacktor-content .ds-btn, .projacktor-content [tabindex='0']"
-      );
-      if (fallback) {
-        fallback.focus();
-        fallback.classList.add("gpfocus");
+
+      if (!target) {
+        target = doc.querySelector<HTMLElement>(
+          ".projacktor-shelf-row .projacktor-card, .projacktor-library-content .projacktor-dl-poster-btn, .projacktor-content input, .projacktor-content button, .projacktor-content [tabindex='0']"
+        );
       }
-    }, []);
+
+      if (target) {
+        target.focus();
+        target.classList.add("gpfocus");
+        playNavSound();
+      }
+    }, [activeTab]);
 
     // Глобальный перехват стрелок на документе при фокусе в панели табов (D-pad не переключает табы)
     useEffect(() => {
