@@ -111,7 +111,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
             noFocusRing
             style={{ textAlign: "center", padding: 50, color: "rgba(255,255,255,0.4)" }}
           >
-            Библиотека пуста. Добавьте фильмы или сериалы из каталога.
+            Фильмотека пуста. Добавьте фильмы или сериалы из каталога.
           </Focusable>
         ) : (
           library.map((item) => {

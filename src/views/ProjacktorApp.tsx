@@ -20,7 +20,7 @@ const TABS_CONFIG = [
   { id: "cartoons", title: "Мультфильмы" },
   { id: "anime", title: "Аниме" },
   { id: "search", title: "Поиск" },
-  { id: "library", title: "Библиотека" },
+  { id: "library", title: "Фильмотека" },
   { id: "settings", title: "Настройки" },
 ];
 
