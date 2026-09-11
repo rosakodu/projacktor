@@ -707,6 +707,304 @@ export const PROJACKTOR_STYLES = `
   margin-top: 4px;
 }
 
+/* ───── Downloads Poster Grid (New Visual Specification) ───── */
+.projacktor-downloads-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, 156px) !important;
+  gap: 16px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  justify-content: flex-start !important;
+}
+
+.projacktor-dl-grid-card {
+  width: 156px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  background: #141a23 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 4px !important;
+  padding: 6px !important;
+  box-sizing: border-box !important;
+  outline: none !important;
+  position: relative !important;
+  transition: border-color 0.15s ease, background-color 0.15s ease !important;
+}
+
+.projacktor-dl-grid-card:focus-within {
+  border-color: rgba(255, 255, 255, 0.25) !important;
+  background: #18202c !important;
+}
+
+.projacktor-dl-grid-card::before,
+.projacktor-dl-grid-card::after,
+.projacktor-dl-grid-card:focus::before,
+.projacktor-dl-grid-card:focus::after,
+.projacktor-dl-grid-card.gpfocus::before,
+.projacktor-dl-grid-card.gpfocus::after {
+  display: none !important;
+  content: none !important;
+}
+
+.projacktor-dl-grid-card [class*="focus-ring"],
+.projacktor-dl-grid-card [class*="_1wPplsegQqCoe06wXPhzKT"],
+.projacktor-dl-grid-card [class*="_3FIjYetykQsFYR08l1v7Ls"] {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.projacktor-dl-poster-btn {
+  width: 100% !important;
+  height: 218px !important;
+  position: relative !important;
+  overflow: hidden !important;
+  border-radius: 2px !important;
+  border: 2px solid transparent !important;
+  background: #0f141c !important;
+  cursor: pointer !important;
+  outline: none !important;
+  box-sizing: border-box !important;
+  display: block !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.projacktor-dl-poster-btn:focus,
+.projacktor-dl-poster-btn.gpfocus {
+  border-color: #ffffff !important;
+  box-shadow: 0 0 12px rgba(26, 159, 255, 0.4) !important;
+}
+
+.projacktor-dl-poster-img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  display: block !important;
+}
+
+.projacktor-dl-badge-status {
+  position: absolute !important;
+  top: 6px !important;
+  left: 6px !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  padding: 2px 6px !important;
+  border-radius: 2px !important;
+  color: #fff !important;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.6) !important;
+  z-index: 2 !important;
+  line-height: 1.2 !important;
+}
+
+.projacktor-dl-badge-status.downloading {
+  background: rgba(2, 132, 199, 0.9) !important;
+}
+
+.projacktor-dl-badge-status.completed {
+  background: rgba(16, 185, 129, 0.9) !important;
+}
+
+.projacktor-dl-badge-status.paused {
+  background: rgba(234, 179, 8, 0.9) !important;
+  color: #000 !important;
+}
+
+.projacktor-dl-badge-status.queued {
+  background: rgba(100, 116, 139, 0.8) !important;
+}
+
+.projacktor-dl-badge-quality {
+  position: absolute !important;
+  top: 6px !important;
+  right: 6px !important;
+  font-size: 9.5px !important;
+  font-weight: 700 !important;
+  padding: 2px 5px !important;
+  border-radius: 2px !important;
+  background: rgba(0, 0, 0, 0.75) !important;
+  color: #e2e8f0 !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  z-index: 2 !important;
+  line-height: 1.2 !important;
+}
+
+.projacktor-dl-bar-bg {
+  position: absolute !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  height: 4px !important;
+  background: rgba(0, 0, 0, 0.7) !important;
+  overflow: hidden !important;
+  z-index: 2 !important;
+}
+
+.projacktor-dl-bar-fill {
+  height: 100% !important;
+  transition: width 0.3s ease !important;
+}
+
+.projacktor-dl-bar-fill.downloading {
+  background: linear-gradient(90deg, #0284c7 0%, #38bdf8 100%) !important;
+}
+
+.projacktor-dl-bar-fill.paused {
+  background: #eab308 !important;
+}
+
+.projacktor-dl-bar-fill.completed {
+  background: #10b981 !important;
+}
+
+.projacktor-dl-info {
+  padding: 5px 2px 4px 2px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.projacktor-dl-title {
+  font-size: 11.5px !important;
+  font-weight: 600 !important;
+  color: #ffffff !important;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 2 !important;
+  -webkit-box-orient: vertical !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: normal !important;
+  line-height: 1.25 !important;
+  min-height: 28px !important;
+  max-height: 28px !important;
+  word-break: break-word !important;
+}
+
+.projacktor-dl-subtext {
+  font-size: 10.5px !important;
+  color: var(--ds-text-dim) !important;
+  margin-top: 2px !important;
+  line-height: 1.15 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.projacktor-dl-card-btns {
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  width: 100% !important;
+  margin-top: 4px !important;
+  box-sizing: border-box !important;
+}
+
+.projacktor-dl-btn-play {
+  flex: 1 !important;
+  height: 28px !important;
+  padding: 0 6px !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 4px !important;
+  background: var(--ds-surface-hi) !important;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  color: #fff !important;
+  border-radius: 2px !important;
+  cursor: pointer !important;
+  outline: none !important;
+}
+
+.projacktor-dl-btn-play:focus,
+.projacktor-dl-btn-play.gpfocus {
+  background: var(--ds-accent) !important;
+  border-color: #fff !important;
+  color: #fff !important;
+  box-shadow: 0 0 10px rgba(26, 159, 255, 0.5) !important;
+}
+
+.projacktor-dl-btn-icon {
+  width: 28px !important;
+  height: 28px !important;
+  flex: 0 0 28px !important;
+  padding: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: var(--ds-surface) !important;
+  border: 1px solid var(--ds-border) !important;
+  color: var(--ds-text) !important;
+  border-radius: 2px !important;
+  cursor: pointer !important;
+  outline: none !important;
+}
+
+.projacktor-dl-btn-icon:focus,
+.projacktor-dl-btn-icon.gpfocus {
+  background: var(--ds-surface-hi) !important;
+  border-color: #ffffff !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+
+.projacktor-dl-btn-icon.danger:focus,
+.projacktor-dl-btn-icon.danger.gpfocus {
+  background: var(--ds-danger) !important;
+  border-color: var(--ds-danger) !important;
+  color: #fff !important;
+}
+
+/* ───── Episodes Dialog Modal ───── */
+.projacktor-episodes-modal-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  background: rgba(0, 0, 0, 0.82) !important;
+  backdrop-filter: blur(8px) !important;
+  z-index: 9999 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 24px !important;
+  box-sizing: border-box !important;
+}
+
+.projacktor-episodes-modal-box {
+  background: #111722 !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  border-radius: 6px !important;
+  max-width: 680px !important;
+  width: 100% !important;
+  max-height: 80vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8) !important;
+  overflow: hidden !important;
+}
+
+.projacktor-episodes-modal-header {
+  padding: 14px 20px !important;
+  background: #161e2b !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+}
+
+.projacktor-episodes-modal-list {
+  padding: 12px 20px !important;
+  overflow-y: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  flex: 1 !important;
+}
+
 /* ───── Library Items with Poster & Action Badges ───── */
 .projacktor-lib-card {
   display: flex;

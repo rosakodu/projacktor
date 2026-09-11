@@ -1,10 +1,11 @@
-import { FC, memo, useEffect, useRef } from "react";
+import { FC, memo, useEffect, useRef, useState, useCallback } from "react";
 import { Focusable } from "@decky/ui";
-import { FaPlay, FaPause, FaDownload, FaList, FaTrash, FaMoon, FaSpinner } from "react-icons/fa";
-import { EpisodeItem } from "../types";
+import { FaPlay, FaPause, FaDownload, FaList, FaTrash, FaMoon, FaSpinner, FaTimes } from "react-icons/fa";
+import { EpisodeItem, LibraryItem } from "../types";
 import { formatBytes, formatSpeed, getImageUrl } from "../api";
 import { useLibrary } from "../hooks/useLibrary";
 import { getActiveDocument } from "../runtime/activeDoc";
+import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
 
 interface LibraryViewProps {
   onPlayVideo: (filePath: string, title: string, isOnline: boolean) => void;
@@ -14,22 +15,48 @@ interface LibraryViewProps {
 export const LibraryView: FC<LibraryViewProps> = memo(
   ({ onPlayVideo, onActivateMagicBlack }) => {
     const rootRef = useRef<HTMLDivElement>(null);
+    const [episodesModalItem, setEpisodesModalItem] = useState<LibraryItem | null>(null);
+
     const {
       library,
-      expandedEpisodes,
       episodesMap,
       episodesLoading,
       streamLoading,
       pauseDownload,
       resumeDownload,
       deleteItem,
-      startDownload,
       toggleEpisodes,
       downloadEpisode,
       watchOnline,
     } = useLibrary(onPlayVideo);
 
     const hasDownloading = library.some((i) => i.download_status === "downloading");
+
+    // Закрытие модального окна серий по кнопке B или Escape
+    useEffect(() => {
+      if (!episodesModalItem) return;
+
+      const un = subscribeControllerInput((e) => {
+        if (!e.pressed) return;
+        if (e.button === RawButton.B || e.button === 1) {
+          setEpisodesModalItem(null);
+        }
+      });
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === "Escape" || e.key === "Backspace") {
+          e.preventDefault();
+          e.stopPropagation();
+          setEpisodesModalItem(null);
+        }
+      };
+
+      window.addEventListener("keydown", handleKeyDown, true);
+      return () => {
+        un();
+        window.removeEventListener("keydown", handleKeyDown, true);
+      };
+    }, [episodesModalItem]);
 
     // Авто-фокус на элементе библиотеки при переходе во вкладку (если фокус не на табах)
     useEffect(() => {
@@ -48,7 +75,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
 
         const target = root
           ? root.querySelector<HTMLElement>(
-              ".projacktor-magicblack-btn, .projacktor-lib-card, .projacktor-icon-btn, .projacktor-empty-lib"
+              ".projacktor-magicblack-btn, .projacktor-dl-poster-btn, .projacktor-dl-btn-play, .projacktor-empty-lib"
             )
           : null;
         if (target) {
@@ -76,6 +103,19 @@ export const LibraryView: FC<LibraryViewProps> = memo(
       };
     }, [library.length, hasDownloading]);
 
+    const handleOpenEpisodes = useCallback(
+      (item: LibraryItem) => {
+        setEpisodesModalItem(item);
+        toggleEpisodes(item);
+      },
+      [toggleEpisodes]
+    );
+
+    const activeEpisodes = episodesModalItem ? episodesMap[episodesModalItem.id] || [] : [];
+    const isActiveEpisodesLoading = episodesModalItem
+      ? !!episodesLoading[episodesModalItem.id]
+      : false;
+
     return (
       <Focusable
         ref={rootRef}
@@ -83,15 +123,29 @@ export const LibraryView: FC<LibraryViewProps> = memo(
         noFocusRing
         className="projacktor-library-content"
       >
-        {hasDownloading && (
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              alignItems: "center",
-              marginBottom: 10,
-            }}
-          >
+        {/* Верхняя статусная панель */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 16,
+            minHeight: 34,
+          }}
+        >
+          <div style={{ fontSize: 13, color: "var(--ds-text-dim)", fontWeight: 600 }}>
+            {library.length === 0
+              ? ""
+              : `${library.length} ${
+                  library.length === 1
+                    ? "элемент"
+                    : library.length < 5
+                    ? "элемента"
+                    : "элементов"
+                }${hasDownloading ? " • Загрузка активна" : ""}`}
+          </div>
+
+          {hasDownloading && (
             <Focusable
               className="ds-btn ds-btn--compact projacktor-magicblack-btn"
               noFocusRing
@@ -102,8 +156,8 @@ export const LibraryView: FC<LibraryViewProps> = memo(
               <FaMoon style={{ marginRight: 6, fontSize: 11 }} />
               Выключить экран
             </Focusable>
-          </div>
-        )}
+          )}
+        </div>
 
         {library.length === 0 ? (
           <Focusable
@@ -112,459 +166,300 @@ export const LibraryView: FC<LibraryViewProps> = memo(
             noFocusRing
             style={{ textAlign: "center", padding: 50, color: "rgba(255,255,255,0.4)" }}
           >
-            Фильмотека пуста. Добавьте фильмы или сериалы из каталога.
+            Загрузки пусты. Добавьте фильмы или сериалы из каталога.
           </Focusable>
         ) : (
-          library.map((item) => {
-            const isDownloading = item.download_status === "downloading";
-            const isPaused = item.download_status === "paused";
-            const hasLocalFiles = !!(item.files && item.files.length > 0);
-            const localFilePath = hasLocalFiles && item.files ? item.files[0].file_path : null;
-            const isCompleted =
-              item.download_status === "completed" ||
-              (!isDownloading && !isPaused && hasLocalFiles);
-            const canPlayDirect = isCompleted && !!localFilePath;
-            const isTv = item.media_type === "tv";
-            const isEpisodesOpen = !!expandedEpisodes[item.id];
-            const episodes = episodesMap[item.id] || [];
-            const isEpLoading = !!episodesLoading[item.id];
-            const isStreamStarting = streamLoading === item.id;
+          <div className="projacktor-downloads-grid">
+            {library.map((item) => {
+              const isDownloading = item.download_status === "downloading";
+              const isPaused = item.download_status === "paused";
+              const hasLocalFiles = !!(item.files && item.files.length > 0);
+              const localFilePath = hasLocalFiles && item.files ? item.files[0].file_path : null;
+              const isCompleted =
+                item.download_status === "completed" ||
+                (!isDownloading && !isPaused && hasLocalFiles);
+              const canPlayDirect = isCompleted && !!localFilePath;
+              const isTv = item.media_type === "tv";
+              const isStreamStarting = streamLoading === item.id;
+              const progress = Math.min(100, Math.max(0, item.download_progress || 0));
 
-            return (
-              <Focusable key={item.id} tabIndex={0} noFocusRing className="projacktor-lib-card">
-                <div className="projacktor-lib-main">
-                  <img
-                    src={getImageUrl(item.poster_path)}
-                    alt={item.title}
-                    className="projacktor-lib-poster"
-                    loading="lazy"
-                  />
-                  <div className="projacktor-lib-details">
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "flex-start",
-                        gap: 8,
-                      }}
-                    >
-                      <div>
-                        <span style={{ fontSize: 15, fontWeight: 700, color: "#fff" }}>
-                          {item.title}
-                        </span>
-                        {item.year ? (
-                          <span
-                            style={{
-                              fontSize: 13,
-                              color: "var(--ds-text-dim)",
-                              marginLeft: 6,
-                            }}
-                          >
-                            ({item.year})
-                          </span>
-                        ) : null}
-                      </div>
-                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                        {item.effective_quality && (
-                          <span className="projacktor-badge-quality">
-                            {item.effective_quality}
-                          </span>
-                        )}
-                        <span
-                          className="projacktor-dl-badge"
-                          style={{
-                            background: "rgba(255,255,255,0.1)",
-                            color: "#e2e8f0",
-                          }}
-                        >
-                          {isTv ? "Сериал" : "Фильм"}
-                        </span>
-                      </div>
+              const handlePrimaryAction = () => {
+                if (isTv) {
+                  handleOpenEpisodes(item);
+                } else if (canPlayDirect) {
+                  onPlayVideo(localFilePath!, item.title, false);
+                } else {
+                  watchOnline(item);
+                }
+              };
+
+              let badgeText = "В библиотеке";
+              let badgeClass = "queued";
+              if (isCompleted) {
+                badgeText = "✓ Скачано";
+                badgeClass = "completed";
+              } else if (isDownloading) {
+                badgeText = `${progress.toFixed(0)}%`;
+                badgeClass = "downloading";
+              } else if (isPaused) {
+                badgeText = "⏸ Пауза";
+                badgeClass = "paused";
+              }
+
+              let subText = "В библиотеке";
+              if (isCompleted) {
+                const sz = item.total_file_size || item.download_total_size || 0;
+                subText = sz > 0 ? formatBytes(sz) : "Локальный файл";
+              } else if (isDownloading) {
+                const spd = formatSpeed(item.download_speed || 0);
+                subText = `${spd} • ${progress.toFixed(0)}%`;
+              } else if (isPaused) {
+                subText = `Пауза • ${progress.toFixed(0)}%`;
+              }
+
+              return (
+                <div key={item.id} className="projacktor-dl-grid-card">
+                  {/* Постер + бейджи + полоса загрузки */}
+                  <Focusable
+                    className="projacktor-dl-poster-btn"
+                    noFocusRing
+                    onActivate={handlePrimaryAction}
+                    onClick={handlePrimaryAction}
+                    title={canPlayDirect ? "Смотреть файл" : isTv ? "Открыть серии" : "Смотреть онлайн"}
+                  >
+                    <img
+                      src={getImageUrl(item.poster_path)}
+                      alt={item.title}
+                      className="projacktor-dl-poster-img"
+                      loading="lazy"
+                    />
+
+                    {/* Бейдж статуса */}
+                    <div className={`projacktor-dl-badge-status ${badgeClass}`}>
+                      {badgeText}
                     </div>
 
-                    <div className="projacktor-lib-meta">
-                      {isCompleted ? (
-                        <span className="projacktor-dl-badge completed">
-                          Скачано{" "}
-                          {formatBytes(
-                            item.total_file_size || item.download_total_size || 0
-                          )}
-                        </span>
-                      ) : isDownloading ? (
-                        <>
-                          <span className="projacktor-dl-badge downloading">
-                            Загрузка {(item.download_progress || 0).toFixed(0)}%
-                          </span>
-                          <span>{formatSpeed(item.download_speed || 0)}</span>
-                        </>
-                      ) : isPaused ? (
-                        <span
-                          className="projacktor-dl-badge"
-                          style={{
-                            background: "rgba(234, 179, 8, 0.2)",
-                            color: "#eab308",
-                          }}
-                        >
-                          На паузе
-                        </span>
-                      ) : (
-                        <span
-                          className="projacktor-dl-badge"
-                          style={{
-                            background: "rgba(255,255,255,0.08)",
-                            color: "#9ca3af",
-                          }}
-                        >
-                          В библиотеке
-                        </span>
-                      )}
-                      {item.effective_torrent_title && (
-                        <span
-                          style={{
-                            flex: 1,
-                            minWidth: 0,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {item.effective_torrent_title}
-                        </span>
-                      )}
-                    </div>
+                    {/* Бейдж качества или типа */}
+                    {item.effective_quality ? (
+                      <div className="projacktor-dl-badge-quality">
+                        {item.effective_quality}
+                      </div>
+                    ) : isTv ? (
+                      <div className="projacktor-dl-badge-quality">
+                        Сериал
+                      </div>
+                    ) : null}
 
-                    {(isDownloading || isPaused) && (
-                      <div
-                        style={{
-                          width: "100%",
-                          maxWidth: 360,
-                          height: 4,
-                          background: "rgba(255,255,255,0.12)",
-                          margin: "6px 0",
-                          overflow: "hidden",
-                        }}
-                      >
+                    {/* Встроенный прогресс-бар внизу постера */}
+                    {(isDownloading || isPaused || isCompleted) && (
+                      <div className="projacktor-dl-bar-bg">
                         <div
-                          style={{
-                            height: "100%",
-                            width: `${Math.min(
-                              100,
-                              Math.max(0, item.download_progress || 0)
-                            )}%`,
-                            background: isDownloading
-                              ? "var(--ds-accent)"
-                              : "#eab308",
-                            transition: "width 0.3s ease",
-                          }}
+                          className={`projacktor-dl-bar-fill ${
+                            isCompleted ? "completed" : isDownloading ? "downloading" : "paused"
+                          }`}
+                          style={{ width: `${isCompleted ? 100 : progress}%` }}
                         />
                       </div>
                     )}
+                  </Focusable>
 
-                    <Focusable flow-children="horizontal" noFocusRing className="projacktor-dl-actions">
-                      {!isTv &&
-                        (canPlayDirect ? (
-                          <Focusable
-                            className="projacktor-icon-btn projacktor-icon-btn--primary"
-                            noFocusRing
-                            onActivate={() =>
-                              onPlayVideo(localFilePath!, item.title, false)
-                            }
-                            onClick={() =>
-                              onPlayVideo(localFilePath!, item.title, false)
-                            }
-                            title="Смотреть"
-                          >
-                            <FaPlay style={{ fontSize: 11, marginLeft: 1 }} />
-                          </Focusable>
-                        ) : (
-                          <Focusable
-                            className="projacktor-icon-btn projacktor-icon-btn--primary"
-                            noFocusRing
-                            onActivate={() => watchOnline(item)}
-                            onClick={() => watchOnline(item)}
-                            title="Смотреть онлайн"
-                          >
-                            {isStreamStarting ? (
-                              <FaSpinner
-                                style={{
-                                  animation: "projacktor-spin 0.9s linear infinite",
-                                }}
-                              />
-                            ) : (
-                              <FaPlay style={{ fontSize: 11, marginLeft: 1 }} />
-                            )}
-                          </Focusable>
-                        ))}
+                  {/* Название и статусная подпись */}
+                  <div className="projacktor-dl-info">
+                    <div className="projacktor-dl-title" title={item.title}>
+                      {item.title}
+                    </div>
+                    <div className="projacktor-dl-subtext" title={subText}>
+                      {subText}
+                    </div>
+                  </div>
 
-                      {!isCompleted && (
+                  {/* Кнопки действий */}
+                  <Focusable flow-children="horizontal" noFocusRing className="projacktor-dl-card-btns">
+                    {/* Кнопка Смотреть / Онлайн / Файл */}
+                    <Focusable
+                      className="projacktor-dl-btn-play"
+                      noFocusRing
+                      onActivate={handlePrimaryAction}
+                      onClick={handlePrimaryAction}
+                      title={canPlayDirect ? "Смотреть файл" : isTv ? "Серии" : "Смотреть онлайн"}
+                    >
+                      {isStreamStarting ? (
+                        <FaSpinner style={{ animation: "projacktor-spin 0.9s linear infinite", fontSize: 11 }} />
+                      ) : (
                         <>
-                          {isDownloading && item.download_id && (
-                            <Focusable
-                              className="projacktor-icon-btn"
-                              noFocusRing
-                              onActivate={() =>
-                                item.download_id && pauseDownload(item.download_id)
-                              }
-                              onClick={() =>
-                                item.download_id && pauseDownload(item.download_id)
-                              }
-                              title="Пауза"
-                            >
-                              <FaPause style={{ fontSize: 11 }} />
-                            </Focusable>
-                          )}
-                          {isPaused && item.download_id && (
-                            <Focusable
-                              className="projacktor-icon-btn"
-                              noFocusRing
-                              onActivate={() =>
-                                item.download_id && resumeDownload(item.download_id)
-                              }
-                              onClick={() =>
-                                item.download_id && resumeDownload(item.download_id)
-                              }
-                              title="Продолжить"
-                            >
-                              <FaPlay style={{ fontSize: 11, marginLeft: 1 }} />
-                            </Focusable>
-                          )}
-                          {!isDownloading && !isPaused && (
-                            <Focusable
-                              className="projacktor-icon-btn"
-                              noFocusRing
-                              onActivate={() => startDownload(item)}
-                              onClick={() => startDownload(item)}
-                              title="Загрузить"
-                            >
-                              <FaDownload style={{ fontSize: 11 }} />
-                            </Focusable>
-                          )}
-
-                          {/* Screen-off OLED background downloading */}
-                          <Focusable
-                            className="projacktor-icon-btn projacktor-magicblack-btn"
-                            noFocusRing
-                            title="Загрузка в фоне с отключением экрана"
-                            onActivate={() => {
-                              if (!isDownloading && !isPaused) {
-                                startDownload(item);
-                              }
-                              try {
-                                (document.activeElement as HTMLElement)?.blur?.();
-                              } catch {}
-                              onActivateMagicBlack();
-                            }}
-                            onClick={() => {
-                              if (!isDownloading && !isPaused) {
-                                startDownload(item);
-                              }
-                              try {
-                                (document.activeElement as HTMLElement)?.blur?.();
-                              } catch {}
-                              onActivateMagicBlack();
-                            }}
-                          >
-                            <FaMoon style={{ fontSize: 11 }} />
-                          </Focusable>
+                          <FaPlay style={{ fontSize: 9, marginLeft: 1 }} />
+                          <span>{canPlayDirect ? "Файл" : isTv ? "Серии" : "Онлайн"}</span>
                         </>
                       )}
-
-                      {isTv && (
-                        <Focusable
-                          className={`projacktor-icon-btn ${
-                            isEpisodesOpen ? "projacktor-icon-btn--primary" : ""
-                          }`}
-                          noFocusRing
-                          onActivate={() => toggleEpisodes(item)}
-                          onClick={() => toggleEpisodes(item)}
-                          title={isEpisodesOpen ? "Скрыть серии" : "Серии"}
-                        >
-                          <FaList style={{ fontSize: 11 }} />
-                        </Focusable>
-                      )}
-
-                      <Focusable
-                        className="projacktor-icon-btn ds-btn--danger"
-                        noFocusRing
-                        onActivate={() => deleteItem(item.id)}
-                        onClick={() => deleteItem(item.id)}
-                        title="Удалить"
-                      >
-                        <FaTrash style={{ fontSize: 11 }} />
-                      </Focusable>
                     </Focusable>
+
+                    {/* Кнопка Пауза / Загрузить */}
+                    {!isCompleted && (
+                      <Focusable
+                        className="projacktor-dl-btn-icon"
+                        noFocusRing
+                        onActivate={() =>
+                          isDownloading ? pauseDownload(item.id) : resumeDownload(item.id)
+                        }
+                        onClick={() =>
+                          isDownloading ? pauseDownload(item.id) : resumeDownload(item.id)
+                        }
+                        title={isDownloading ? "Приостановить" : "Возобновить"}
+                      >
+                        {isDownloading ? <FaPause style={{ fontSize: 10 }} /> : <FaDownload style={{ fontSize: 10 }} />}
+                      </Focusable>
+                    )}
+
+                    {/* Кнопка Серии (для сериалов) */}
+                    {isTv && (
+                      <Focusable
+                        className="projacktor-dl-btn-icon"
+                        noFocusRing
+                        onActivate={() => handleOpenEpisodes(item)}
+                        onClick={() => handleOpenEpisodes(item)}
+                        title="Список серий"
+                      >
+                        <FaList style={{ fontSize: 10 }} />
+                      </Focusable>
+                    )}
+
+                    {/* Кнопка Удалить */}
+                    <Focusable
+                      className="projacktor-dl-btn-icon danger"
+                      noFocusRing
+                      onActivate={() => deleteItem(item.id)}
+                      onClick={() => deleteItem(item.id)}
+                      title="Удалить"
+                    >
+                      <FaTrash style={{ fontSize: 10 }} />
+                    </Focusable>
+                  </Focusable>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Модальное окно серий для сериалов */}
+        {episodesModalItem && (
+          <div
+            className="projacktor-episodes-modal-overlay"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setEpisodesModalItem(null);
+              }
+            }}
+          >
+            <div className="projacktor-episodes-modal-box">
+              <div className="projacktor-episodes-modal-header">
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>
+                    {episodesModalItem.title}
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--ds-text-dim)", marginTop: 2 }}>
+                    Выборочная загрузка и онлайн просмотр серий
                   </div>
                 </div>
+                <Focusable
+                  className="ds-btn ds-btn--compact ds-btn--icon"
+                  noFocusRing
+                  onActivate={() => setEpisodesModalItem(null)}
+                  onClick={() => setEpisodesModalItem(null)}
+                  title="Закрыть (B)"
+                >
+                  <FaTimes style={{ fontSize: 12 }} />
+                </Focusable>
+              </div>
 
-                {isTv && isEpisodesOpen && (
-                  <div className="projacktor-episodes-container">
-                    <div
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: "var(--ds-text-dim)",
-                        marginBottom: 4,
-                      }}
-                    >
-                      Выборочная загрузка и онлайн просмотр серий:
-                    </div>
-                    {isEpLoading ? (
-                      <div
-                        style={{
-                          padding: "10px 0",
-                          color: "var(--ds-text-dim)",
-                          fontSize: 12,
-                        }}
-                      >
-                        Получение списка серий из торрента...
-                      </div>
-                    ) : episodes.length === 0 ? (
-                      <div
-                        style={{
-                          padding: "10px 0",
-                          color: "var(--ds-text-dim)",
-                          fontSize: 12,
-                        }}
-                      >
-                        Серии пока не найдены. Если торрент только добавлен, подождите
-                        несколько секунд подключения к раздаче.
-                      </div>
-                    ) : (
-                      episodes.map((ep: EpisodeItem) => {
-                        const isEpCompleted =
-                          ep.downloaded || (ep.size > 0 && ep.completed >= ep.size);
-                        const isEpPartial = ep.completed > 0 && !isEpCompleted;
-                        return (
-                          <Focusable
-                            key={ep.index}
-                            noFocusRing
-                            className="projacktor-episode-row"
-                          >
-                            <div
-                              className="projacktor-episode-title"
-                              title={ep.name}
-                            >
-                              <span
-                                style={{
-                                  fontWeight: 700,
-                                  marginRight: 6,
-                                  color: "var(--ds-accent)",
-                                }}
-                              >
-                                #{ep.index}
-                              </span>
-                              {ep.name}
-                            </div>
-                            <Focusable
-                              flow-children="horizontal"
-                              noFocusRing
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 8,
-                                flexShrink: 0,
-                              }}
-                            >
-                              <span
-                                style={{
-                                  fontSize: 11,
-                                  color: "var(--ds-text-dim)",
-                                }}
-                              >
-                                {formatBytes(ep.size)}
-                              </span>
-                              {isEpCompleted ? (
-                                <span
-                                  className="projacktor-dl-badge completed"
-                                  style={{ fontSize: 9 }}
-                                >
-                                  Скачано
-                                </span>
-                              ) : isEpPartial ? (
-                                <span
-                                  className="projacktor-dl-badge downloading"
-                                  style={{ fontSize: 9 }}
-                                >
-                                  {(
-                                    (ep.completed / ep.size) *
-                                    100
-                                  ).toFixed(0)}
-                                  %
-                                </span>
-                              ) : null}
-
-                              {isEpCompleted && ep.path ? (
-                                <Focusable
-                                  className="projacktor-icon-btn projacktor-icon-btn--compact projacktor-icon-btn--primary"
-                                  noFocusRing
-                                  onActivate={() =>
-                                    onPlayVideo(
-                                      ep.path,
-                                      `${item.title} - ${ep.name}`,
-                                      false
-                                    )
-                                  }
-                                  onClick={() =>
-                                    onPlayVideo(
-                                      ep.path,
-                                      `${item.title} - ${ep.name}`,
-                                      false
-                                    )
-                                  }
-                                  title="Смотреть"
-                                >
-                                  <FaPlay
-                                    style={{ fontSize: 9, marginLeft: 1 }}
-                                  />
-                                </Focusable>
-                              ) : (
-                                <Focusable
-                                  className="projacktor-icon-btn projacktor-icon-btn--compact projacktor-icon-btn--primary"
-                                  noFocusRing
-                                  onActivate={() =>
-                                    watchOnline(item, ep.index)
-                                  }
-                                  onClick={() =>
-                                    watchOnline(item, ep.index)
-                                  }
-                                  title="Смотреть онлайн"
-                                >
-                                  <FaPlay
-                                    style={{ fontSize: 9, marginLeft: 1 }}
-                                  />
-                                </Focusable>
-                              )}
-
-                              {!isEpCompleted && (
-                                <Focusable
-                                  className="projacktor-icon-btn projacktor-icon-btn--compact"
-                                  noFocusRing
-                                  onActivate={() =>
-                                    downloadEpisode(item, ep)
-                                  }
-                                  onClick={() =>
-                                    downloadEpisode(item, ep)
-                                  }
-                                  title="Загрузить серию"
-                                >
-                                  <FaDownload style={{ fontSize: 9 }} />
-                                </Focusable>
-                              )}
-                            </Focusable>
-                          </Focusable>
-                        );
-                      })
-                    )}
+              <div className="projacktor-episodes-modal-list">
+                {isActiveEpisodesLoading ? (
+                  <div style={{ padding: "30px 0", textAlign: "center", color: "var(--ds-text-dim)", fontSize: 13 }}>
+                    <FaSpinner style={{ animation: "projacktor-spin 0.9s linear infinite", marginRight: 8 }} />
+                    Загрузка серий из торрента...
                   </div>
+                ) : activeEpisodes.length === 0 ? (
+                  <div style={{ padding: "30px 0", textAlign: "center", color: "var(--ds-text-dim)", fontSize: 13 }}>
+                    Серии пока не найдены. Если торрент только добавлен, подождите несколько секунд подключения к раздаче.
+                  </div>
+                ) : (
+                  activeEpisodes.map((ep: EpisodeItem) => {
+                    const isEpCompleted =
+                      ep.downloaded || (ep.size > 0 && ep.completed >= ep.size);
+                    const isEpPartial = ep.completed > 0 && !isEpCompleted;
+
+                    return (
+                      <Focusable
+                        key={ep.index}
+                        noFocusRing
+                        className="projacktor-episode-row"
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          padding: "10px 14px",
+                          background: "var(--ds-surface)",
+                          border: "1px solid var(--ds-border)",
+                          borderRadius: 4,
+                        }}
+                      >
+                        <div style={{ flex: 1, minWidth: 0, marginRight: 12 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={ep.name}>
+                            <span style={{ color: "var(--ds-accent)", marginRight: 6 }}>#{ep.index + 1}</span>
+                            {ep.name}
+                          </div>
+                          <div style={{ fontSize: 11, color: "var(--ds-text-dim)", marginTop: 2 }}>
+                            {ep.size > 0 ? formatBytes(ep.size) : ""}
+                            {isEpCompleted && (
+                              <span style={{ color: "var(--ds-success)", marginLeft: 8, fontWeight: 600 }}>
+                                ✓ Скачано
+                              </span>
+                            )}
+                            {isEpPartial && (
+                              <span style={{ color: "var(--ds-accent)", marginLeft: 8 }}>
+                                {formatBytes(ep.completed)} / {formatBytes(ep.size)} (
+                                {((ep.completed / ep.size) * 100).toFixed(0)}%)
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <Focusable flow-children="horizontal" noFocusRing style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          <Focusable
+                            className="ds-btn ds-btn--compact ds-btn--primary"
+                            noFocusRing
+                            onActivate={() => {
+                              watchOnline(episodesModalItem, ep.index);
+                            }}
+                            onClick={() => {
+                              watchOnline(episodesModalItem, ep.index);
+                            }}
+                            title="Смотреть онлайн"
+                          >
+                            <FaPlay style={{ fontSize: 10, marginRight: 4 }} />
+                            Онлайн
+                          </Focusable>
+
+                          {!isEpCompleted && (
+                            <Focusable
+                              className="ds-btn ds-btn--compact"
+                              noFocusRing
+                              onActivate={() => downloadEpisode(episodesModalItem, ep)}
+                              onClick={() => downloadEpisode(episodesModalItem, ep)}
+                              title="Скачать эту серию"
+                            >
+                              <FaDownload style={{ fontSize: 10, marginRight: 4 }} />
+                              Скачать
+                            </Focusable>
+                          )}
+                        </Focusable>
+                      </Focusable>
+                    );
+                  })
                 )}
-              </Focusable>
-            );
-          })
+              </div>
+            </div>
+          </div>
         )}
-        <div
-          style={{ minHeight: 180, width: "100%", flexShrink: 0 }}
-          aria-hidden="true"
-        />
       </Focusable>
     );
   }

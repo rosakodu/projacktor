@@ -900,11 +900,11 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
                 className="ds-btn ds-btn--compact ds-btn--icon"
                 onActivate={() => {
                   seekTo(0);
-                  toaster.toast({ title: title || "Фильмотека", body: "С самого начала", duration: 2000 });
+                  toaster.toast({ title: title || "Загрузки", body: "С самого начала", duration: 2000 });
                 }}
                 onClick={() => {
                   seekTo(0);
-                  toaster.toast({ title: title || "Фильмотека", body: "С самого начала", duration: 2000 });
+                  toaster.toast({ title: title || "Загрузки", body: "С самого начала", duration: 2000 });
                 }}
                 style={{ width: 36, height: 32 }}
                 title="Начать сначала"
