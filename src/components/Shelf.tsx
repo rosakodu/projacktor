@@ -4,7 +4,7 @@ import { MediaItem } from "../api";
 import { MovieCard } from "./MovieCard";
 
 interface ShelfProps {
-  title: string;
+  title?: string;
   items: MediaItem[];
   onSelectMovie: (movie: MediaItem) => void;
   loading?: boolean;
@@ -73,16 +73,18 @@ export const Shelf: FC<ShelfProps> = memo(({ title, items, onSelectMovie, loadin
 
   return (
     <div ref={shelfRef} className="projacktor-shelf">
-      <div className="projacktor-shelf-title">
-        <span>{title}</span>
-        {loading && <span style={{ fontSize: 12, opacity: 0.6 }}>Загрузка...</span>}
-      </div>
+      {title ? (
+        <div className="projacktor-shelf-title">
+          <span>{title}</span>
+          {loading && <span style={{ fontSize: 12, opacity: 0.6 }}>Загрузка...</span>}
+        </div>
+      ) : null}
       <Focusable
         ref={rowRef}
         flow-children="horizontal"
         noFocusRing
         role="list"
-        aria-label={title}
+        aria-label={title || "Полка"}
         className="projacktor-shelf-row"
       >
         {items.map((item) => (

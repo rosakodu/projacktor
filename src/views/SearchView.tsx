@@ -59,7 +59,7 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
   }, []);
 
   const handleSearch = useCallback(async () => {
-    if (!searchQuery.trim()) return;
+    if (!searchQuery.trim() || searchLoading) return;
     setSearchLoading(true);
     try {
       const results = await searchCatalog(searchQuery);
@@ -67,7 +67,17 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
     } finally {
       setSearchLoading(false);
     }
-  }, [searchQuery]);
+  }, [searchQuery, searchLoading]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Enter" || e.keyCode === 13) {
+        e.preventDefault();
+        handleSearch();
+      }
+    },
+    [handleSearch]
+  );
 
   return (
     <Focusable
@@ -80,13 +90,22 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
         noFocusRing
         style={{ display: "flex", gap: 12, marginBottom: 20, alignItems: "center", padding: "0 52px" }}
       >
-        <div style={{ flex: 1 }}>
-          <TextField
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            {...({ placeholder: "Введите название фильма или сериала..." } as any)}
-          />
-        </div>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSearch();
+          }}
+          style={{ flex: 1, display: "flex" }}
+        >
+          <div style={{ flex: 1 }}>
+            <TextField
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={handleKeyDown}
+              {...({ placeholder: "Введите название фильма или сериала..." } as any)}
+            />
+          </div>
+        </form>
         <Focusable
           className="ds-btn ds-btn--primary"
           noFocusRing
@@ -98,7 +117,6 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
       </Focusable>
 
       <Shelf
-        title={searchResults.length > 0 ? "Результаты поиска" : "Поиск"}
         items={searchResults}
         onSelectMovie={onSelectMovie}
         loading={searchLoading}
