@@ -627,7 +627,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
         {/* Модальное окно серий для сериалов */}
         {episodesModalItem && (
           <div
-            className="projacktor-episodes-modal-overlay"
+            className="projacktor-episodes-modal-overlay projacktor-modal-root"
             onClick={(e) => {
               if (e.target === e.currentTarget) {
                 setEpisodesModalItem(null);
