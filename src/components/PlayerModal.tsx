@@ -7,7 +7,6 @@ import {
   FaForward,
   FaCheck,
   FaHeadphones,
-  FaTimes,
   FaClosedCaptioning,
   FaVolumeUp,
   FaVolumeMute,
@@ -1007,27 +1006,6 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
               </Focusable>
             )}
 
-            {/* Кнопка закрытия плеера в правом нижнем углу */}
-            {closeModal && (
-              <Focusable
-                className="ds-btn ds-btn--compact ds-btn--icon"
-                onActivate={closeModal}
-                onClick={closeModal}
-                title="Закрыть плеер (B)"
-                style={{
-                  width: 34,
-                  height: 32,
-                  borderRadius: 0,
-                  background: "rgba(255, 255, 255, 0.12)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                }}
-              >
-                <FaTimes style={{ fontSize: 14 }} />
-              </Focusable>
-            )}
           </div>
         </Focusable>
       </Focusable>
