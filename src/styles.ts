@@ -845,19 +845,24 @@ export const PROJACKTOR_STYLES = `
   position: absolute !important;
   top: 6px !important;
   left: 6px !important;
-  font-size: 9.5px !important;
+  font-size: 9px !important;
   font-weight: 700 !important;
   padding: 2px 5px !important;
   border-radius: 0px !important;
   color: #fff !important;
   z-index: 2 !important;
   line-height: 1.2 !important;
-  letter-spacing: 0.3px !important;
+  letter-spacing: 0.2px !important;
   border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  white-space: nowrap !important;
+  max-width: 105px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  pointer-events: none !important;
 }
 
 .projacktor-dl-badge-status.downloading {
-  background: rgba(26, 159, 255, 0.9) !important;
+  background: rgba(26, 159, 255, 0.92) !important;
 }
 
 .projacktor-dl-badge-status.completed {
@@ -877,7 +882,7 @@ export const PROJACKTOR_STYLES = `
   position: absolute !important;
   top: 6px !important;
   right: 6px !important;
-  font-size: 8.5px !important;
+  font-size: 8px !important;
   font-weight: 700 !important;
   padding: 1px 4px !important;
   border-radius: 0px !important;
@@ -886,6 +891,11 @@ export const PROJACKTOR_STYLES = `
   border: 1px solid rgba(255, 255, 255, 0.14) !important;
   z-index: 2 !important;
   line-height: 1.2 !important;
+  white-space: nowrap !important;
+  max-width: 42px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  pointer-events: none !important;
 }
 
 .projacktor-dl-bar-bg {
@@ -925,6 +935,9 @@ export const PROJACKTOR_STYLES = `
   box-sizing: border-box !important;
   width: 100% !important;
   max-width: 100% !important;
+  height: 48px !important;
+  min-height: 48px !important;
+  max-height: 48px !important;
 }
 
 .projacktor-dl-title {
@@ -945,10 +958,10 @@ export const PROJACKTOR_STYLES = `
   max-width: 100% !important;
 }
 
-.projacktor-dl-subtext {
-  font-size: 10.5px !important;
+.projacktor-dl-year {
+  font-size: 10px !important;
   color: #8b929a !important;
-  margin-top: 2px !important;
+  margin-top: 1px !important;
   line-height: 1.15 !important;
   white-space: nowrap !important;
   overflow: hidden !important;
@@ -960,7 +973,7 @@ export const PROJACKTOR_STYLES = `
 .projacktor-dl-card-btns {
   display: flex !important;
   align-items: center !important;
-  gap: 4px !important;
+  gap: 3px !important;
   padding: 0 4px 6px 4px !important;
   background: #141a23 !important;
   box-sizing: border-box !important;
@@ -972,14 +985,14 @@ export const PROJACKTOR_STYLES = `
 .projacktor-dl-btn-play {
   flex: 1 !important;
   min-width: 0 !important;
-  height: 24px !important;
-  padding: 0 4px !important;
-  font-size: 10.5px !important;
+  height: 22px !important;
+  padding: 0 3px !important;
+  font-size: 10px !important;
   font-weight: 600 !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  gap: 3px !important;
+  gap: 2px !important;
   background: var(--ds-surface) !important;
   border: 1px solid var(--ds-border) !important;
   color: #fff !important;
@@ -990,6 +1003,8 @@ export const PROJACKTOR_STYLES = `
   transform: none !important;
   user-select: none !important;
   white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
 }
 
 .projacktor-dl-btn-play:focus,
@@ -1004,11 +1019,11 @@ export const PROJACKTOR_STYLES = `
 }
 
 .projacktor-dl-btn-icon {
-  width: 24px !important;
-  height: 24px !important;
-  min-width: 24px !important;
-  max-width: 24px !important;
-  flex: 0 0 24px !important;
+  width: 22px !important;
+  height: 22px !important;
+  min-width: 22px !important;
+  max-width: 22px !important;
+  flex: 0 0 22px !important;
   padding: 0 !important;
   display: inline-flex !important;
   align-items: center !important;

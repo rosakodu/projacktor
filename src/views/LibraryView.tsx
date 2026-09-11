@@ -1,6 +1,6 @@
 import { FC, memo, useEffect, useRef, useState, useCallback } from "react";
 import { Focusable } from "@decky/ui";
-import { FaPlay, FaPause, FaDownload, FaTrash, FaSpinner, FaTimes } from "react-icons/fa";
+import { FaPlay, FaPause, FaDownload, FaTrash, FaMoon, FaSpinner, FaTimes } from "react-icons/fa";
 import { EpisodeItem, LibraryItem } from "../types";
 import { formatBytes, formatSpeed, getImageUrl } from "../api";
 import { useLibrary } from "../hooks/useLibrary";
@@ -23,22 +23,24 @@ function scrollCardVerticalOnly(root: HTMLElement | null, card: HTMLElement | nu
   const cardRect = card.getBoundingClientRect();
 
   if (cardRect.top < rootRect.top + 10) {
-    root.scrollBy({ top: cardRect.top - rootRect.top - 14, behavior: "smooth" });
-  } else if (cardRect.bottom > rootRect.bottom - 20) {
-    root.scrollBy({ top: cardRect.bottom - rootRect.bottom + 20, behavior: "smooth" });
+    const delta = cardRect.top - rootRect.top - 16;
+    root.scrollTop += delta;
+  } else if (cardRect.bottom > rootRect.bottom - 10) {
+    const delta = cardRect.bottom - rootRect.bottom + 16;
+    root.scrollTop += delta;
   }
-  root.scrollLeft = 0;
 }
 
 function findCardAbove(cards: HTMLElement[], currentIndex: number): HTMLElement | null {
+  if (currentIndex < 0 || currentIndex >= cards.length) return null;
   const currentCard = cards[currentIndex];
-  if (!currentCard) return null;
   const currentRect = currentCard.getBoundingClientRect();
   const currentCenter = currentRect.left + currentRect.width / 2;
 
-  const aboveCards = cards.filter((card) => {
-    const rect = card.getBoundingClientRect();
-    return rect.bottom <= currentRect.top + 15;
+  const aboveCards = cards.filter((c, i) => {
+    if (i === currentIndex) return false;
+    const r = c.getBoundingClientRect();
+    return r.bottom <= currentRect.top + 20;
   });
   if (aboveCards.length === 0) return null;
 
@@ -57,14 +59,15 @@ function findCardAbove(cards: HTMLElement[], currentIndex: number): HTMLElement 
 }
 
 function findCardBelow(cards: HTMLElement[], currentIndex: number): HTMLElement | null {
+  if (currentIndex < 0 || currentIndex >= cards.length) return null;
   const currentCard = cards[currentIndex];
-  if (!currentCard) return null;
   const currentRect = currentCard.getBoundingClientRect();
   const currentCenter = currentRect.left + currentRect.width / 2;
 
-  const belowCards = cards.filter((card) => {
-    const rect = card.getBoundingClientRect();
-    return rect.top >= currentRect.bottom - 15;
+  const belowCards = cards.filter((c, i) => {
+    if (i === currentIndex) return false;
+    const r = c.getBoundingClientRect();
+    return r.top >= currentRect.bottom - 20;
   });
   if (belowCards.length === 0) return null;
 
@@ -83,7 +86,7 @@ function findCardBelow(cards: HTMLElement[], currentIndex: number): HTMLElement 
 }
 
 export const LibraryView: FC<LibraryViewProps> = memo(
-  ({ onPlayVideo }) => {
+  ({ onPlayVideo, onActivateMagicBlack }) => {
     const rootRef = useRef<HTMLDivElement>(null);
     const lastNavAtRef = useRef(0);
     const lastInteractedItemIdRef = useRef<number | string | null>(null);
@@ -548,21 +551,12 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                 badgeText = "✓ Скачано";
                 badgeClass = "completed";
               } else if (isDownloading) {
-                badgeText = `${progress.toFixed(0)}%`;
+                const spd = formatSpeed(item.download_speed || 0);
+                badgeText = `${progress.toFixed(0)}% • ${spd}`;
                 badgeClass = "downloading";
               } else if (isPaused) {
-                badgeText = "⏸ Пауза";
+                badgeText = progress > 0 ? `⏸ Пауза (${progress.toFixed(0)}%)` : "⏸ Пауза";
                 badgeClass = "paused";
-              }
-
-              let subText = "В библиотеке";
-              if (isCompleted) {
-                const sz = item.total_file_size || item.download_total_size || 0;
-                subText = sz > 0 ? formatBytes(sz) : "Локальный файл";
-              } else if (isDownloading) {
-                subText = formatSpeed(item.download_speed || 0);
-              } else if (isPaused) {
-                subText = "На паузе";
               }
 
               return (
@@ -594,16 +588,12 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                       {badgeText}
                     </div>
 
-                    {/* Бейдж качества или типа */}
-                    {item.effective_quality ? (
+                    {/* Бейдж качества или типа (показываем когда не скачивается, чтобы не перегружать постер) */}
+                    {!isDownloading && (item.effective_quality || isTv) && (
                       <div className="projacktor-dl-badge-quality">
-                        {item.effective_quality}
+                        {item.effective_quality || "Сериал"}
                       </div>
-                    ) : isTv ? (
-                      <div className="projacktor-dl-badge-quality">
-                        Сериал
-                      </div>
-                    ) : null}
+                    )}
 
                     {/* Встроенный прогресс-бар внизу постера */}
                     {(isDownloading || isPaused || isCompleted) && (
@@ -618,14 +608,14 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                     )}
                   </Focusable>
 
-                  {/* Название и статусная подпись */}
+                  {/* Название */}
                   <div className="projacktor-dl-info">
                     <div className="projacktor-dl-title" title={item.title}>
                       {item.title}
                     </div>
-                    <div className="projacktor-dl-subtext" title={subText}>
-                      {subText}
-                    </div>
+                    {item.year ? (
+                      <div className="projacktor-dl-year">{item.year}</div>
+                    ) : null}
                   </div>
 
                   {/* Кнопки действий */}
@@ -640,10 +630,10 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                       title={canPlayDirect ? "Смотреть файл" : isTv ? "Серии" : "Смотреть онлайн"}
                     >
                       {isStreamStarting ? (
-                        <FaSpinner style={{ animation: "projacktor-spin 0.9s linear infinite", fontSize: 11 }} />
+                        <FaSpinner style={{ animation: "projacktor-spin 0.9s linear infinite", fontSize: 10 }} />
                       ) : (
                         <>
-                          <FaPlay style={{ fontSize: 9, marginLeft: 1 }} />
+                          <FaPlay style={{ fontSize: 8.5, marginLeft: 1 }} />
                           <span>{canPlayDirect ? "Файл" : isTv ? "Серии" : "Онлайн"}</span>
                         </>
                       )}
@@ -663,7 +653,31 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                         onGamepadDirection={handleGamepadDir}
                         title={isDownloading ? "Приостановить" : "Возобновить"}
                       >
-                        {isDownloading ? <FaPause style={{ fontSize: 10 }} /> : <FaDownload style={{ fontSize: 10 }} />}
+                        {isDownloading ? <FaPause style={{ fontSize: 9.5 }} /> : <FaDownload style={{ fontSize: 9.5 }} />}
+                      </Focusable>
+                    )}
+
+                    {/* Кнопка Загрузка в спящем режиме (Magic Black) */}
+                    {!isCompleted && (
+                      <Focusable
+                        className="projacktor-dl-btn-icon"
+                        noFocusRing
+                        onActivate={() => {
+                          if (isPaused) {
+                            resumeDownload(item.id);
+                          }
+                          onActivateMagicBlack?.();
+                        }}
+                        onClick={() => {
+                          if (isPaused) {
+                            resumeDownload(item.id);
+                          }
+                          onActivateMagicBlack?.();
+                        }}
+                        onGamepadDirection={handleGamepadDir}
+                        title="Загрузка с выключенным экраном (Magic Black)"
+                      >
+                        <FaMoon style={{ fontSize: 9.5 }} />
                       </Focusable>
                     )}
 
@@ -676,7 +690,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                       onGamepadDirection={handleGamepadDir}
                       title="Удалить"
                     >
-                      <FaTrash style={{ fontSize: 10 }} />
+                      <FaTrash style={{ fontSize: 9.5 }} />
                     </Focusable>
                   </div>
                 </div>
