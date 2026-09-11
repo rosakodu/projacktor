@@ -4,6 +4,7 @@ import { FaPlay, FaPause, FaDownload, FaList, FaTrash, FaMoon, FaSpinner } from 
 import { EpisodeItem } from "../types";
 import { formatBytes, formatSpeed, getImageUrl } from "../api";
 import { useLibrary } from "../hooks/useLibrary";
+import { getActiveDocument } from "../runtime/activeDoc";
 
 interface LibraryViewProps {
   onPlayVideo: (filePath: string, title: string, isOnline: boolean) => void;
@@ -30,12 +31,21 @@ export const LibraryView: FC<LibraryViewProps> = memo(
 
     const hasDownloading = library.some((i) => i.download_status === "downloading");
 
-    // Авто-фокус на элементе библиотеки при переходе во вкладку
+    // Авто-фокус на элементе библиотеки при переходе во вкладку (если фокус не на табах)
     useEffect(() => {
       let cancelled = false;
       const focusLib = () => {
         if (cancelled) return true;
         const root = rootRef.current;
+        const doc = getActiveDocument(root);
+        const active = doc?.activeElement;
+        const inTabs = !!(
+          active &&
+          (active.classList?.contains("projacktor-tab-item") ||
+            doc?.querySelector(".projacktor-nav-bar")?.contains(active))
+        );
+        if (inTabs) return true;
+
         const target = root
           ? root.querySelector<HTMLElement>(
               ".projacktor-magicblack-btn, .projacktor-lib-card, .projacktor-icon-btn, .projacktor-empty-lib"
@@ -249,7 +259,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                       </div>
                     )}
 
-                    <div className="projacktor-dl-actions">
+                    <Focusable flow-children="horizontal" noFocusRing className="projacktor-dl-actions">
                       {!isTv &&
                         (canPlayDirect ? (
                           <Focusable
@@ -373,7 +383,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                       >
                         <FaTrash style={{ fontSize: 11 }} />
                       </Focusable>
-                    </div>
+                    </Focusable>
                   </div>
                 </div>
 
@@ -435,7 +445,9 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                               </span>
                               {ep.name}
                             </div>
-                            <div
+                            <Focusable
+                              flow-children="horizontal"
+                              noFocusRing
                               style={{
                                 display: "flex",
                                 alignItems: "center",
@@ -525,7 +537,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                                   <FaDownload style={{ fontSize: 9 }} />
                                 </Focusable>
                               )}
-                            </div>
+                            </Focusable>
                           </Focusable>
                         );
                       })

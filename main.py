@@ -90,14 +90,35 @@ except ImportError:
 def get_user_home():
     return DECKY_USER_HOME
 
-CONFIG_DIR = os.path.join(get_user_home(), ".config", "projactor")
-DB_PATH = os.path.join(CONFIG_DIR, "projactor.db")
+_legacy_cfg1 = os.path.join(get_user_home(), ".config", "projactor")
+_legacy_cfg2 = os.path.join(get_user_home(), ".config", "projecktor")
+_default_cfg = os.path.join(get_user_home(), ".config", "projacktor")
+if os.path.isdir(_default_cfg):
+    CONFIG_DIR = _default_cfg
+elif os.path.isdir(_legacy_cfg1):
+    CONFIG_DIR = _legacy_cfg1
+elif os.path.isdir(_legacy_cfg2):
+    CONFIG_DIR = _legacy_cfg2
+else:
+    CONFIG_DIR = _default_cfg
+
+_db_projacktor = os.path.join(CONFIG_DIR, "projacktor.db")
+_db_legacy = os.path.join(CONFIG_DIR, "projactor.db")
+DB_PATH = _db_legacy if os.path.isfile(_db_legacy) and not os.path.isfile(_db_projacktor) else _db_projacktor
 SETTINGS_PATH = os.path.join(CONFIG_DIR, "settings.json")
 
-# Default Video path: Projacktor (fall back to Projactor if it exists)
-_legacy_video = os.path.join(get_user_home(), "Video", "Projactor")
+# Default Video path: Projacktor (fall back to legacy paths if they exist)
+_legacy_video1 = os.path.join(get_user_home(), "Video", "Projactor")
+_legacy_video2 = os.path.join(get_user_home(), "Video", "Projecktor")
 _default_video = os.path.join(get_user_home(), "Video", "Projacktor")
-INITIAL_DOWNLOAD_PATH = _default_video if not os.path.isdir(_legacy_video) else _legacy_video
+if os.path.isdir(_default_video):
+    INITIAL_DOWNLOAD_PATH = _default_video
+elif os.path.isdir(_legacy_video1):
+    INITIAL_DOWNLOAD_PATH = _legacy_video1
+elif os.path.isdir(_legacy_video2):
+    INITIAL_DOWNLOAD_PATH = _legacy_video2
+else:
+    INITIAL_DOWNLOAD_PATH = _default_video
 
 DEFAULT_SETTINGS = {
     "jacred_url": "",
@@ -208,6 +229,43 @@ def get_db():
     return conn
 
 # --- Settings ---
+def normalize_jacred_url(url: str) -> str:
+    if not url:
+        return ""
+    u = str(url).strip()
+    if not u:
+        return ""
+    if not (u.startswith("http://") or u.startswith("https://")):
+        u = f"https://{u}"
+    return u.rstrip('/')
+
+def ping_jacred(url: str, timeout: int = 5) -> bool:
+    url = normalize_jacred_url(url)
+    if not url:
+        return False
+    ctx = ssl._create_unverified_context()
+    headers = {
+        "User-Agent": "Mozilla/5.0 (X11; SteamOS; Linux x86_64) AppleWebKit/537.36",
+        "Accept": "application/json"
+    }
+    endpoints = [
+        "/api/v2.0/indexers",
+        "/api/v2.0/indexers/all/results?apikey=1&Query=test"
+    ]
+    for ep in endpoints:
+        try:
+            req = urllib.request.Request(f"{url}{ep}", headers=headers)
+            with urllib.request.urlopen(req, timeout=timeout, context=ctx) as response:
+                if response.status in (200, 204):
+                    return True
+        except urllib.error.HTTPError as e:
+            if e.code in (200, 401, 429):
+                return True
+        except Exception as e:
+            logger.debug(f"Jacred ping error for {url}{ep}: {e}")
+            continue
+    return False
+
 def load_settings():
     if not os.path.exists(SETTINGS_PATH):
         save_settings(DEFAULT_SETTINGS)
@@ -220,9 +278,11 @@ def load_settings():
             if merged.get("tmdb_api_key") == "aa86d1a6876222de71c258408e1a4ed3":
                 merged["tmdb_api_key"] = DEFAULT_SETTINGS["tmdb_api_key"]
                 save_settings(merged)
-            if merged.get("jacred_url") in ("https://jac.red", "https://jac.red/", "jac.red"):
-                merged["jacred_url"] = ""
-                save_settings(merged)
+            if merged.get("jacred_url"):
+                norm = normalize_jacred_url(merged["jacred_url"])
+                if norm != merged["jacred_url"]:
+                    merged["jacred_url"] = norm
+                    save_settings(merged)
             return merged
     except Exception as e:
         logger.error(f"Error loading settings: {e}")
@@ -230,6 +290,8 @@ def load_settings():
 
 def save_settings(settings):
     os.makedirs(CONFIG_DIR, exist_ok=True)
+    if isinstance(settings, dict) and "jacred_url" in settings:
+        settings["jacred_url"] = normalize_jacred_url(settings.get("jacred_url"))
     with open(SETTINGS_PATH, 'w', encoding='utf-8') as f:
         json.dump(settings, f, indent=4)
 
@@ -344,7 +406,7 @@ class DownloadManager:
             params = []
         payload = {
             "jsonrpc": "2.0",
-            "id": "projactor",
+            "id": "projacktor",
             "method": method,
             "params": params
         }
@@ -935,7 +997,7 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_jacred_search(self, query):
         sett = load_settings()
-        url = (sett.get('jacred_url') or '').strip().rstrip('/')
+        url = normalize_jacred_url(sett.get('jacred_url') or '')
         if not url:
             self._send_json([])
             return
@@ -995,16 +1057,11 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             
     def _handle_jacred_status(self):
         sett = load_settings()
-        url = (sett.get('jacred_url') or '').strip().rstrip('/')
+        url = normalize_jacred_url(sett.get('jacred_url') or '')
         if not url:
             self._send_json({"status": False})
             return
-        try:
-            req = urllib.request.Request(f"{url}/api/v2.0/indexers/all/results?apikey=1&Query=test")
-            with urllib.request.urlopen(req, timeout=5) as response:
-                self._send_json({"status": True})
-        except:
-            self._send_json({"status": False})
+        self._send_json({"status": ping_jacred(url, timeout=5)})
 
     def _handle_downloads_list(self):
         db = get_db()
@@ -1363,14 +1420,7 @@ class Plugin:
         except:
             free = 0
             
-        j_ok = False
-        try:
-            url = (sett.get('jacred_url') or '').strip().rstrip('/')
-            if url:
-                req = urllib.request.Request(f"{url}/api/v2.0/indexers/all/results?apikey=1&Query=test")
-                with urllib.request.urlopen(req, timeout=3):
-                    j_ok = True
-        except: pass
+        j_ok = ping_jacred(sett.get('jacred_url') or '', timeout=4)
         
         return {
             "aria2_running": self.dm._running if self.dm else False,
@@ -1405,14 +1455,7 @@ class Plugin:
             return 0
 
     async def check_jacred(self, url: str):
-        if not url or not url.strip():
-            return False
-        try:
-            req = urllib.request.Request(f"{url.strip().rstrip('/')}/api/v2.0/indexers/all/results?apikey=1&Query=test")
-            with urllib.request.urlopen(req, timeout=5):
-                return True
-        except:
-            return False
+        return ping_jacred(url, timeout=6)
 
     async def get_steam_language(self):
         try:

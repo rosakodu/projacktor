@@ -3,13 +3,10 @@ import { Focusable } from "@decky/ui";
 import { MediaItem } from "../types";
 import { MovieCard } from "./MovieCard";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
-import {
-  DeckyButton,
-  subscribeHomeButton,
-  dispatchHomeButtonDown,
-  dispatchHomeDirection,
-  isModalOpen,
-} from "../runtime/homeInputBus";
+import { isModalOpen } from "../runtime/homeInputBus";
+import { getActiveDocument } from "../runtime/activeDoc";
+import { playNavSound } from "../runtime/navSound";
+
 
 interface SectorShelfProps {
   title: string;
@@ -31,7 +28,9 @@ function computeCenteredScrollLeft(
   return Math.max(0, Math.min(target, maxScroll));
 }
 
-const SECTION_COOLDOWN_MS = 200;
+const SECTION_COOLDOWN_MS = 380;
+let globalLastSectionChangeAt = 0;
+let globalHeldDirection: "up" | "down" | null = null;
 
 export const SectorShelf: FC<SectorShelfProps> = memo(
   ({
@@ -46,102 +45,215 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
   }) => {
     const shelfRef = useRef<HTMLDivElement>(null);
     const rowRef = useRef<HTMLDivElement>(null);
-    const lastSectionChangeAtRef = useRef<number>(0);
 
     const triggerPrevSection = useCallback(() => {
       if (isModalOpen()) return;
+      const now = Date.now();
+      if (now - globalLastSectionChangeAt < SECTION_COOLDOWN_MS) return;
+      globalLastSectionChangeAt = now;
+
       if (!hasPrevSection) {
         // Return focus to active tab in the tabs bar when pressing UP on the top shelf
-        const activeTab = document.querySelector<HTMLElement>(
+        const doc = getActiveDocument(rowRef.current);
+        const activeTab = doc?.querySelector<HTMLElement>(
           '.projacktor-tab-item.active, [role="tab"][aria-selected="true"]'
         );
-        if (activeTab) {
+        if (activeTab && doc) {
+          doc.querySelectorAll('.gpfocus').forEach((el) => el.classList.remove('gpfocus'));
           activeTab.focus();
+          activeTab.classList.add('gpfocus');
         }
         return;
       }
-      if (!onPrevSection) return;
-      const now = Date.now();
-      if (now - lastSectionChangeAtRef.current < SECTION_COOLDOWN_MS) return;
-      lastSectionChangeAtRef.current = now;
-      onPrevSection();
+      if (onPrevSection) {
+        onPrevSection();
+      }
     }, [hasPrevSection, onPrevSection]);
 
     const triggerNextSection = useCallback(() => {
       if (isModalOpen()) return;
       if (!hasNextSection || !onNextSection) return;
       const now = Date.now();
-      if (now - lastSectionChangeAtRef.current < SECTION_COOLDOWN_MS) return;
-      lastSectionChangeAtRef.current = now;
+      if (now - globalLastSectionChangeAt < SECTION_COOLDOWN_MS) return;
+      globalLastSectionChangeAt = now;
       onNextSection();
     }, [hasNextSection, onNextSection]);
 
-    // Авто-фокус на первой карточке при смене раздела или монтировании
+    const stepCard = useCallback((dir: 1 | -1) => {
+      const doc = getActiveDocument(rowRef.current);
+      const row = rowRef.current;
+      if (!row || !doc) return;
+
+      const cards = Array.from(row.querySelectorAll<HTMLElement>(".projacktor-card"));
+      if (!cards.length) return;
+
+      const active = doc.activeElement;
+      const curIdx = cards.findIndex(
+        (c) => c === active || c.contains(active as Node)
+      );
+
+      let nextIdx: number;
+      if (curIdx === -1) {
+        nextIdx = dir > 0 ? 0 : cards.length - 1;
+      } else {
+        nextIdx = Math.max(0, Math.min(cards.length - 1, curIdx + dir));
+      }
+
+      if (nextIdx !== curIdx || curIdx === -1) {
+        const target = cards[nextIdx];
+        doc.querySelectorAll(".gpfocus").forEach((el) =>
+          el.classList.remove("gpfocus")
+        );
+        target.focus();
+        target.classList.add("gpfocus");
+        playNavSound();
+      }
+    }, []);
+
+    // Авто-фокус на первой карточке при смене раздела (но не если пользователь находится на табах)
     useEffect(() => {
+      if (rowRef.current) {
+        rowRef.current.scrollTo({ left: 0, behavior: "auto" });
+      }
       const timer = setTimeout(() => {
+        const doc = getActiveDocument(rowRef.current);
+        const active = doc?.activeElement;
+        const inTabs = !!(
+          active &&
+          (active.classList?.contains("projacktor-tab-item") ||
+            doc?.querySelector(".projacktor-nav-bar")?.contains(active))
+        );
+        if (inTabs) return;
+
         const firstCard = rowRef.current?.querySelector<HTMLElement>(".projacktor-card");
         if (firstCard) {
+          doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
           firstCard.focus();
+          firstCard.classList.add("gpfocus");
         }
-      }, 50);
+      }, 60);
       return () => clearTimeout(timer);
     }, [title]);
 
     // Подписка на raw-события геймпада Big Picture (SteamClient.Input)
     useEffect(() => {
+      let holdTimer: any = null;
+      let repeatTimer: any = null;
+
+      const clearHoldTimers = () => {
+        if (holdTimer != null) {
+          clearTimeout(holdTimer);
+          holdTimer = null;
+        }
+        if (repeatTimer != null) {
+          clearInterval(repeatTimer);
+          repeatTimer = null;
+        }
+      };
+
       const un = subscribeControllerInput((e) => {
-        if (!e.pressed) return;
-        if (isModalOpen()) return;
-
-        const active = document.activeElement;
-        const inTabs = document.querySelector(".projacktor-nav-bar")?.contains(active);
-        if (inTabs) return;
-
-        if (
+        const isUp =
           e.button === RawButton.DPAD_UP ||
           e.button === RawButton.LEFTSTICK_UP ||
           e.button === 4 ||
-          e.button === 20
-        ) {
-          triggerPrevSection();
-        } else if (
+          e.button === 20;
+
+        const isDown =
           e.button === RawButton.DPAD_DOWN ||
           e.button === RawButton.LEFTSTICK_DOWN ||
           e.button === 6 ||
-          e.button === 21
-        ) {
-          triggerNextSection();
-        }
-      });
-      return un;
-    }, [triggerPrevSection, triggerNextSection]);
+          e.button === 21;
 
-    // Подписка на шину Focusable Decky
-    useEffect(() => {
-      const un = subscribeHomeButton((e) => {
+        const isLeft =
+          e.button === RawButton.DPAD_LEFT ||
+          e.button === RawButton.LEFTSTICK_LEFT ||
+          e.button === 7 ||
+          e.button === 22;
+
+        const isRight =
+          e.button === RawButton.DPAD_RIGHT ||
+          e.button === RawButton.LEFTSTICK_RIGHT ||
+          e.button === 5 ||
+          e.button === 23;
+
+        if (!e.pressed) {
+          if ((isUp && globalHeldDirection === "up") || (isDown && globalHeldDirection === "down")) {
+            globalHeldDirection = null;
+          }
+          if (isLeft || isRight) {
+            clearHoldTimers();
+          }
+          return;
+        }
+
         if (isModalOpen()) return;
 
-        const active = document.activeElement;
-        const inTabs = document.querySelector(".projacktor-nav-bar")?.contains(active);
+        const doc = getActiveDocument(rowRef.current);
+        const active = doc?.activeElement;
+        const inTabs = doc?.querySelector(".projacktor-nav-bar")?.contains(active as Node);
         if (inTabs) return;
 
-        if (
-          e.button === DeckyButton.DPAD_UP ||
-          e.button === 9 ||
-          e.button === 4 ||
-          e.button === 20
-        ) {
+        if (isUp) {
+          if (globalHeldDirection === "up") return;
+          globalHeldDirection = "up";
           triggerPrevSection();
-        } else if (
-          e.button === DeckyButton.DPAD_DOWN ||
-          e.button === 10 ||
-          e.button === 6 ||
-          e.button === 21
-        ) {
+        } else if (isDown) {
+          if (globalHeldDirection === "down") return;
+          globalHeldDirection = "down";
           triggerNextSection();
+        } else if (isLeft) {
+          clearHoldTimers();
+          stepCard(-1);
+          holdTimer = setTimeout(() => {
+            repeatTimer = setInterval(() => {
+              stepCard(-1);
+            }, 120);
+          }, 240);
+        } else if (isRight) {
+          clearHoldTimers();
+          stepCard(1);
+          holdTimer = setTimeout(() => {
+            repeatTimer = setInterval(() => {
+              stepCard(1);
+            }, 120);
+          }, 240);
         }
       });
-      return un;
+
+      return () => {
+        clearHoldTimers();
+        un();
+      };
+    }, [triggerPrevSection, triggerNextSection, stepCard]);
+
+    // Перехват стрелок Up/Down для надежного переключения полок
+    useEffect(() => {
+      const shelfEl = shelfRef.current;
+      if (!shelfEl) return;
+      const doc = getActiveDocument(shelfEl);
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (isModalOpen()) return;
+        const active = doc?.activeElement || document?.activeElement;
+        if (!shelfEl.contains(active as Node)) return;
+
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          e.stopPropagation();
+          triggerPrevSection();
+        } else if (e.key === "ArrowDown") {
+          e.preventDefault();
+          e.stopPropagation();
+          triggerNextSection();
+        }
+      };
+
+      doc?.addEventListener?.("keydown", handleKeyDown, true);
+      window.addEventListener("keydown", handleKeyDown, true);
+      return () => {
+        doc?.removeEventListener?.("keydown", handleKeyDown, true);
+        window.removeEventListener("keydown", handleKeyDown, true);
+      };
     }, [triggerPrevSection, triggerNextSection]);
 
     // Центрирование карточки по горизонтали и фиксация вертикального скролла
@@ -187,24 +299,6 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
       };
     }, []);
 
-    const absorb = (evt: any) => {
-      try {
-        evt?.preventDefault?.();
-      } catch {}
-      try {
-        evt?.stopPropagation?.();
-      } catch {}
-      try {
-        evt?.stopImmediatePropagation?.();
-      } catch {}
-      try {
-        evt?.detail?.event?.preventDefault?.();
-      } catch {}
-      try {
-        evt?.detail?.event?.stopPropagation?.();
-      } catch {}
-    };
-
     return (
       <div ref={shelfRef} className="projacktor-shelf">
         <div className="projacktor-shelf-title">
@@ -219,32 +313,6 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
           role="list"
           aria-label={title}
           className="projacktor-shelf-row"
-          onGamepadDirection={(evt: any) => {
-            dispatchHomeDirection(evt);
-            const dir = evt?.detail?.button;
-            if (dir === DeckyButton.DPAD_UP || dir === 9 || dir === 4 || dir === 20) {
-              absorb(evt);
-              triggerPrevSection();
-            } else if (dir === DeckyButton.DPAD_DOWN || dir === 10 || dir === 6 || dir === 21) {
-              if (hasNextSection) {
-                absorb(evt);
-                triggerNextSection();
-              }
-            }
-          }}
-          onButtonDown={(evt: any) => {
-            dispatchHomeButtonDown(evt);
-            const btn = evt?.detail?.button;
-            if (btn === DeckyButton.DPAD_UP || btn === 9 || btn === 4 || btn === 20) {
-              absorb(evt);
-              triggerPrevSection();
-            } else if (btn === DeckyButton.DPAD_DOWN || btn === 10 || btn === 6 || btn === 21) {
-              if (hasNextSection) {
-                absorb(evt);
-                triggerNextSection();
-              }
-            }
-          }}
           onKeyDown={(e: any) => {
             if (e.key === "ArrowUp") {
               e.preventDefault?.();
@@ -254,6 +322,14 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
               e.preventDefault?.();
               e.stopPropagation?.();
               triggerNextSection();
+            } else if (e.key === "ArrowLeft") {
+              e.preventDefault?.();
+              e.stopPropagation?.();
+              stepCard(-1);
+            } else if (e.key === "ArrowRight") {
+              e.preventDefault?.();
+              e.stopPropagation?.();
+              stepCard(1);
             }
           }}
         >

@@ -1,7 +1,6 @@
 import { FC, memo } from "react";
 import { Focusable } from "@decky/ui";
 import { MediaItem, getImageUrl } from "../api";
-import { dispatchHomeButtonDown, dispatchHomeDirection } from "../runtime/homeInputBus";
 
 interface MovieCardProps {
   movie: MediaItem;
@@ -21,16 +20,6 @@ export const MovieCard: FC<MovieCardProps> = memo(({ movie, onActivate }) => {
       onActivate={() => onActivate(movie)}
       onClick={() => onActivate(movie)}
       onOKActionDescription="Подробнее"
-      onButtonDown={(evt: any) => {
-        try {
-          dispatchHomeButtonDown(evt);
-        } catch {}
-      }}
-      onGamepadDirection={(evt: any) => {
-        try {
-          dispatchHomeDirection(evt);
-        } catch {}
-      }}
     >
       {rating && <div className="projacktor-card-rating">★ {rating}</div>}
       <img

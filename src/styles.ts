@@ -1,5 +1,5 @@
 export const PROJACKTOR_STYLES = `
-/* ───── Projactor Deck Shelves Design Tokens (Sharp / No-radius) ───── */
+/* ───── Projacktor Deck Shelves Design Tokens (Sharp / No-radius) ───── */
 :where(:root, .projacktor-app-root, .projacktor-modal-root) {
   --ds-surface:        rgba(255, 255, 255, 0.05);
   --ds-surface-hi:     rgba(255, 255, 255, 0.10);
@@ -165,6 +165,7 @@ export const PROJACKTOR_STYLES = `
 .projacktor-tab-item:hover,
 .projacktor-tab-item:focus,
 .projacktor-tab-item.gpfocus,
+.projacktor-tab-item.gpfocuswithin,
 .projacktor-tab-item:focus-visible {
   color: #ffffff !important;
   background: transparent !important;
@@ -176,6 +177,9 @@ export const PROJACKTOR_STYLES = `
   color: #ffffff !important;
   font-weight: 600 !important;
   background: transparent !important;
+  border-top: none !important;
+  border-left: none !important;
+  border-right: none !important;
   border-bottom: 3px solid #1a9fff !important;
   margin: 0 !important;
   outline: none !important;
@@ -184,10 +188,14 @@ export const PROJACKTOR_STYLES = `
 
 .projacktor-tab-item.active:focus,
 .projacktor-tab-item.active.gpfocus,
+.projacktor-tab-item.active.gpfocuswithin,
 .projacktor-tab-item.active:focus-visible {
   color: #ffffff !important;
   font-weight: 600 !important;
   background: transparent !important;
+  border-top: none !important;
+  border-left: none !important;
+  border-right: none !important;
   border-bottom: 3px solid #1a9fff !important;
   margin: 0 !important;
   outline: none !important;

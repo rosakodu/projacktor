@@ -52,7 +52,7 @@ let pollTimer: number | null = null;
 let pollCursor = 0;
 let keyPollCursor = 0;
 
-const DEDUP_WINDOW_MS = 40;
+const DEDUP_WINDOW_MS = 80;
 let lastEvKey = "";
 let lastEvAt = 0;
 
@@ -66,6 +66,7 @@ function dispatch(ev: ControllerEvent): void {
   try {
     const g = globalThis as any;
     g.__projacktor_input_last = ev;
+    g.__projacktor_input_dispatch = dispatch;
   } catch {}
 
   for (const l of listeners) {
@@ -74,6 +75,10 @@ function dispatch(ev: ControllerEvent): void {
     } catch {}
   }
 }
+
+try {
+  (globalThis as any).__projacktor_input_dispatch = dispatch;
+} catch {}
 
 function installBPInjection(): boolean {
   const g = globalThis as any;
@@ -109,6 +114,12 @@ function installBPInjection(): boolean {
     }
   } catch {}
 
+  try {
+    for (const c of candidates) {
+      if (c) c.__projacktor_input_dispatch = dispatch;
+    }
+  } catch {}
+
   const view = candidates.find((c) => c?.SteamClient?.Input?.RegisterForControllerInputMessages) ?? null;
   if (!view) return false;
 
@@ -119,6 +130,10 @@ function installBPInjection(): boolean {
       "this.__projacktor_bp_keydown_installed = true;",
       "this.__projacktor_bp_keydown_log = [];",
       "var _klog = this.__projacktor_bp_keydown_log;",
+      "var _inputLog = this.__projacktor_bp_input_log = this.__projacktor_bp_input_log || [];",
+      "var _sim = function(s, b, p) { _inputLog.push({ s: s, b: b, p: p }); };",
+      "this.__projacktor_simulate_button = _sim;",
+      "if (this.document) this.document.__projacktor_simulate_button = _sim;",
       "this.document.addEventListener('keydown', function (e) {",
       "  try {",
       "    _klog.push({ key: e.key, code: e.code, ctrl: e.ctrlKey, meta: e.metaKey, alt: e.altKey, tag: e.target && e.target.tagName, t: Date.now() });",

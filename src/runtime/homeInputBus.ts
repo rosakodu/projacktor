@@ -94,10 +94,14 @@ export function dispatchHomeKey(ev: KeyEvent): void {
   }
 }
 
+import { getActiveDocument } from "./activeDoc";
+
 export function isModalOpen(): boolean {
   if (isMagicBlack()) return true;
-  if (typeof document === "undefined") return false;
-  return !!document.querySelector(
+  const doc = getActiveDocument();
+  if (!doc) return false;
+  return !!doc.querySelector(
     ".projacktor-modal-root, .projacktor-player-fullscreen"
   );
 }
+

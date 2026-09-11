@@ -18,12 +18,12 @@ const getSteamLanguage = callable<[], string>("get_steam_language");
 // ── Локализации ──────────────────────────────────────────────
 const T: Record<string, Record<string, string>> = {
   english: {
-    title:            "Projecktor",
+    title:            "Projacktor",
     openCatalog:      "Open Catalog",
     support:          "Support",
   },
   russian: {
-    title:            "Projecktor",
+    title:            "Projacktor",
     openCatalog:      "Открыть каталог",
     support:          "Поддержка",
   },
@@ -92,14 +92,14 @@ export default definePlugin(() => {
   }
 
   try {
-    routerHook.addGlobalComponent("ProjecktorMagicBlack", GlobalMagicBlackOverlay);
+    routerHook.addGlobalComponent("ProjacktorMagicBlack", GlobalMagicBlackOverlay);
   } catch (e) {
-    console.error("Projecktor addGlobalComponent error:", e);
+    console.error("Projacktor addGlobalComponent error:", e);
   }
 
   return {
     name:      "Projacktor",
-    titleView: <div className={staticClasses.Title}>Projecktor</div>,
+    titleView: <div className={staticClasses.Title}>Projacktor</div>,
     content:   <Content />,
     icon:      <FaVideo />,
     onDismount() {
@@ -109,9 +109,9 @@ export default definePlugin(() => {
         console.error("Projacktor removeRoute error:", e);
       }
       try {
-        routerHook.removeGlobalComponent("ProjecktorMagicBlack");
+        routerHook.removeGlobalComponent("ProjacktorMagicBlack");
       } catch (e) {
-        console.error("Projecktor removeGlobalComponent error:", e);
+        console.error("Projacktor removeGlobalComponent error:", e);
       }
     },
   };

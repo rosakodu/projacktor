@@ -1,6 +1,7 @@
 import { FC, useState, useRef, useEffect, useCallback } from "react";
-import { ModalRoot, Focusable, GamepadButton } from "@decky/ui";
-import { FaPlay, FaPause, FaBackward, FaForward, FaCheck, FaHeadphones } from "react-icons/fa";
+import { ModalRoot, Focusable } from "@decky/ui";
+import { FaPlay, FaPause, FaBackward, FaForward, FaCheck, FaHeadphones, FaTimes } from "react-icons/fa";
+import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
 
 interface AudioTrack {
   index: number;
@@ -45,6 +46,12 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
   const [showControls, setShowControls] = useState<boolean>(true);
   const controlsTimeoutRef = useRef<number | null>(null);
 
+  const showAudioMenuRef = useRef(showAudioMenu);
+  showAudioMenuRef.current = showAudioMenu;
+
+  const closeModalRef = useRef(closeModal);
+  closeModalRef.current = closeModal;
+
   // Auto-hide controls after 15 seconds of inactivity
   const resetControlsTimer = useCallback(() => {
     setShowControls(true);
@@ -82,6 +89,56 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
   const touchStartXRef = useRef<number | null>(null);
   const touchStartYRef = useRef<number | null>(null);
   const touchMovedRef = useRef<boolean>(false);
+
+  const getStreamUrl = useCallback(
+    (startTime: number = 0, track?: number) => {
+      let base = `http://127.0.0.1:8400/api/stream?file=${encodeURIComponent(filePath)}`;
+      if (isOnline) {
+        base += `&online=1`;
+      }
+      if (startTime > 0) {
+        base += `&start=${Math.floor(startTime)}`;
+      }
+      if (track !== undefined) {
+        base += `&audio=${track}`;
+      }
+      return base;
+    },
+    [filePath, isOnline]
+  );
+
+  const [streamUrl, setStreamUrl] = useState<string>(() => getStreamUrl(0));
+
+  const togglePlay = useCallback(() => {
+    if (!videoRef.current) return;
+    if (videoRef.current.paused) {
+      videoRef.current.play().catch(() => {});
+      setIsPlaying(true);
+    } else {
+      videoRef.current.pause();
+      setIsPlaying(false);
+    }
+    resetControlsTimer();
+  }, [resetControlsTimer]);
+
+  const seekRelative = useCallback((delta: number) => {
+    const cur = baseTime + (videoRef.current ? videoRef.current.currentTime : 0);
+    const newTime = Math.max(0, Math.min(duration || 999999, cur + delta));
+    setBaseTime(newTime);
+    setVideoTime(0);
+    setStreamUrl(getStreamUrl(newTime, selectedAudio));
+    resetControlsTimer();
+  }, [baseTime, duration, getStreamUrl, resetControlsTimer, selectedAudio]);
+
+  const selectAudioTrack = useCallback((trackIndex: number) => {
+    setSelectedAudio(trackIndex);
+    setShowAudioMenu(false);
+    const cur = baseTime + (videoRef.current ? videoRef.current.currentTime : 0);
+    setBaseTime(cur);
+    setVideoTime(0);
+    setStreamUrl(getStreamUrl(cur, trackIndex));
+    resetControlsTimer();
+  }, [baseTime, getStreamUrl, resetControlsTimer]);
 
   const seekTo = (targetSec: number) => {
     const newTime = Math.max(0, Math.min(duration || 999999, targetSec));
@@ -159,24 +216,150 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
       resetControlsTimer();
     };
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Removed ArrowUp / ArrowDown volume change per user request #8
-      if (e.key === "Enter" || e.key === " " || e.key === "a" || e.key === "A") {
-        setShowControls(true);
-        resetControlsTimer();
-      } else {
-        resetControlsTimer();
-      }
-    };
+    let lastSeekAt = 0;
+    let lastVolumeAt = 0;
+    let lastToggleAt = 0;
 
-    const handleGamepadButton = (e: any) => {
-      const btn = e.detail?.button;
-      // Button A (0) to toggle controls
-      if (btn === 0 || btn === (GamepadButton as any)?.A) {
+    // Прямая подписка на события геймпада Steam Deck
+    const unController = subscribeControllerInput((e) => {
+      if (!e.pressed) return;
+      const now = Date.now();
+
+      // Кнопка A (0): Воспроизведение / Пауза
+      if (e.button === RawButton.A || e.button === 0) {
+        if (now - lastToggleAt < 250) return;
+        lastToggleAt = now;
+        togglePlay();
         setShowControls(true);
         resetControlsTimer();
-      } else {
+        return;
+      }
+
+      // Кнопка B (1): Закрыть меню аудио или выйти из плеера
+      if (e.button === RawButton.B || e.button === 1) {
+        if (showAudioMenuRef.current) {
+          setShowAudioMenu(false);
+          setShowControls(true);
+          resetControlsTimer();
+        } else if (closeModalRef.current) {
+          closeModalRef.current();
+        }
+        return;
+      }
+
+      // Кнопка Y (3): Переключение меню аудиодорожек
+      if (e.button === RawButton.Y || e.button === 3) {
+        if (audioTracks.length > 1) {
+          setShowAudioMenu((prev) => !prev);
+          setShowControls(true);
+          resetControlsTimer();
+        }
+        return;
+      }
+
+      // D-pad Влево (7), Стик Влево (22), L1 (30), L2 (28): Перемотка назад (-15с)
+      if (
+        e.button === RawButton.DPAD_LEFT ||
+        e.button === RawButton.LEFTSTICK_LEFT ||
+        e.button === 7 ||
+        e.button === 22 ||
+        e.button === RawButton.L1 ||
+        e.button === RawButton.L2
+      ) {
+        if (now - lastSeekAt < 180) return;
+        lastSeekAt = now;
+        seekRelative(-15);
+        setShowControls(true);
         resetControlsTimer();
+        return;
+      }
+
+      // D-pad Вправо (5), Стик Вправо (23), R1 (31), R2 (29): Перемотка вперёд (+15с)
+      if (
+        e.button === RawButton.DPAD_RIGHT ||
+        e.button === RawButton.LEFTSTICK_RIGHT ||
+        e.button === 5 ||
+        e.button === 23 ||
+        e.button === RawButton.R1 ||
+        e.button === RawButton.R2
+      ) {
+        if (now - lastSeekAt < 180) return;
+        lastSeekAt = now;
+        seekRelative(15);
+        setShowControls(true);
+        resetControlsTimer();
+        return;
+      }
+
+      // D-pad Вверх (4), Стик Вверх (20): Громкость +5%
+      if (
+        e.button === RawButton.DPAD_UP ||
+        e.button === RawButton.LEFTSTICK_UP ||
+        e.button === 4 ||
+        e.button === 20
+      ) {
+        if (now - lastVolumeAt < 120) return;
+        lastVolumeAt = now;
+        changeVolume(0.05);
+        setShowControls(true);
+        resetControlsTimer();
+        return;
+      }
+
+      // D-pad Вниз (6), Стик Вниз (21): Громкость -5%
+      if (
+        e.button === RawButton.DPAD_DOWN ||
+        e.button === RawButton.LEFTSTICK_DOWN ||
+        e.button === 6 ||
+        e.button === 21
+      ) {
+        if (now - lastVolumeAt < 120) return;
+        lastVolumeAt = now;
+        changeVolume(-0.05);
+        setShowControls(true);
+        resetControlsTimer();
+        return;
+      }
+
+      setShowControls(true);
+      resetControlsTimer();
+    });
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      setShowControls(true);
+      resetControlsTimer();
+
+      if (e.key === "Escape" || e.key === "Backspace") {
+        e.preventDefault();
+        if (showAudioMenuRef.current) {
+          setShowAudioMenu(false);
+          setShowControls(true);
+          resetControlsTimer();
+        } else if (closeModalRef.current) {
+          closeModalRef.current();
+        }
+        return;
+      }
+
+      if (e.key === " " || e.key === "Enter" || e.key === "k" || e.key === "K") {
+        e.preventDefault();
+        togglePlay();
+      } else if (e.key === "ArrowLeft" || e.key === "j" || e.key === "J") {
+        e.preventDefault();
+        seekRelative(-15);
+      } else if (e.key === "ArrowRight" || e.key === "l" || e.key === "L") {
+        e.preventDefault();
+        seekRelative(15);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        changeVolume(0.05);
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        changeVolume(-0.05);
+      } else if (e.key === "y" || e.key === "Y") {
+        if (audioTracks.length > 1) {
+          setShowAudioMenu((prev) => !prev);
+        }
       }
     };
 
@@ -185,17 +368,22 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("click", handleActivity);
     window.addEventListener("touchstart", handleActivity);
-    window.addEventListener("vgp_onbuttondown", handleGamepadButton as EventListener);
 
     return () => {
+      unController();
       window.removeEventListener("mousemove", handleActivity);
       window.removeEventListener("pointermove", handleActivity);
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("click", handleActivity);
       window.removeEventListener("touchstart", handleActivity);
-      window.removeEventListener("vgp_onbuttondown", handleGamepadButton as EventListener);
     };
-  }, [resetControlsTimer]);
+  }, [
+    audioTracks.length,
+    changeVolume,
+    resetControlsTimer,
+    seekRelative,
+    togglePlay,
+  ]);
 
   // Request fullscreen on mount to overlay all Steam UI
   useEffect(() => {
@@ -209,25 +397,6 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
       }
     };
   }, []);
-
-  const getStreamUrl = useCallback(
-    (startTime: number = 0, track?: number) => {
-      let base = `http://127.0.0.1:8400/api/stream?file=${encodeURIComponent(filePath)}`;
-      if (isOnline) {
-        base += `&online=1`;
-      }
-      if (startTime > 0) {
-        base += `&start=${Math.floor(startTime)}`;
-      }
-      if (track !== undefined) {
-        base += `&audio=${track}`;
-      }
-      return base;
-    },
-    [filePath, isOnline]
-  );
-
-  const [streamUrl, setStreamUrl] = useState<string>(() => getStreamUrl(0));
 
   // Probe file metadata on mount: duration and audio tracks
   useEffect(() => {
@@ -254,37 +423,6 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
 
   const handleVideoError = () => {
     setErrorMsg("Ошибка воспроизведения потока. Проверьте файл.");
-  };
-
-  const togglePlay = () => {
-    if (!videoRef.current) return;
-    if (videoRef.current.paused) {
-      videoRef.current.play();
-      setIsPlaying(true);
-    } else {
-      videoRef.current.pause();
-      setIsPlaying(false);
-    }
-    resetControlsTimer();
-  };
-
-  const seekRelative = (delta: number) => {
-    const cur = baseTime + (videoRef.current ? videoRef.current.currentTime : 0);
-    const newTime = Math.max(0, Math.min(duration || 999999, cur + delta));
-    setBaseTime(newTime);
-    setVideoTime(0);
-    setStreamUrl(getStreamUrl(newTime, selectedAudio));
-    resetControlsTimer();
-  };
-
-  const selectAudioTrack = (trackIndex: number) => {
-    setSelectedAudio(trackIndex);
-    setShowAudioMenu(false);
-    const cur = baseTime + (videoRef.current ? videoRef.current.currentTime : 0);
-    setBaseTime(cur);
-    setVideoTime(0);
-    setStreamUrl(getStreamUrl(cur, trackIndex));
-    resetControlsTimer();
   };
 
   useEffect(() => {
@@ -332,9 +470,16 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
 
   return (
     <ModalRoot onCancel={closeModal} closeModal={closeModal} bAllowFullSize={true} bHideCloseIcon={true}>
-      <div
+      <Focusable
         ref={containerRef}
         className="projacktor-player-fullscreen"
+        onCancelButton={() => {
+          if (showAudioMenuRef.current) {
+            setShowAudioMenu(false);
+          } else if (closeModalRef.current) {
+            closeModalRef.current();
+          }
+        }}
         style={{
           display: "flex",
           flexDirection: "column",
@@ -377,6 +522,28 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
           >
             {title}
           </div>
+
+          {closeModal && (
+            <Focusable
+              className="ds-btn ds-btn--compact ds-btn--icon"
+              onActivate={closeModal}
+              onClick={closeModal}
+              title="Закрыть плеер (B)"
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: "50%",
+                background: "rgba(255, 255, 255, 0.15)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                marginLeft: 12,
+                flexShrink: 0,
+              }}
+            >
+              <FaTimes />
+            </Focusable>
+          )}
         </div>
 
         {/* Video Canvas */}
@@ -653,7 +820,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
             )}
           </div>
         </Focusable>
-      </div>
+      </Focusable>
     </ModalRoot>
   );
 };

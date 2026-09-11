@@ -28,8 +28,16 @@ const SettingsPage = {
             document.getElementById('settingTmdbKey').value = settings.tmdb_api_key || '';
             
             document.getElementById('btnSaveSettings').onclick = async () => {
+                let url = (document.getElementById('settingJacredUrl').value || '').trim();
+                if (url) {
+                    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                        url = 'https://' + url;
+                    }
+                    url = url.replace(/\/+$/, '');
+                    document.getElementById('settingJacredUrl').value = url;
+                }
                 const data = {
-                    jacred_url: document.getElementById('settingJacredUrl').value,
+                    jacred_url: url,
                     tmdb_api_key: document.getElementById('settingTmdbKey').value
                 };
                 try {

@@ -3,6 +3,7 @@ import { Focusable, TextField } from "@decky/ui";
 import { MediaItem } from "../types";
 import { searchCatalog } from "../api";
 import { Shelf } from "../components/Shelf";
+import { getActiveDocument } from "../runtime/activeDoc";
 
 interface SearchViewProps {
   onSelectMovie: (movie: MediaItem) => void;
@@ -10,16 +11,25 @@ interface SearchViewProps {
 
 export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
   const rootRef = useRef<HTMLDivElement>(null);
-  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [searchQuery, setSearchQuery] = useState<string>("" );
   const [searchResults, setSearchResults] = useState<MediaItem[]>([]);
   const [searchLoading, setSearchLoading] = useState<boolean>(false);
 
-  // Авто-фокус на поле ввода при переходе в поиск
+  // Авто-фокус на поле ввода при переходе в поиск (если фокус не на табах)
   useEffect(() => {
     let cancelled = false;
     const focusSearch = () => {
       if (cancelled) return true;
       const root = rootRef.current;
+      const doc = getActiveDocument(root);
+      const active = doc?.activeElement;
+      const inTabs = !!(
+        active &&
+        (active.classList?.contains("projacktor-tab-item") ||
+          doc?.querySelector(".projacktor-nav-bar")?.contains(active))
+      );
+      if (inTabs) return true;
+
       const input = root
         ? root.querySelector<HTMLElement>("input, button, .ds-btn")
         : null;

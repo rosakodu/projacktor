@@ -1,5 +1,5 @@
 /**
- * PROJACTOR — Steam Deck Gamepad & Spatial Navigation
+ * PROJACKTOR — Steam Deck Gamepad & Spatial Navigation
  * Supports D-Pad, Left Stick, A/B/Y buttons, and Keyboard Arrow Keys
  */
 

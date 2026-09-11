@@ -11,6 +11,8 @@ import { RawButton, subscribeControllerInput } from "../runtime/controllerInput"
 import { isModalOpen } from "../runtime/homeInputBus";
 import { setMagicBlack } from "../runtime/magicBlackBus";
 import { playNavSound } from "../runtime/navSound";
+import { getActiveDocument } from "../runtime/activeDoc";
+
 
 const TABS_CONFIG = [
   { id: "movies", title: "Главная" },
@@ -116,10 +118,37 @@ export const ProjacktorApp: FC = () => {
     });
   }, []);
 
-  // Гарантированная фокусировка контента при переключении вкладок
-  const ensureContentFocus = useCallback(() => {
+  // Гарантированная фокусировка при переключении вкладок или потере фокуса
+  const ensureContentFocus = useCallback((forceContent = false) => {
     const root = rootRef.current;
     if (!root) return false;
+
+    const doc = getActiveDocument(root);
+    const active = doc?.activeElement;
+
+    // Проверяем, находится ли фокус на конкретной вкладке
+    const isTabItemActive = !!(active && active.classList?.contains("projacktor-tab-item"));
+    if (isTabItemActive && !forceContent) {
+      // Пользователь осознанно перемещается по табам — не сбиваем его фокус!
+      return true;
+    }
+
+    const isNavActive = !!(
+      active && root.querySelector(".projacktor-nav-bar")?.contains(active)
+    );
+
+    // Если фокус на панели вкладок (например, на pill L1/R1) и не форсирован уход вниз — фокусируем активный таб
+    if (isNavActive && !forceContent) {
+      const activeTabEl = root.querySelector<HTMLElement>(
+        ".projacktor-tab-item.active, [role='tab'][aria-selected='true']"
+      );
+      if (activeTabEl && activeTabEl !== active) {
+        doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+        activeTabEl.focus();
+        activeTabEl.classList.add("gpfocus");
+      }
+      return true;
+    }
 
     let target: HTMLElement | null = null;
     if (
@@ -153,7 +182,9 @@ export const ProjacktorApp: FC = () => {
 
     if (target) {
       try {
+        doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
         target.focus();
+        target.classList.add("gpfocus");
       } catch {}
       return true;
     }
@@ -161,16 +192,14 @@ export const ProjacktorApp: FC = () => {
   }, [activeTab]);
 
   useEffect(() => {
-    ensureContentFocus();
-    const t1 = setTimeout(ensureContentFocus, 40);
-    const t2 = setTimeout(ensureContentFocus, 100);
-    const t3 = setTimeout(ensureContentFocus, 250);
-    const t4 = setTimeout(ensureContentFocus, 500);
+    ensureContentFocus(false);
+    const t1 = setTimeout(() => ensureContentFocus(false), 40);
+    const t2 = setTimeout(() => ensureContentFocus(false), 120);
+    const t3 = setTimeout(() => ensureContentFocus(false), 250);
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
       clearTimeout(t3);
-      clearTimeout(t4);
     };
   }, [activeTab, ensureContentFocus]);
 
@@ -181,22 +210,23 @@ export const ProjacktorApp: FC = () => {
       if (isModalOpen()) return;
       if (!e.pressed) return;
 
-      // Если фокус упал на body, восстанавливаем его на активном контенте
-      const doc = rootRef.current?.ownerDocument || document;
-      const active = doc.activeElement;
-      if (!active || active === doc.body || active === document.body) {
-        ensureContentFocus();
+      const now = Date.now();
+      if (e.button === RawButton.L1 || e.button === RawButton.R1) {
+        if (now - lastBumperAt < 250) return;
+        lastBumperAt = now;
+        if (e.button === RawButton.L1) {
+          prevTab();
+        } else {
+          nextTab();
+        }
+        return;
       }
 
-      const now = Date.now();
-      if (now - lastBumperAt < 180) return;
-
-      if (e.button === RawButton.L1) {
-        lastBumperAt = now;
-        prevTab();
-      } else if (e.button === RawButton.R1) {
-        lastBumperAt = now;
-        nextTab();
+      // Если фокус упал на body, восстанавливаем его на активном контенте
+      const doc = getActiveDocument(rootRef.current);
+      const active = doc?.activeElement;
+      if (!active || active === doc?.body || (typeof document !== "undefined" && active === document.body)) {
+        ensureContentFocus(false);
       }
     });
     return un;

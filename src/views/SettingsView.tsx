@@ -17,6 +17,7 @@ import {
   rpcClearCache,
   clearLocalCache,
 } from "../api";
+import { getActiveDocument } from "../runtime/activeDoc";
 
 export const SettingsView: FC = memo(() => {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -29,16 +30,7 @@ export const SettingsView: FC = memo(() => {
     rpcGetSettings()
       .then((sett) => {
         if (sett && sett.jacred_url) {
-          const url = sett.jacred_url.trim();
-          if (
-            url !== "https://jac.red" &&
-            url !== "https://jac.red/" &&
-            url !== "jac.red"
-          ) {
-            setJacredUrl(url);
-          } else {
-            setJacredUrl("");
-          }
+          setJacredUrl(sett.jacred_url.trim());
         }
       })
       .catch(() => {});
@@ -52,12 +44,21 @@ export const SettingsView: FC = memo(() => {
       .catch(() => {});
   }, []);
 
-  // Авто-фокус на первом интерактивном элементе при переходе в настройки
+  // Авто-фокус на первом интерактивном элементе при переходе в настройки (если фокус не на табах)
   useEffect(() => {
     let cancelled = false;
     const focusSett = () => {
       if (cancelled) return true;
       const root = rootRef.current;
+      const doc = getActiveDocument(root);
+      const active = doc?.activeElement;
+      const inTabs = !!(
+        active &&
+        (active.classList?.contains("projacktor-tab-item") ||
+          doc?.querySelector(".projacktor-nav-bar")?.contains(active))
+      );
+      if (inTabs) return true;
+
       const firstInteractive = root
         ? root.querySelector<HTMLElement>(
             "input, button, .DialogButton, [tabindex='0']"
@@ -91,7 +92,14 @@ export const SettingsView: FC = memo(() => {
   const handleSaveSettings = useCallback(async () => {
     setSettingsSaving(true);
     try {
-      const cleanUrl = jacredUrl.trim();
+      let cleanUrl = jacredUrl.trim();
+      if (cleanUrl) {
+        if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
+          cleanUrl = `https://${cleanUrl}`;
+        }
+        cleanUrl = cleanUrl.replace(/\/+$/, "");
+        setJacredUrl(cleanUrl);
+      }
       const ok = cleanUrl ? await rpcCheckJacred(cleanUrl) : false;
       setJacredOk(ok);
       await rpcSaveSettings(JSON.stringify({ jacred_url: cleanUrl }));

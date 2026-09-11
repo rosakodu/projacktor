@@ -5,7 +5,7 @@ interface HeaderProps {
   onBack?: () => void;
 }
 
-export const Header: FC<HeaderProps> = memo(({ title = "Projecktor" }) => {
+export const Header: FC<HeaderProps> = memo(({ title = "Projacktor" }) => {
   return (
     <div
       className="projacktor-top-header"
