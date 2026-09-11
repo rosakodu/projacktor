@@ -31,15 +31,10 @@ export const ProjacktorApp: FC = () => {
   const [activeTab, setActiveTab] = useState<string>("movies");
   const [ready, setReady] = useState(false);
 
-  // Ждём 2 кадра рендера, чтобы <style> полностью применился до показа UI
+  // Задержка перед показом UI — даём время на применение <style> и первый рендер
   useEffect(() => {
-    let cancelled = false;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (!cancelled) setReady(true);
-      });
-    });
-    return () => { cancelled = true; };
+    const timer = setTimeout(() => setReady(true), 150);
+    return () => clearTimeout(timer);
   }, []);
 
   const getParentWindow = (): EventTarget => {
