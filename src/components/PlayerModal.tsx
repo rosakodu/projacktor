@@ -123,8 +123,16 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
   const closeModalRef = useRef(closeModal);
   closeModalRef.current = closeModal;
 
+  const lastMenuNavTimeRef = useRef<number>(0);
+
   const handleMenuDirection = useCallback((menuEl: HTMLElement | null, dir: "up" | "down") => {
     if (!menuEl) return;
+    const now = Date.now();
+    if (now - lastMenuNavTimeRef.current < 160) {
+      return; // Ignore duplicate input events (gamepad + virtual keyboard + DOM direction)
+    }
+    lastMenuNavTimeRef.current = now;
+
     const items = Array.from(menuEl.querySelectorAll<HTMLElement>(".ds-btn, [tabindex='0']"));
     if (!items.length) return;
     const doc = getActiveDocument(menuEl) || document;
@@ -1194,19 +1202,6 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
                 ref={subtitleMenuRef}
                 className="projacktor-player-dropdown-menu"
                 flow-children="column"
-                onGamepadDirection={(evt: any) => {
-                  const btn = evt?.detail?.button;
-                  if (btn === 9) {
-                    try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
-                    handleMenuDirection(subtitleMenuRef.current, "up");
-                    return false;
-                  } else if (btn === 10) {
-                    try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
-                    handleMenuDirection(subtitleMenuRef.current, "down");
-                    return false;
-                  }
-                  return undefined;
-                }}
                 style={{
                   position: "absolute",
                   bottom: "100%",
@@ -1307,19 +1302,6 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
                 ref={audioMenuRef}
                 className="projacktor-player-dropdown-menu"
                 flow-children="column"
-                onGamepadDirection={(evt: any) => {
-                  const btn = evt?.detail?.button;
-                  if (btn === 9) {
-                    try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
-                    handleMenuDirection(audioMenuRef.current, "up");
-                    return false;
-                  } else if (btn === 10) {
-                    try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
-                    handleMenuDirection(audioMenuRef.current, "down");
-                    return false;
-                  }
-                  return undefined;
-                }}
                 style={{
                   position: "absolute",
                   bottom: "100%",

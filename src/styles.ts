@@ -252,11 +252,12 @@ export const PROJACKTOR_STYLES = `
 
 .ds-btn:focus,
 .ds-btn.gpfocus {
-  background: var(--ds-surface-hi) !important;
-  border-color: rgba(255, 255, 255, 0.4) !important;
+  background: rgba(26, 159, 255, 0.25) !important;
+  border-color: #1a9fff !important;
   color: #fff !important;
-  box-shadow: none !important;
-  outline: none !important;
+  box-shadow: 0 0 10px rgba(26, 159, 255, 0.5) !important;
+  outline: 2px solid #1a9fff !important;
+  outline-offset: 1px !important;
   transform: none !important;
 }
 
@@ -283,11 +284,12 @@ export const PROJACKTOR_STYLES = `
 
 .ds-btn--primary:focus,
 .ds-btn--primary.gpfocus {
-  background: var(--ds-surface-hi) !important;
-  border-color: rgba(255, 255, 255, 0.45) !important;
+  background: #1a9fff !important;
+  border-color: #ffffff !important;
   color: #fff !important;
-  box-shadow: none !important;
-  outline: none !important;
+  box-shadow: 0 0 14px rgba(26, 159, 255, 0.75), inset 0 0 0 1px #ffffff !important;
+  outline: 2px solid #60baff !important;
+  outline-offset: 1px !important;
   transform: none !important;
 }
 
@@ -325,7 +327,7 @@ export const PROJACKTOR_STYLES = `
   transform: none !important;
 }
 
-/* ───── Video Player High-Contrast Focus (Steam Deck Gamepad) ───── */
+/* ───── Video Player High-Contrast Focus (Steam Deck Signature Blue) ───── */
 .projacktor-player-fullscreen .ds-btn {
   transition: all 0.15s cubic-bezier(0.2, 0.9, 0.4, 1.1) !important;
   border: 1px solid rgba(255, 255, 255, 0.2) !important;
@@ -338,11 +340,11 @@ export const PROJACKTOR_STYLES = `
 .projacktor-player-fullscreen .ds-btn--primary.gpfocus,
 .projacktor-player-fullscreen [tabindex="0"]:focus,
 .projacktor-player-fullscreen [tabindex="0"].gpfocus {
-  background: #10b981 !important;
+  background: #1a9fff !important;
   border-color: #ffffff !important;
   color: #ffffff !important;
-  box-shadow: 0 0 16px rgba(16, 185, 129, 0.8), inset 0 0 0 1.5px #ffffff !important;
-  outline: 2px solid #34d399 !important;
+  box-shadow: 0 0 16px rgba(26, 159, 255, 0.85), inset 0 0 0 1.5px #ffffff !important;
+  outline: 2px solid #60baff !important;
   outline-offset: 2px !important;
   transform: scale(1.12) !important;
   z-index: 10 !important;
@@ -365,11 +367,11 @@ export const PROJACKTOR_STYLES = `
 
 .projacktor-player-dropdown-menu .ds-btn:focus,
 .projacktor-player-dropdown-menu .ds-btn.gpfocus {
-  background: #10b981 !important;
+  background: #1a9fff !important;
   border-color: #ffffff !important;
   color: #ffffff !important;
-  box-shadow: 0 0 12px rgba(16, 185, 129, 0.7), inset 0 0 0 1px #ffffff !important;
-  outline: 2px solid #34d399 !important;
+  box-shadow: 0 0 12px rgba(26, 159, 255, 0.75), inset 0 0 0 1px #ffffff !important;
+  outline: 2px solid #60baff !important;
   outline-offset: 1px !important;
   transform: scale(1.02) !important;
 }
