@@ -9,6 +9,7 @@ import { RawButton, subscribeControllerInput } from "../runtime/controllerInput"
 import { playNavSound } from "../runtime/navSound";
 import { isModalOpen } from "../runtime/homeInputBus";
 import { EpisodesModal } from "../components/EpisodesModal";
+import { setBackdropMovie } from "../runtime/backdropBus";
 
 
 interface LibraryViewProps {
@@ -457,6 +458,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                     onActivate={handlePrimaryAction}
                     onClick={handlePrimaryAction}
                     onGamepadDirection={handleGamepadDir}
+                    onFocus={() => setBackdropMovie(item as any)}
                     title={canPlayDirect ? "Смотреть файл" : isTv ? "Открыть серии" : "Смотреть онлайн"}
                   >
                     <img

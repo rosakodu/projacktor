@@ -6,6 +6,7 @@ import { RawButton, subscribeControllerInput } from "../runtime/controllerInput"
 import { isModalOpen } from "../runtime/homeInputBus";
 import { getActiveDocument } from "../runtime/activeDoc";
 import { playNavSound } from "../runtime/navSound";
+import { setBackdropMovie } from "../runtime/backdropBus";
 
 interface ShelfProps {
   title?: string;
@@ -30,6 +31,8 @@ export const Shelf: FC<ShelfProps> = memo(({ title, items, onSelectMovie, loadin
   const shelfRef = useRef<HTMLDivElement>(null);
   const rowRef = useRef<HTMLDivElement>(null);
   const lastCardStepAtRef = useRef(0);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
 
   const stepCard = useCallback((dir: 1 | -1) => {
     const now = Date.now();
@@ -65,6 +68,10 @@ export const Shelf: FC<ShelfProps> = memo(({ title, items, onSelectMovie, loadin
       target.focus();
       target.classList.add("gpfocus");
       playNavSound();
+
+      if (itemsRef.current[nextIdx]) {
+        setBackdropMovie(itemsRef.current[nextIdx]);
+      }
 
       const final = computeCenteredScrollLeft(
         { width: row.clientWidth, scrollWidth: row.scrollWidth },

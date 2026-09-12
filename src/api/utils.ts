@@ -17,7 +17,7 @@ export function getBackdropUrl(path: string | null | undefined): string {
   if (cleanPath.startsWith("http")) {
     return `${API_BASE}/image?url=${encodeURIComponent(cleanPath)}`;
   }
-  return `${API_BASE}/image?path=${encodeURIComponent(cleanPath)}&size=w780`;
+  return `${API_BASE}/image?path=${encodeURIComponent(cleanPath)}&size=w1280`;
 }
 
 export function formatBytes(bytes: number): string {

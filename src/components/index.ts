@@ -7,4 +7,5 @@ export * from "./Shelf";
 export * from "./TabBar";
 export * from "./GlobalMagicBlackOverlay";
 export * from "./EpisodesModal";
+export * from "./HeroBackdrop";
 

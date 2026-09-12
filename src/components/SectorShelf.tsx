@@ -6,6 +6,7 @@ import { RawButton, subscribeControllerInput } from "../runtime/controllerInput"
 import { isModalOpen } from "../runtime/homeInputBus";
 import { getActiveDocument } from "../runtime/activeDoc";
 import { playNavSound } from "../runtime/navSound";
+import { setBackdropMovie } from "../runtime/backdropBus";
 
 interface SectorShelfProps {
   title: string;
@@ -46,6 +47,8 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
 
     const lastSectionChangeAtRef = useRef(0);
     const lastCardStepAtRef = useRef(0);
+    const itemsRef = useRef(items);
+    itemsRef.current = items;
 
     const triggerPrevSection = useCallback(() => {
       if (isModalOpen()) return;
@@ -110,6 +113,10 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
         target.focus();
         target.classList.add("gpfocus");
         playNavSound();
+
+        if (itemsRef.current[nextIdx]) {
+          setBackdropMovie(itemsRef.current[nextIdx]);
+        }
 
         const final = computeCenteredScrollLeft(
           { width: row.clientWidth, scrollWidth: row.scrollWidth },
@@ -182,6 +189,9 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
           doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
           firstCard.focus();
           firstCard.classList.add("gpfocus");
+          if (itemsRef.current[0]) {
+            setBackdropMovie(itemsRef.current[0]);
+          }
         }
       };
 

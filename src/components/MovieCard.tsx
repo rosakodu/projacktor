@@ -1,6 +1,7 @@
 import { FC, memo } from "react";
 import { Focusable } from "@decky/ui";
 import { MediaItem, getImageUrl } from "../api";
+import { setBackdropMovie } from "../runtime/backdropBus";
 
 interface MovieCardProps {
   movie: MediaItem;
@@ -23,6 +24,8 @@ export const MovieCard: FC<MovieCardProps> = memo(({ movie, onActivate, onGamepa
       onClick={() => onActivate(movie)}
       onOKActionDescription="Подробнее"
       onGamepadDirection={onGamepadDirection}
+      onFocus={() => setBackdropMovie(movie)}
+      onMouseEnter={() => setBackdropMovie(movie)}
     >
       {rating && <div className="projacktor-card-rating">★ {rating}</div>}
       <img

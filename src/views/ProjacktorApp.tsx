@@ -2,7 +2,8 @@ import { FC, useState, useCallback, useEffect, useRef } from "react";
 import { Navigation, Focusable, showModal } from "@decky/ui";
 import { PROJACKTOR_STYLES } from "../styles";
 import { MediaItem } from "../types";
-import { Header, TabBar, MovieModal, PlayerModal } from "../components";
+import { Header, TabBar, MovieModal, PlayerModal, HeroBackdrop } from "../components";
+import { setBackdropMovie } from "../runtime/backdropBus";
 import { CatalogView } from "./CatalogView";
 import { SearchView } from "./SearchView";
 import { LibraryView } from "./LibraryView";
@@ -190,6 +191,13 @@ export const ProjacktorApp: FC = () => {
     };
   }, [activeTab, ready, ensureContentFocus]);
 
+  // Сброс бэкдропа при переходе в настройки
+  useEffect(() => {
+    if (activeTab === "settings") {
+      setBackdropMovie(null, true);
+    }
+  }, [activeTab]);
+
   // Зацикленное переключение вкладок через L1/R1 в любой момент
   useEffect(() => {
     let lastBumperAt = 0;
@@ -243,6 +251,9 @@ export const ProjacktorApp: FC = () => {
       }}
     >
       <style>{PROJACKTOR_STYLES}</style>
+
+      {/* Динамический кинематографичный бэкдроп выбранного фильма в стиле Steam Deck */}
+      <HeroBackdrop />
 
       {/* Заголовок Projacktor */}
       <Header />
