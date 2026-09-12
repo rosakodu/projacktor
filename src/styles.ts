@@ -1775,12 +1775,15 @@ body.projacktor-magicblack-active [class*="_3FIjYetykQsFYR08l1v7Ls"] {
 .projacktor-content .DialogButton:focus,
 .projacktor-content .DialogButton.gpfocus,
 .projacktor-content button:focus,
-.projacktor-content button.gpfocus {
-  background: #10b981 !important;
+.projacktor-content button.gpfocus,
+.projacktor-content .ds-btn:focus,
+.projacktor-content .ds-btn.gpfocus {
+  background: rgba(26, 159, 255, 0.25) !important;
   color: #ffffff !important;
-  border-color: #34d399 !important;
-  box-shadow: 0 0 12px rgba(16, 185, 129, 0.4) !important;
-  outline: none !important;
+  border-color: #1a9fff !important;
+  box-shadow: 0 0 12px rgba(26, 159, 255, 0.5) !important;
+  outline: 2px solid #1a9fff !important;
+  outline-offset: 1px !important;
 }
 
 .projacktor-content input,
@@ -1792,9 +1795,14 @@ body.projacktor-magicblack-active [class*="_3FIjYetykQsFYR08l1v7Ls"] {
 }
 
 .projacktor-content input:focus,
-.projacktor-content .DialogInput:focus {
-  border-color: #10b981 !important;
-  box-shadow: 0 0 8px rgba(16, 185, 129, 0.3) !important;
+.projacktor-content .DialogInput:focus,
+.projacktor-content input.gpfocus,
+.projacktor-content .DialogInput.gpfocus,
+.projacktor-content .DialogTextInputBase:focus-within {
+  border-color: #1a9fff !important;
+  box-shadow: 0 0 10px rgba(26, 159, 255, 0.5) !important;
+  outline: 2px solid #1a9fff !important;
+  outline-offset: 1px !important;
 }
 `;
 

@@ -233,7 +233,7 @@ export const SettingsView: FC = memo(() => {
                     <FaSpinner style={{ fontSize: 10, animation: "projacktor-spin 1s linear infinite" }} /> Проверка...
                   </span>
                 ) : jacredOk ? (
-                  <span style={{ color: "#10b981", fontSize: 11, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ color: "#1a9fff", fontSize: 11, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
                     <FaCheck style={{ fontSize: 10 }} /> Подключено
                   </span>
                 ) : (

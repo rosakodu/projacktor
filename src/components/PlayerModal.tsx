@@ -124,36 +124,56 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
   closeModalRef.current = closeModal;
 
   const lastMenuNavTimeRef = useRef<number>(0);
+  const menuActiveIndexRef = useRef<{ [menuKey: string]: number }>({});
 
-  const handleMenuDirection = useCallback((menuEl: HTMLElement | null, dir: "up" | "down") => {
-    if (!menuEl) return;
-    const now = Date.now();
-    if (now - lastMenuNavTimeRef.current < 160) {
-      return; // Ignore duplicate input events (gamepad + virtual keyboard + DOM direction)
-    }
-    lastMenuNavTimeRef.current = now;
+  const handleMenuDirection = useCallback(
+    (menuEl: HTMLElement | null, dir: "up" | "down", menuKey: "sub" | "audio") => {
+      if (!menuEl) return;
+      const now = Date.now();
+      if (now - lastMenuNavTimeRef.current < 160) {
+        return; // Игнорируем повторные быстрые события (дебаунс 160 мс)
+      }
+      lastMenuNavTimeRef.current = now;
 
-    const items = Array.from(menuEl.querySelectorAll<HTMLElement>(".ds-btn, [tabindex='0']"));
-    if (!items.length) return;
-    const doc = getActiveDocument(menuEl) || document;
-    const active = doc.activeElement as HTMLElement | null;
-    const currentIndex = items.findIndex((el) => el === active || el.contains(active));
-    let nextIndex = 0;
-    if (currentIndex === -1) {
-      nextIndex = dir === "down" ? 0 : items.length - 1;
-    } else if (dir === "down") {
-      nextIndex = currentIndex < items.length - 1 ? currentIndex + 1 : 0;
-    } else {
-      nextIndex = currentIndex > 0 ? currentIndex - 1 : items.length - 1;
-    }
-    const target = items[nextIndex];
-    if (target) {
-      doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-      target.focus();
-      target.classList.add("gpfocus");
-      playNavSound();
-    }
-  }, []);
+      const items = Array.from(menuEl.querySelectorAll<HTMLElement>(".ds-btn"));
+      if (!items.length) return;
+
+      const doc = getActiveDocument(menuEl) || document;
+      const active = doc.activeElement as HTMLElement | null;
+      const curGp = menuEl.querySelector<HTMLElement>(".gpfocus");
+
+      let curIdx = items.findIndex((el) => el === active || (active && el.contains(active)) || el === curGp);
+      if (curIdx === -1) {
+        curIdx = menuActiveIndexRef.current[menuKey] ?? -1;
+      }
+      if (curIdx < 0 || curIdx >= items.length) {
+        const selIdx = items.findIndex((el) => el.getAttribute("data-selected") === "true");
+        curIdx = selIdx !== -1 ? selIdx : 0;
+      }
+
+      let nextIndex = dir === "down" ? curIdx + 1 : curIdx - 1;
+      if (nextIndex >= items.length) nextIndex = 0;
+      if (nextIndex < 0) nextIndex = items.length - 1;
+
+      menuActiveIndexRef.current[menuKey] = nextIndex;
+      const target = items[nextIndex];
+      if (target) {
+        doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+        if (typeof document !== "undefined" && document !== doc) {
+          document.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+        }
+        try {
+          target.focus();
+        } catch {}
+        target.classList.add("gpfocus");
+        playNavSound();
+        try {
+          target.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        } catch {}
+      }
+    },
+    []
+  );
 
   // Авто-фокус при открытии меню субтитров
   useEffect(() => {
@@ -161,14 +181,25 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
       const t = setTimeout(() => {
         const menuEl = subtitleMenuRef.current;
         if (!menuEl) return;
-        const doc = getActiveDocument(menuEl) || document;
-        const activeItem =
-          menuEl.querySelector<HTMLElement>("[data-selected='true']") ||
-          menuEl.querySelector<HTMLElement>(".ds-btn, [tabindex='0']");
-        if (activeItem) {
+        const items = Array.from(menuEl.querySelectorAll<HTMLElement>(".ds-btn"));
+        if (!items.length) return;
+        const selIdx = items.findIndex((el) => el.getAttribute("data-selected") === "true");
+        const idx = selIdx !== -1 ? selIdx : 0;
+        menuActiveIndexRef.current["sub"] = idx;
+        const target = items[idx];
+        if (target) {
+          const doc = getActiveDocument(menuEl) || document;
           doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-          activeItem.focus();
-          activeItem.classList.add("gpfocus");
+          if (typeof document !== "undefined" && document !== doc) {
+            document.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+          }
+          try {
+            target.focus();
+          } catch {}
+          target.classList.add("gpfocus");
+          try {
+            target.scrollIntoView({ block: "nearest", behavior: "smooth" });
+          } catch {}
         }
       }, 60);
       return () => clearTimeout(t);
@@ -182,14 +213,25 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
       const t = setTimeout(() => {
         const menuEl = audioMenuRef.current;
         if (!menuEl) return;
-        const doc = getActiveDocument(menuEl) || document;
-        const activeItem =
-          menuEl.querySelector<HTMLElement>("[data-selected='true']") ||
-          menuEl.querySelector<HTMLElement>(".ds-btn, [tabindex='0']");
-        if (activeItem) {
+        const items = Array.from(menuEl.querySelectorAll<HTMLElement>(".ds-btn"));
+        if (!items.length) return;
+        const selIdx = items.findIndex((el) => el.getAttribute("data-selected") === "true");
+        const idx = selIdx !== -1 ? selIdx : 0;
+        menuActiveIndexRef.current["audio"] = idx;
+        const target = items[idx];
+        if (target) {
+          const doc = getActiveDocument(menuEl) || document;
           doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-          activeItem.focus();
-          activeItem.classList.add("gpfocus");
+          if (typeof document !== "undefined" && document !== doc) {
+            document.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+          }
+          try {
+            target.focus();
+          } catch {}
+          target.classList.add("gpfocus");
+          try {
+            target.scrollIntoView({ block: "nearest", behavior: "smooth" });
+          } catch {}
         }
       }, 60);
       return () => clearTimeout(t);
@@ -549,17 +591,13 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
         e.button === 20
       ) {
         if (showAudioMenuRef.current) {
-          if (now - lastVolumeAt < 120) return;
-          lastVolumeAt = now;
-          handleMenuDirection(audioMenuRef.current, "up");
+          handleMenuDirection(audioMenuRef.current, "up", "audio");
           setShowControls(true);
           resetControlsTimer();
           return;
         }
         if (showSubtitleMenuRef.current) {
-          if (now - lastVolumeAt < 120) return;
-          lastVolumeAt = now;
-          handleMenuDirection(subtitleMenuRef.current, "up");
+          handleMenuDirection(subtitleMenuRef.current, "up", "sub");
           setShowControls(true);
           resetControlsTimer();
           return;
@@ -580,17 +618,13 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
         e.button === 21
       ) {
         if (showAudioMenuRef.current) {
-          if (now - lastVolumeAt < 120) return;
-          lastVolumeAt = now;
-          handleMenuDirection(audioMenuRef.current, "down");
+          handleMenuDirection(audioMenuRef.current, "down", "audio");
           setShowControls(true);
           resetControlsTimer();
           return;
         }
         if (showSubtitleMenuRef.current) {
-          if (now - lastVolumeAt < 120) return;
-          lastVolumeAt = now;
-          handleMenuDirection(subtitleMenuRef.current, "down");
+          handleMenuDirection(subtitleMenuRef.current, "down", "sub");
           setShowControls(true);
           resetControlsTimer();
           return;
@@ -669,22 +703,22 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
         if (showAudioMenuRef.current) {
-          handleMenuDirection(audioMenuRef.current, "up");
+          handleMenuDirection(audioMenuRef.current, "up", "audio");
           return;
         }
         if (showSubtitleMenuRef.current) {
-          handleMenuDirection(subtitleMenuRef.current, "up");
+          handleMenuDirection(subtitleMenuRef.current, "up", "sub");
           return;
         }
         changeVolume(0.05);
       } else if (e.key === "ArrowDown") {
         e.preventDefault();
         if (showAudioMenuRef.current) {
-          handleMenuDirection(audioMenuRef.current, "down");
+          handleMenuDirection(audioMenuRef.current, "down", "audio");
           return;
         }
         if (showSubtitleMenuRef.current) {
-          handleMenuDirection(subtitleMenuRef.current, "down");
+          handleMenuDirection(subtitleMenuRef.current, "down", "sub");
           return;
         }
         changeVolume(-0.05);
@@ -1202,6 +1236,22 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
                 ref={subtitleMenuRef}
                 className="projacktor-player-dropdown-menu"
                 flow-children="column"
+                onGamepadDirection={(evt: any) => {
+                  const btn = evt?.detail?.button;
+                  if (btn === 9) {
+                    try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                    handleMenuDirection(subtitleMenuRef.current, "up", "sub");
+                    return false;
+                  } else if (btn === 10) {
+                    try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                    handleMenuDirection(subtitleMenuRef.current, "down", "sub");
+                    return false;
+                  } else if (btn === 11 || btn === 12) {
+                    try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                    return false;
+                  }
+                  return undefined;
+                }}
                 style={{
                   position: "absolute",
                   bottom: "100%",
@@ -1302,6 +1352,22 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
                 ref={audioMenuRef}
                 className="projacktor-player-dropdown-menu"
                 flow-children="column"
+                onGamepadDirection={(evt: any) => {
+                  const btn = evt?.detail?.button;
+                  if (btn === 9) {
+                    try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                    handleMenuDirection(audioMenuRef.current, "up", "audio");
+                    return false;
+                  } else if (btn === 10) {
+                    try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                    handleMenuDirection(audioMenuRef.current, "down", "audio");
+                    return false;
+                  } else if (btn === 11 || btn === 12) {
+                    try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                    return false;
+                  }
+                  return undefined;
+                }}
                 style={{
                   position: "absolute",
                   bottom: "100%",
