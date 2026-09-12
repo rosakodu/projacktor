@@ -1407,7 +1407,9 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
         for k, v in query.items():
             q_params[k] = v[0]
             
-        url = f"https://api.themoviedb.org/3{endpoint}?{urllib.parse.urlencode(q_params)}"
+        primary_url = f"https://deckyloader.ru/tmdb-api/3{endpoint}?{urllib.parse.urlencode(q_params)}"
+        fallback_url = f"https://api.themoviedb.org/3{endpoint}?{urllib.parse.urlencode(q_params)}"
+        url = primary_url
         
         ttl = 1800 if "search" in endpoint else 7200
         now = time.time()
@@ -1435,35 +1437,43 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             except Exception:
                 pass
                 
-        try:
-            req = urllib.request.Request(
-                url,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (X11; SteamOS; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                    "Accept": "application/json"
-                }
-            )
-            ctx = ssl._create_unverified_context()
-            with urllib.request.urlopen(req, timeout=10, context=ctx) as response:
-                data = json.loads(response.read().decode('utf-8'))
-                self.tmdb_cache[url] = (now, data)
-                try:
-                    with open(cache_file, "w", encoding="utf-8") as f:
-                        json.dump(data, f)
-                except Exception:
-                    pass
-                self._send_json(data)
-        except Exception as e:
-            if os.path.exists(cache_file):
-                try:
-                    with open(cache_file, "r", encoding="utf-8") as f:
-                        data = json.load(f)
+        data = None
+        last_err = None
+        for fetch_url in [primary_url, fallback_url]:
+            try:
+                req = urllib.request.Request(
+                    fetch_url,
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (X11; SteamOS; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                        "Accept": "application/json"
+                    }
+                )
+                ctx = ssl._create_unverified_context()
+                with urllib.request.urlopen(req, timeout=10, context=ctx) as response:
+                    data = json.loads(response.read().decode('utf-8'))
                     self.tmdb_cache[url] = (now, data)
+                    try:
+                        with open(cache_file, "w", encoding="utf-8") as f:
+                            json.dump(data, f)
+                    except Exception:
+                        pass
                     self._send_json(data)
                     return
-                except Exception:
-                    pass
-            self._send_json({"error": str(e)}, 500)
+            except Exception as e:
+                last_err = e
+                logger.warning(f"Failed to fetch TMDB from {fetch_url}: {e}")
+                continue
+
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                self.tmdb_cache[url] = (now, data)
+                self._send_json(data)
+                return
+            except Exception:
+                pass
+        self._send_json({"error": str(last_err)}, 500)
 
     def _handle_image_proxy(self, query):
         img_path = query.get('path', [''])[0].lstrip('/')
@@ -1500,35 +1510,46 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             self.wfile.write(content)
             return
             
-        target_url = f"https://image.tmdb.org/t/p/{size}/{img_path}"
-        try:
-            req = urllib.request.Request(
-                target_url,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (X11; SteamOS; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                    "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
-                }
-            )
-            ctx = ssl._create_unverified_context()
-            with urllib.request.urlopen(req, timeout=12, context=ctx) as response:
-                content = response.read()
-                if len(content) > 200:
-                    try:
-                        with open(local_file, 'wb') as f:
-                            f.write(content)
-                    except Exception:
-                        pass
-                ctype = 'image/webp' if (content.startswith(b'RIFF') and b'WEBP' in content[:12]) else ('image/png' if content.startswith(b'\x89PNG') else 'image/jpeg')
-                self.send_response(200)
-                self.send_cors_headers()
-                self.send_header('Content-Type', ctype)
-                self.send_header('Cache-Control', 'public, max-age=31536000')
-                self.end_headers()
-                self.wfile.write(content)
-        except Exception as e:
-            logger.warning(f"Failed to fetch image {target_url}: {e}")
-            self.send_response(404)
+        target_urls = [
+            f"https://deckyloader.ru/tmdb-image/t/p/{size}/{img_path}",
+            f"https://image.tmdb.org/t/p/{size}/{img_path}"
+        ]
+        content = None
+        for target_url in target_urls:
+            try:
+                req = urllib.request.Request(
+                    target_url,
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (X11; SteamOS; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+                    }
+                )
+                ctx = ssl._create_unverified_context()
+                with urllib.request.urlopen(req, timeout=12, context=ctx) as response:
+                    content = response.read()
+                    if len(content) > 200:
+                        break
+            except Exception as e:
+                logger.warning(f"Failed to fetch image {target_url}: {e}")
+                continue
+
+        if content and len(content) > 200:
+            try:
+                with open(local_file, 'wb') as f:
+                    f.write(content)
+            except Exception:
+                pass
+            ctype = 'image/webp' if (content.startswith(b'RIFF') and b'WEBP' in content[:12]) else ('image/png' if content.startswith(b'\x89PNG') else 'image/jpeg')
+            self.send_response(200)
+            self.send_cors_headers()
+            self.send_header('Content-Type', ctype)
+            self.send_header('Cache-Control', 'public, max-age=31536000')
             self.end_headers()
+            self.wfile.write(content)
+            return
+
+        self.send_response(404)
+        self.end_headers()
 
     def _handle_jacred_search(self, query):
         sett = load_settings()
