@@ -1,7 +1,7 @@
 import { FC, memo, useEffect, useRef, useCallback } from "react";
 import { Focusable, showModal } from "@decky/ui";
 import { FaPlay, FaPlayCircle, FaPause, FaDownload, FaList, FaTrash, FaMoon, FaSpinner } from "react-icons/fa";
-import { LibraryItem } from "../types";
+import { LibraryItem, PlayerMediaInfo } from "../types";
 import { formatSpeed, getImageUrl } from "../api";
 import { useLibrary } from "../hooks/useLibrary";
 import { getActiveDocument } from "../runtime/activeDoc";
@@ -11,9 +11,15 @@ import { isModalOpen } from "../runtime/homeInputBus";
 import { EpisodesModal } from "../components/EpisodesModal";
 import { setBackdropMovie } from "../runtime/backdropBus";
 
-
 interface LibraryViewProps {
-  onPlayVideo: (filePath: string, title: string, isOnline: boolean, torrentHash?: string) => void;
+  onPlayVideo: (
+    filePath: string,
+    title: string,
+    isOnline: boolean,
+    torrentHash?: string,
+    mediaInfo?: PlayerMediaInfo,
+    initialTime?: number
+  ) => void;
   onActivateMagicBlack?: () => void;
 }
 
@@ -439,7 +445,16 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                 if (isTv) {
                   handleOpenEpisodes(item);
                 } else if (canPlayDirect) {
-                  onPlayVideo(localFilePath!, item.title, false);
+                  const mediaInfo: PlayerMediaInfo = {
+                    tmdbId: item.tmdb_id,
+                    title: item.title,
+                    mediaType: (item.media_type as any) || "movie",
+                    year: item.year,
+                    posterPath: item.poster_path,
+                    backdropPath: item.backdrop_path,
+                    overview: item.overview,
+                  };
+                  onPlayVideo(localFilePath!, item.title, false, undefined, mediaInfo);
                 } else {
                   watchOnline(item);
                 }

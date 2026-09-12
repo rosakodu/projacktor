@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   LibraryItem,
   EpisodeItem,
+  PlayerMediaInfo,
   rpcGetLibrary,
   rpcPauseDownload,
   rpcResumeDownload,
@@ -14,7 +15,16 @@ import {
   sortEpisodes,
 } from "../api";
 
-export function useLibrary(onPlayVideo?: (filePath: string, title: string, isOnline: boolean, torrentHash?: string) => void) {
+export function useLibrary(
+  onPlayVideo?: (
+    filePath: string,
+    title: string,
+    isOnline: boolean,
+    torrentHash?: string,
+    mediaInfo?: PlayerMediaInfo,
+    initialTime?: number
+  ) => void
+) {
   const [library, setLibrary] = useState<LibraryItem[]>([]);
   const [expandedEpisodes, setExpandedEpisodes] = useState<Record<number, boolean>>({});
   const [episodesMap, setEpisodesMap] = useState<Record<number, EpisodeItem[]>>({});
@@ -137,7 +147,16 @@ export function useLibrary(onPlayVideo?: (filePath: string, title: string, isOnl
         if (res && res.success && (res.stream_url || res.file_path)) {
           if (onPlayVideo) {
             const isOnlineStream = res.online !== false && (res.stream_url ? !res.stream_url.includes("file=") : false);
-            onPlayVideo(res.stream_url || res.file_path!, res.title || item.title, isOnlineStream, res.torrent_hash);
+            const mediaInfo: PlayerMediaInfo = {
+              tmdbId: item.tmdb_id,
+              title: item.title,
+              mediaType: (item.media_type as any) || "movie",
+              year: item.year,
+              posterPath: item.poster_path,
+              backdropPath: item.backdrop_path,
+              overview: item.overview,
+            };
+            onPlayVideo(res.stream_url || res.file_path!, res.title || item.title, isOnlineStream, res.torrent_hash, mediaInfo);
           }
         } else if (res && !res.success && res.error) {
           console.error("Ошибка подготовки онлайн потока:", res.error);

@@ -86,7 +86,10 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo }) => {
   const handleResume = useCallback(
     (item: WatchHistoryItem) => {
       playNavSound();
-      const path = item.stream_url || item.file_path || "";
+      const isDownloaded = Boolean(item.is_downloaded && item.file_path);
+      const path = isDownloaded
+        ? item.file_path!
+        : (item.stream_url || item.file_path || "");
       if (!path) return;
 
       const mediaInfo: PlayerMediaInfo = {
@@ -110,7 +113,7 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo }) => {
       onPlayVideo(
         path,
         fullTitle,
-        Boolean(item.is_online),
+        isDownloaded ? false : Boolean(item.is_online),
         item.torrent_hash,
         mediaInfo,
         item.current_time
@@ -399,7 +402,7 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo }) => {
               ? getImageUrl(item.backdrop_path)
               : null;
             const progressPct = Math.min(100, Math.max(0, item.progress || 0));
-            const isOnline = Boolean(item.is_online);
+            const isOffline = item.is_downloaded || (!item.is_online && Boolean(item.file_path));
 
             return (
               <div key={item.id} className="projacktor-dl-grid-card projacktor-history-card-wrap">
@@ -431,10 +434,10 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo }) => {
                   <span
                     className="projacktor-card-badge"
                     style={{
-                      background: isOnline ? "rgba(59, 130, 246, 0.85)" : "rgba(34, 197, 94, 0.85)",
+                      background: isOffline ? "rgba(34, 197, 94, 0.85)" : "rgba(59, 130, 246, 0.85)",
                     }}
                   >
-                    {isOnline ? "Онлайн" : "Скачано"}
+                    {isOffline ? "✓ Скачано" : "Онлайн"}
                   </span>
 
                   {/* Шкала прогресса внизу постера */}

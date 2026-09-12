@@ -2349,7 +2349,41 @@ class Plugin:
         db = get_db()
         try:
             rows = db.execute("SELECT * FROM watch_history ORDER BY watched_at DESC LIMIT 100").fetchall()
-            return [dict(r) for r in rows]
+            items = []
+            for r in rows:
+                d = dict(r)
+                local_file = None
+                # Check if existing file_path is already valid
+                if d.get('file_path') and os.path.isfile(d.get('file_path')):
+                    local_file = d['file_path']
+                else:
+                    # Check if subsequently downloaded
+                    if d.get('tmdb_id'):
+                        mf = db.execute("""
+                            SELECT f.file_path FROM media_files f
+                            JOIN media m ON f.media_id = m.id
+                            WHERE m.tmdb_id = ?
+                            ORDER BY f.id ASC LIMIT 1
+                        """, (d['tmdb_id'],)).fetchone()
+                        if mf and os.path.isfile(mf['file_path']):
+                            local_file = mf['file_path']
+                    if not local_file and d.get('title'):
+                        mf = db.execute("""
+                            SELECT f.file_path FROM media_files f
+                            JOIN media m ON f.media_id = m.id
+                            WHERE m.title = ?
+                            ORDER BY f.id ASC LIMIT 1
+                        """, (d['title'],)).fetchone()
+                        if mf and os.path.isfile(mf['file_path']):
+                            local_file = mf['file_path']
+
+                if local_file:
+                    d['file_path'] = local_file
+                    d['is_downloaded'] = True
+                else:
+                    d['is_downloaded'] = False
+                items.append(d)
+            return items
         finally:
             db.close()
 

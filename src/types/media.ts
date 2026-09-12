@@ -116,6 +116,7 @@ export interface WatchHistoryItem {
   stream_url?: string;
   torrent_hash?: string;
   is_online: number | boolean;
+  is_downloaded?: boolean;
   episode_name?: string;
   season_number?: number;
   episode_number?: number;
