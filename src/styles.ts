@@ -806,6 +806,7 @@ export const PROJACKTOR_STYLES = `
   display: flex !important;
   flex-direction: row !important;
   flex-wrap: nowrap !important;
+  align-items: flex-start !important;
   gap: 14px !important;
   width: 100% !important;
   box-sizing: border-box !important;
@@ -853,6 +854,8 @@ export const PROJACKTOR_STYLES = `
   box-sizing: border-box !important;
   transform: none !important;
   transition: border-color 0.1s ease !important;
+  height: auto !important;
+  min-height: fit-content !important;
 }
 
 .projacktor-dl-grid-card:hover,
@@ -1044,7 +1047,7 @@ export const PROJACKTOR_STYLES = `
 }
 
 .projacktor-dl-info {
-  padding: 5px 8px 4px 8px !important;
+  padding: 5px 8px 3px 8px !important;
   display: flex !important;
   flex-direction: column !important;
   justify-content: flex-start !important;
@@ -1052,9 +1055,12 @@ export const PROJACKTOR_STYLES = `
   box-sizing: border-box !important;
   width: 100% !important;
   max-width: 100% !important;
-  height: 48px !important;
-  min-height: 48px !important;
-  max-height: 48px !important;
+  height: 46px !important;
+  min-height: 46px !important;
+  max-height: 46px !important;
+  position: relative !important;
+  z-index: 1 !important;
+  flex-shrink: 0 !important;
 }
 
 .projacktor-dl-title {
@@ -1091,12 +1097,17 @@ export const PROJACKTOR_STYLES = `
   display: flex !important;
   align-items: center !important;
   gap: 4px !important;
-  padding: 0 4px 6px 4px !important;
+  padding: 4px 6px 7px 6px !important;
   background: #141a23 !important;
   box-sizing: border-box !important;
   width: 100% !important;
   max-width: 100% !important;
-  overflow: hidden !important;
+  height: 35px !important;
+  min-height: 35px !important;
+  overflow: visible !important;
+  position: relative !important;
+  z-index: 3 !important;
+  flex-shrink: 0 !important;
 }
 
 .projacktor-dl-btn-play {
@@ -1116,6 +1127,8 @@ export const PROJACKTOR_STYLES = `
   box-sizing: border-box !important;
   transform: none !important;
   user-select: none !important;
+  position: relative !important;
+  transition: none !important;
 }
 
 .projacktor-dl-btn-play:focus,
@@ -1123,10 +1136,13 @@ export const PROJACKTOR_STYLES = `
 .projacktor-dl-btn-play:hover {
   background: var(--ds-surface-hi) !important;
   border-color: #ffffff !important;
+  outline: 2px solid #ffffff !important;
+  outline-offset: -2px !important;
   color: #fff !important;
-  outline: none !important;
   box-shadow: none !important;
   transform: none !important;
+  position: relative !important;
+  z-index: 10 !important;
 }
 
 .projacktor-dl-btn-play.success,
@@ -1144,8 +1160,12 @@ export const PROJACKTOR_STYLES = `
 .projacktor-dl-btn-play.is-watch:hover {
   background: #34d399 !important;
   border-color: #ffffff !important;
+  outline: 2px solid #ffffff !important;
+  outline-offset: -2px !important;
   color: #fff !important;
   box-shadow: 0 0 10px rgba(16, 185, 129, 0.45) !important;
+  position: relative !important;
+  z-index: 10 !important;
 }
 
 .projacktor-dl-btn-icon {
@@ -1167,6 +1187,8 @@ export const PROJACKTOR_STYLES = `
   box-sizing: border-box !important;
   transform: none !important;
   user-select: none !important;
+  position: relative !important;
+  transition: none !important;
 }
 
 .projacktor-dl-btn-icon:focus,
@@ -1174,32 +1196,41 @@ export const PROJACKTOR_STYLES = `
 .projacktor-dl-btn-icon:hover {
   background: var(--ds-surface-hi) !important;
   border-color: #ffffff !important;
+  outline: 2px solid #ffffff !important;
+  outline-offset: -2px !important;
   color: #fff !important;
-  outline: none !important;
   box-shadow: none !important;
   transform: none !important;
+  position: relative !important;
+  z-index: 10 !important;
 }
 
 .projacktor-dl-btn-icon.danger:focus,
 .projacktor-dl-btn-icon.danger.gpfocus,
 .projacktor-dl-btn-icon.danger:hover {
   background: var(--ds-danger) !important;
-  border-color: var(--ds-danger) !important;
+  border-color: #ffffff !important;
+  outline: 2px solid #ffffff !important;
+  outline-offset: -2px !important;
   color: #fff !important;
-  outline: none !important;
-  box-shadow: none !important;
+  box-shadow: 0 0 8px rgba(225, 29, 72, 0.45) !important;
   transform: none !important;
+  position: relative !important;
+  z-index: 10 !important;
 }
 
 .projacktor-dl-btn-icon.download:focus,
 .projacktor-dl-btn-icon.download.gpfocus,
 .projacktor-dl-btn-icon.download:hover {
   background: #0284c7 !important;
-  border-color: #38bdf8 !important;
+  border-color: #ffffff !important;
+  outline: 2px solid #ffffff !important;
+  outline-offset: -2px !important;
   color: #fff !important;
-  outline: none !important;
   box-shadow: 0 0 8px rgba(56, 189, 248, 0.45) !important;
   transform: none !important;
+  position: relative !important;
+  z-index: 10 !important;
 }
 
 .projacktor-history-card-btns > * {
