@@ -256,6 +256,11 @@ def init_db():
         except sqlite3.OperationalError:
             pass
 
+    try:
+        cursor.execute("DELETE FROM downloads WHERE status='queued' AND (downloaded_size=0 OR downloaded_size IS NULL) AND (aria2_gid IS NULL OR aria2_gid='') AND media_id IN (SELECT id FROM media WHERE in_library=0)")
+    except Exception:
+        pass
+
     conn.commit()
     conn.close()
 
@@ -1094,6 +1099,26 @@ def probe_media_file(filepath):
             duration = float(data.get('format', {}).get('duration', 0.0))
         except:
             pass
+
+        if duration <= 0:
+            for s in data.get('streams', []):
+                try:
+                    s_dur = float(s.get('duration', 0.0))
+                    if s_dur > duration:
+                        duration = s_dur
+                except:
+                    pass
+                tags = s.get('tags', {})
+                dur_str = tags.get('DURATION', '') or tags.get('duration', '')
+                if dur_str and ':' in dur_str:
+                    try:
+                        parts = dur_str.split(':')
+                        if len(parts) == 3:
+                            s_dur = float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
+                            if s_dur > duration:
+                                duration = s_dur
+                    except:
+                        pass
         audio_tracks = []
         subtitle_tracks = []
         for s in data.get('streams', []):
@@ -1899,7 +1924,17 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
     def _handle_stream_probe(self, query):
         url = query.get('url', [''])[0]
         filepath = query.get('file', [''])[0]
-        source = url or filepath
+        source = filepath or url
+
+        # If source is an internal stream URL with file param, probe the local file directly
+        if 'file=' in source:
+            try:
+                parsed_src = urllib.parse.urlparse(source)
+                qs = urllib.parse.parse_qs(parsed_src.query)
+                if 'file' in qs and qs['file'][0]:
+                    source = qs['file'][0]
+            except Exception:
+                pass
 
         if not source:
             self._send_json({"error": "missing file or url parameter"}, 400)
@@ -2205,7 +2240,7 @@ class Plugin:
             poster_path = body.get('poster_path', '')
             backdrop_path = body.get('backdrop_path', '')
             overview = body.get('overview', '')
-            in_lib = 1 if body.get('in_library', True) else 0
+            in_lib = 1 if body.get('in_library', False) else 0
             
             base_dir = os.path.expanduser(sett['download_path'])
             folder = "Фильмы" if mtype == 'movie' else "Сериалы"
@@ -2240,19 +2275,20 @@ class Plugin:
                     """, (title, year, mtype, poster_path, backdrop_path, overview,
                           magnet, torrent_title, quality, ddir, final_in_lib, mid))
                 
-                cursor.execute("SELECT id FROM downloads WHERE media_id=?", (mid,))
-                dl_row = cursor.fetchone()
-                if not dl_row:
-                    cursor.execute("""
-                        INSERT INTO downloads (media_id, magnet_uri, torrent_title, download_dir, status, quality)
-                        VALUES (?, ?, ?, ?, 'queued', ?)
-                    """, (mid, magnet, torrent_title, ddir, quality))
-                else:
-                    cursor.execute("""
-                        UPDATE downloads 
-                        SET magnet_uri=?, torrent_title=?, download_dir=?, quality=?
-                        WHERE id=?
-                    """, (magnet, torrent_title, ddir, quality, dl_row['id']))
+                if in_lib:
+                    cursor.execute("SELECT id FROM downloads WHERE media_id=?", (mid,))
+                    dl_row = cursor.fetchone()
+                    if not dl_row:
+                        cursor.execute("""
+                            INSERT INTO downloads (media_id, magnet_uri, torrent_title, download_dir, status, quality)
+                            VALUES (?, ?, ?, ?, 'queued', ?)
+                        """, (mid, magnet, torrent_title, ddir, quality))
+                    else:
+                        cursor.execute("""
+                            UPDATE downloads 
+                            SET magnet_uri=?, torrent_title=?, download_dir=?, quality=?
+                            WHERE id=?
+                        """, (magnet, torrent_title, ddir, quality, dl_row['id']))
                     
                 db.commit()
                 return {"success": True, "id": mid}
@@ -2484,6 +2520,13 @@ class Plugin:
                 db.close()
                 return {"success": False, "error": "Медиа не найдено"}
             
+            # Mark media as added to library when user clicks watch
+            try:
+                db.execute("UPDATE media SET in_library=1 WHERE id=?", (mid,))
+                db.commit()
+            except Exception:
+                pass
+
             video_exts = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov', '.m4v'}
 
             # 1. Check if local files are already downloaded
@@ -2746,7 +2789,7 @@ class Plugin:
                 FROM media m
                 LEFT JOIN media_files f ON m.id = f.media_id
                 LEFT JOIN downloads d ON m.id = d.media_id
-                WHERE m.in_library = 1 OR d.id IS NOT NULL OR f.id IS NOT NULL
+                WHERE m.in_library = 1 OR (d.id IS NOT NULL AND d.status NOT IN ('queued', 'cancelled')) OR f.id IS NOT NULL
                 GROUP BY m.id
                 ORDER BY m.id DESC
             """).fetchall()

@@ -55,9 +55,23 @@ function formatTime(seconds: number): string {
 export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = false, torrentHash, closeModal }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  const actualFilePath = (() => {
+    const match = filePath.match(/[?&]file=([^&]+)/);
+    if (match) {
+      try {
+        return decodeURIComponent(match[1]);
+      } catch {
+        return match[1];
+      }
+    }
+    return filePath.startsWith("http://") || filePath.startsWith("https://") ? null : filePath;
+  })();
+
   const getSavedProgress = useCallback((): number => {
     try {
-      const fileName = filePath.split(/[\/\\]/).pop() || filePath;
+      const fileTarget = actualFilePath || filePath;
+      const fileName = fileTarget.split(/[\/\\]/).pop() || fileTarget;
       const raw = localStorage.getItem(`projacktor_progress_${fileName}`);
       if (raw) {
         const val = parseFloat(raw);
@@ -73,10 +87,11 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
       }
     } catch {}
     return 0;
-  }, [filePath, title]);
+  }, [actualFilePath, filePath, title]);
 
   const savedStartTimeRef = useRef<number>(getSavedProgress());
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
+  const [isDirectStream, setIsDirectStream] = useState<boolean>(false);
   const [baseTime, setBaseTime] = useState<number>(() => savedStartTimeRef.current);
   const [videoTime, setVideoTime] = useState<number>(0);
   const [duration, setDuration] = useState<number>(0);
@@ -265,7 +280,8 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
   const saveProgress = useCallback(
     (sec: number, totalDur?: number) => {
       try {
-        const fileName = filePath.split(/[\/\\]/).pop() || filePath;
+        const fileTarget = actualFilePath || filePath;
+        const fileName = fileTarget.split(/[\/\\]/).pop() || fileTarget;
         const cleanTitle = title.replace(/\s*\(Онлайн\)\s*/i, "").trim();
         const dur = totalDur ?? durationRef.current;
         if (dur && dur > 0 && sec >= dur - 60) {
@@ -281,7 +297,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
         }
       } catch {}
     },
-    [filePath, title]
+    [actualFilePath, filePath, title]
   );
 
   const togglePlay = useCallback(() => {
@@ -297,18 +313,23 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
   }, [resetControlsTimer]);
 
   const seekRelative = useCallback((delta: number) => {
-    const cur = baseTime + (videoRef.current ? videoRef.current.currentTime : 0);
+    const cur = (isDirectStream && videoRef.current) ? videoRef.current.currentTime : (baseTime + (videoRef.current ? videoRef.current.currentTime : 0));
     const newTime = Math.max(0, Math.min(duration || 999999, cur + delta));
-    setBaseTime(newTime);
-    setVideoTime(0);
-    setStreamUrl(getStreamUrl(newTime, selectedAudio));
+    if (isDirectStream && videoRef.current) {
+      videoRef.current.currentTime = newTime;
+      setVideoTime(newTime);
+    } else {
+      setBaseTime(newTime);
+      setVideoTime(0);
+      setStreamUrl(getStreamUrl(newTime, selectedAudio));
+    }
     resetControlsTimer();
-  }, [baseTime, duration, getStreamUrl, resetControlsTimer, selectedAudio]);
+  }, [baseTime, duration, getStreamUrl, isDirectStream, resetControlsTimer, selectedAudio]);
 
   const selectAudioTrack = useCallback((trackIndex: number) => {
     setSelectedAudio(trackIndex);
     setShowAudioMenu(false);
-    const cur = baseTime + (videoRef.current ? videoRef.current.currentTime : 0);
+    const cur = (isDirectStream && videoRef.current) ? videoRef.current.currentTime : (baseTime + (videoRef.current ? videoRef.current.currentTime : 0));
     setBaseTime(cur);
     setVideoTime(0);
     setStreamUrl(getStreamUrl(cur, trackIndex));
@@ -321,13 +342,18 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
         audioBtnRef.current.classList.add("gpfocus");
       }
     }, 50);
-  }, [baseTime, getStreamUrl, resetControlsTimer]);
+  }, [baseTime, getStreamUrl, isDirectStream, resetControlsTimer]);
 
   const seekTo = (targetSec: number) => {
     const newTime = Math.max(0, Math.min(duration || 999999, targetSec));
-    setBaseTime(newTime);
-    setVideoTime(0);
-    setStreamUrl(getStreamUrl(newTime, selectedAudio));
+    if (isDirectStream && videoRef.current) {
+      videoRef.current.currentTime = newTime;
+      setVideoTime(newTime);
+    } else {
+      setBaseTime(newTime);
+      setVideoTime(0);
+      setStreamUrl(getStreamUrl(newTime, selectedAudio));
+    }
     resetControlsTimer();
   };
 
@@ -712,14 +738,19 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
   // Probe file metadata on mount: duration and audio tracks
   useEffect(() => {
     let cancelled = false;
-    const isHttp = filePath.startsWith("http://") || filePath.startsWith("https://");
-    const probeQuery = isHttp ? `url=${encodeURIComponent(filePath)}` : `file=${encodeURIComponent(filePath)}`;
+    const isHttp = !actualFilePath && (filePath.startsWith("http://") || filePath.startsWith("https://"));
+    const probeQuery = actualFilePath 
+      ? `file=${encodeURIComponent(actualFilePath)}` 
+      : (isHttp ? `url=${encodeURIComponent(filePath)}` : `file=${encodeURIComponent(filePath)}`);
     fetch(`http://127.0.0.1:8400/api/stream/probe?${probeQuery}`)
       .then((r) => r.json())
       .then((data) => {
         if (cancelled) return;
         if (data.duration && data.duration > 0) {
           setDuration(data.duration);
+        }
+        if (data.direct !== undefined) {
+          setIsDirectStream(!!data.direct);
         }
         if (Array.isArray(data.audio_tracks) && data.audio_tracks.length > 0) {
           setAudioTracks(data.audio_tracks);
@@ -735,7 +766,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
     return () => {
       cancelled = true;
     };
-  }, [filePath]);
+  }, [actualFilePath, filePath]);
 
   // Управление активной дорожкой субтитров в <video>
   useEffect(() => {
@@ -759,14 +790,14 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
       const vTime = video.currentTime;
       setVideoTime(vTime);
       setIsBuffering(false);
-      const totalCur = Math.floor(baseTime + vTime);
+      const totalCur = Math.floor(isDirectStream ? vTime : (baseTime + vTime));
       if (Math.abs(totalCur - lastSaveSec) >= 5) {
         lastSaveSec = totalCur;
         saveProgress(totalCur, durationRef.current);
       }
     };
     const onLoadedMetadata = () => {
-      if (!duration && video.duration && !isNaN(video.duration) && isFinite(video.duration)) {
+      if ((!duration || duration <= 0) && video.duration && !isNaN(video.duration) && isFinite(video.duration) && video.duration > 0) {
         setDuration(video.duration);
       }
       setIsBuffering(false);
@@ -778,14 +809,15 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
     };
     const onPause = () => {
       setIsPlaying(false);
-      saveProgress(baseTime + video.currentTime, durationRef.current);
+      saveProgress(isDirectStream ? video.currentTime : (baseTime + video.currentTime), durationRef.current);
     };
     const onWaiting = () => setIsBuffering(true);
     const onCanPlay = () => setIsBuffering(false);
     const onEnded = () => {
       setIsPlaying(false);
       try {
-        const fileName = filePath.split(/[\/\\]/).pop() || filePath;
+        const fileTarget = actualFilePath || filePath;
+        const fileName = fileTarget.split(/[\/\\]/).pop() || fileTarget;
         const cleanTitle = title.replace(/\s*\(Онлайн\)\s*/i, "").trim();
         localStorage.removeItem(`projacktor_progress_${fileName}`);
         if (cleanTitle) {
@@ -813,7 +845,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
     };
   }, [streamUrl, duration, baseTime, saveProgress]);
 
-  const currentPlayhead = baseTime + videoTime;
+  const currentPlayhead = isDirectStream ? videoTime : (baseTime + videoTime);
   const progressPercent = duration > 0 ? Math.min(100, Math.max(0, (currentPlayhead / duration) * 100)) : 0;
 
   return (
@@ -1160,6 +1192,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
             {showSubtitleMenu && (
               <Focusable
                 ref={subtitleMenuRef}
+                className="projacktor-player-dropdown-menu"
                 flow-children="column"
                 onGamepadDirection={(evt: any) => {
                   const btn = evt?.detail?.button;
@@ -1272,6 +1305,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
             {showAudioMenu && (
               <Focusable
                 ref={audioMenuRef}
+                className="projacktor-player-dropdown-menu"
                 flow-children="column"
                 onGamepadDirection={(evt: any) => {
                   const btn = evt?.detail?.button;

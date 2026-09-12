@@ -21,13 +21,15 @@ import { getActiveDocument } from "../runtime/activeDoc";
 // Модульный кэш статуса и URL, чтобы при переключении между вкладками статус не сбрасывался и не мигал красным
 let cachedJacredUrl: string | null = null;
 let cachedJacredOk: boolean | null = null;
+let cachedTorrServerOk: boolean | null = null;
+let cachedTorrServerPort: number = 8095;
 
 export const SettingsView: FC = memo(() => {
   const rootRef = useRef<HTMLDivElement>(null);
   const [jacredUrl, setJacredUrl] = useState<string>(() => cachedJacredUrl ?? "");
   const [jacredOk, setJacredOk] = useState<boolean | null>(() => cachedJacredOk);
-  const [torrServerOk, setTorrServerOk] = useState<boolean | null>(null);
-  const [torrServerPort, setTorrServerPort] = useState<number>(8095);
+  const [torrServerOk, setTorrServerOk] = useState<boolean | null>(() => cachedTorrServerOk);
+  const [torrServerPort, setTorrServerPort] = useState<number>(() => cachedTorrServerPort);
   const [downloadPath, setDownloadPath] = useState<string>("");
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [pathSaving, setPathSaving] = useState(false);
@@ -60,8 +62,11 @@ export const SettingsView: FC = memo(() => {
           const ok = !!st.jacred_status;
           cachedJacredOk = ok;
           setJacredOk(ok);
-          setTorrServerOk(!!st.torrserver_running);
+          const tsOk = !!st.torrserver_running;
+          cachedTorrServerOk = tsOk;
+          setTorrServerOk(tsOk);
           if (st.torrserver_port) {
+            cachedTorrServerPort = st.torrserver_port;
             setTorrServerPort(st.torrserver_port);
           }
           if (Array.isArray(st.drives)) {
@@ -263,13 +268,17 @@ export const SettingsView: FC = memo(() => {
           <PanelSectionRow>
             <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 8, marginTop: 2, width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
-                <div style={{ fontSize: 12, fontWeight: 600, color: "#fff" }}>Встроенный TorrServer</div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#fff" }}>Статус TorrServer</div>
                 <div style={{ fontSize: 10.5, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>
                   Порт: {torrServerPort} • ОЗУ: 256 МБ • Zero Disk Wear
                 </div>
               </div>
               <div>
-                {torrServerOk ? (
+                {torrServerOk === null ? (
+                  <span style={{ color: "rgba(255, 255, 255, 0.5)", fontSize: 11, display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    <FaSpinner style={{ fontSize: 10, animation: "projacktor-spin 1s linear infinite" }} /> Проверка...
+                  </span>
+                ) : torrServerOk ? (
                   <span style={{ color: "#10b981", fontSize: 11, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
                     <FaCheck style={{ fontSize: 10 }} /> Работает
                   </span>

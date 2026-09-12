@@ -325,6 +325,61 @@ export const PROJACKTOR_STYLES = `
   transform: none !important;
 }
 
+/* ───── Video Player High-Contrast Focus (Steam Deck Gamepad) ───── */
+.projacktor-player-fullscreen .ds-btn {
+  transition: all 0.15s cubic-bezier(0.2, 0.9, 0.4, 1.1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  border-radius: 4px !important;
+}
+
+.projacktor-player-fullscreen .ds-btn:focus,
+.projacktor-player-fullscreen .ds-btn.gpfocus,
+.projacktor-player-fullscreen .ds-btn--primary:focus,
+.projacktor-player-fullscreen .ds-btn--primary.gpfocus,
+.projacktor-player-fullscreen [tabindex="0"]:focus,
+.projacktor-player-fullscreen [tabindex="0"].gpfocus {
+  background: #10b981 !important;
+  border-color: #ffffff !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 16px rgba(16, 185, 129, 0.8), inset 0 0 0 1.5px #ffffff !important;
+  outline: 2px solid #34d399 !important;
+  outline-offset: 2px !important;
+  transform: scale(1.12) !important;
+  z-index: 10 !important;
+}
+
+.projacktor-player-fullscreen .ds-btn:focus svg,
+.projacktor-player-fullscreen .ds-btn.gpfocus svg,
+.projacktor-player-fullscreen .ds-btn--primary:focus svg,
+.projacktor-player-fullscreen .ds-btn--primary.gpfocus svg {
+  fill: #ffffff !important;
+  color: #ffffff !important;
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.9)) !important;
+}
+
+/* ───── Video Player Dropdown Menus Focus ───── */
+.projacktor-player-dropdown-menu .ds-btn {
+  border-radius: 4px !important;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.12s ease !important;
+}
+
+.projacktor-player-dropdown-menu .ds-btn:focus,
+.projacktor-player-dropdown-menu .ds-btn.gpfocus {
+  background: #10b981 !important;
+  border-color: #ffffff !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.7), inset 0 0 0 1px #ffffff !important;
+  outline: 2px solid #34d399 !important;
+  outline-offset: 1px !important;
+  transform: scale(1.02) !important;
+}
+
+.projacktor-player-dropdown-menu .ds-btn:focus svg,
+.projacktor-player-dropdown-menu .ds-btn.gpfocus svg {
+  fill: #ffffff !important;
+  color: #ffffff !important;
+}
+
 /* ───── Page Body ───── */
 .projacktor-content {
   width: 100% !important;
