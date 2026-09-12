@@ -51,7 +51,7 @@ export const ProjacktorApp: FC = () => {
   };
 
   const handlePlayVideo = useCallback(
-    (filePath: string, title: string, isOnline: boolean) => {
+    (filePath: string, title: string, isOnline: boolean, torrentHash?: string) => {
       let playerInstance: any = null;
       const closePlayer = () => {
         if (playerInstance && typeof playerInstance.Close === "function") {
@@ -63,6 +63,7 @@ export const ProjacktorApp: FC = () => {
           filePath={filePath}
           title={title}
           isOnline={isOnline}
+          torrentHash={torrentHash}
           closeModal={closePlayer}
         />,
         getParentWindow(),
@@ -80,9 +81,9 @@ export const ProjacktorApp: FC = () => {
           modalInstance.Close();
         }
       };
-      const onWatchOnline = (filePath: string, streamTitle: string) => {
+      const onWatchOnline = (filePath: string, streamTitle: string, torrentHash?: string) => {
         close();
-        handlePlayVideo(filePath, streamTitle, true);
+        handlePlayVideo(filePath, streamTitle, true, torrentHash);
       };
       const onStartMagicBlack = () => {
         close();

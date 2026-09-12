@@ -13,7 +13,7 @@ import {
   FaUndo,
 } from "react-icons/fa";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
-import { rpcResumeAllDownloads } from "../api";
+import { rpcResumeAllDownloads, rpcDropStream } from "../api";
 import { getActiveDocument } from "../runtime/activeDoc";
 import { playNavSound } from "../runtime/navSound";
 
@@ -36,6 +36,7 @@ interface PlayerModalProps {
   filePath: string;
   title: string;
   isOnline?: boolean;
+  torrentHash?: string;
   closeModal?: () => void;
 }
 
@@ -51,7 +52,7 @@ function formatTime(seconds: number): string {
   return `${pad(m)}:${pad(s)}`;
 }
 
-export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = false, closeModal }) => {
+export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = false, torrentHash, closeModal }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const getSavedProgress = useCallback((): number => {
@@ -233,17 +234,22 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
 
   const getStreamUrl = useCallback(
     (startTime: number = 0, track?: number) => {
-      let base = `http://127.0.0.1:8400/api/stream?file=${encodeURIComponent(filePath)}`;
-      if (isOnline) {
-        base += `&online=1`;
+      const isHttp = filePath.startsWith("http://") || filePath.startsWith("https://");
+      let base = isHttp ? filePath : `http://127.0.0.1:8400/api/stream?file=${encodeURIComponent(filePath)}`;
+      const separator = base.includes("?") ? "&" : "?";
+      const params: string[] = [];
+
+      if (!isHttp && isOnline) {
+        params.push("online=1");
       }
       if (startTime > 0) {
-        base += `&start=${Math.floor(startTime)}`;
+        params.push(`start=${Math.floor(startTime)}`);
       }
       if (track !== undefined) {
-        base += `&audio=${track}`;
+        params.push(`audio=${track}`);
       }
-      return base;
+
+      return params.length > 0 ? `${base}${separator}${params.join("&")}` : base;
     },
     [filePath, isOnline]
   );
@@ -692,18 +698,23 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
     };
   }, []);
 
-  // Сохраняем прогресс и возобновляем загрузки при закрытии плеера
+  // Сохраняем прогресс, возобновляем загрузки и сбрасываем стрим TorrServer при закрытии плеера
   useEffect(() => {
     return () => {
       saveProgress(currentPlayheadRef.current, durationRef.current);
       rpcResumeAllDownloads().catch(() => {});
+      if (torrentHash) {
+        rpcDropStream(torrentHash).catch(() => {});
+      }
     };
-  }, [saveProgress]);
+  }, [saveProgress, torrentHash]);
 
   // Probe file metadata on mount: duration and audio tracks
   useEffect(() => {
     let cancelled = false;
-    fetch(`http://127.0.0.1:8400/api/stream/probe?file=${encodeURIComponent(filePath)}`)
+    const isHttp = filePath.startsWith("http://") || filePath.startsWith("https://");
+    const probeQuery = isHttp ? `url=${encodeURIComponent(filePath)}` : `file=${encodeURIComponent(filePath)}`;
+    fetch(`http://127.0.0.1:8400/api/stream/probe?${probeQuery}`)
       .then((r) => r.json())
       .then((data) => {
         if (cancelled) return;
@@ -993,7 +1004,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
                   kind="subtitles"
                   label={subtitleTracks.find((s) => s.index === selectedSubtitle)?.title || "Субтитры"}
                   srcLang={subtitleTracks.find((s) => s.index === selectedSubtitle)?.lang || "ru"}
-                  src={`http://127.0.0.1:8400/api/stream/subtitles?file=${encodeURIComponent(filePath)}&track=${selectedSubtitle}`}
+                  src={`http://127.0.0.1:8400/api/stream/subtitles?${(filePath.startsWith("http://") || filePath.startsWith("https://")) ? "url" : "file"}=${encodeURIComponent(filePath)}&track=${selectedSubtitle}`}
                   default
                 />
               )}

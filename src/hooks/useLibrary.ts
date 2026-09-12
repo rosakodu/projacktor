@@ -14,7 +14,7 @@ import {
   sortEpisodes,
 } from "../api";
 
-export function useLibrary(onPlayVideo?: (filePath: string, title: string, isOnline: boolean) => void) {
+export function useLibrary(onPlayVideo?: (filePath: string, title: string, isOnline: boolean, torrentHash?: string) => void) {
   const [library, setLibrary] = useState<LibraryItem[]>([]);
   const [expandedEpisodes, setExpandedEpisodes] = useState<Record<number, boolean>>({});
   const [episodesMap, setEpisodesMap] = useState<Record<number, EpisodeItem[]>>({});
@@ -134,9 +134,9 @@ export function useLibrary(onPlayVideo?: (filePath: string, title: string, isOnl
       setStreamLoading(item.id);
       try {
         const res = await rpcPrepareStream(item.id, fileIndex);
-        if (res && res.success && res.file_path) {
+        if (res && res.success && (res.stream_url || res.file_path)) {
           if (onPlayVideo) {
-            onPlayVideo(res.file_path, res.title || item.title, true);
+            onPlayVideo(res.stream_url || res.file_path!, res.title || item.title, true, res.torrent_hash);
           }
         } else if (res && !res.success && res.error) {
           console.error("Ошибка подготовки онлайн потока:", res.error);

@@ -10,7 +10,7 @@ import { callable, definePlugin, routerHook } from "@decky/api";
 import { FaVideo } from "react-icons/fa";
 import { ProjacktorApp } from "./views/ProjacktorApp";
 import { GlobalMagicBlackOverlay } from "./components/GlobalMagicBlackOverlay";
-import "./runtime/controllerInput";
+import { cleanupControllerInput } from "./runtime/controllerInput";
 
 // ── RPC-вызовы Python бэкенда ────────────────────────────────
 const getSteamLanguage = callable<[], string>("get_steam_language");
@@ -112,6 +112,11 @@ export default definePlugin(() => {
         routerHook.removeGlobalComponent("ProjacktorMagicBlack");
       } catch (e) {
         console.error("Projacktor removeGlobalComponent error:", e);
+      }
+      try {
+        cleanupControllerInput();
+      } catch (e) {
+        console.error("Projacktor cleanupControllerInput error:", e);
       }
     },
   };

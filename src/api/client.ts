@@ -17,7 +17,22 @@ export const rpcAddToLibrary = callable<[string], { success: boolean; id?: numbe
 export const rpcStartDownload = callable<[number, string?], { success: boolean; gid?: string; error?: string }>("start_download");
 export const rpcGetEpisodes = callable<[number], EpisodeItem[]>("get_episodes");
 export const rpcDownloadEpisode = callable<[number, number], { success: boolean; gid?: string; error?: string }>("download_episode");
-export const rpcPrepareStream = callable<[number, number?], { success: boolean; file_path?: string; title?: string; transcode?: boolean; online?: boolean; error?: string }>("prepare_stream");
+export const rpcPrepareStream = callable<
+  [number, number?],
+  {
+    success: boolean;
+    stream_url?: string;
+    direct_stream_url?: string;
+    torrent_hash?: string;
+    file_path?: string;
+    title?: string;
+    transcode?: boolean;
+    online?: boolean;
+    error?: string;
+  }
+>("prepare_stream");
+export const rpcGetTorrServerStatus = callable<[], { running: boolean; port: number }>("get_torrserver_status");
+export const rpcDropStream = callable<[string], boolean>("drop_stream");
 export const rpcPauseDownload = callable<[number], boolean>("pause_download");
 export const rpcResumeDownload = callable<[number], boolean>("resume_download");
 export const rpcResumeAllDownloads = callable<[], boolean>("resume_all_downloads");
@@ -30,6 +45,27 @@ export const rpcSaveSettings = callable<[string], boolean>("save_settings");
 export const rpcGetStatus = callable<[], Record<string, any>>("get_status");
 export const rpcCheckJacred = callable<[string], boolean>("check_jacred");
 export const rpcClearCache = callable<[], boolean>("clear_cache");
+export interface StorageDrive {
+  id: string;
+  name: string;
+  path: string;
+  total: number;
+  used: number;
+  free: number;
+  is_removable: boolean;
+  writable?: boolean;
+}
+
+export interface DiskSpaceInfo {
+  total: number;
+  used: number;
+  free: number;
+  path: string;
+  drives: StorageDrive[];
+}
+
+export const rpcGetDiskSpace = callable<[], DiskSpaceInfo>("get_disk_space");
+export const rpcGetStorageDrives = callable<[], StorageDrive[]>("get_storage_drives");
 export const rpcInhibitSleep = callable<[], { success: boolean; error?: string }>("inhibit_sleep");
 export const rpcUninhibitSleep = callable<[], { success: boolean; error?: string }>("uninhibit_sleep");
 
@@ -227,23 +263,27 @@ export async function searchTorrents(
       }
     };
 
-    let rawCandidates: any[] = [];
-    const primaryQuery = year ? `${title} ${year}` : title;
-    const res1 = await fetchQ(primaryQuery);
-    rawCandidates.push(...res1);
+    const queries = new Set<string>();
+    if (year) {
+      queries.add(`${title} ${year}`);
+    }
+    queries.add(title);
 
-    if (rawCandidates.length < 5 && year) {
-      const res2 = await fetchQ(title);
-      rawCandidates.push(...res2);
+    if (originalTitle && originalTitle.trim() && originalTitle.toLowerCase() !== title.toLowerCase()) {
+      if (year) {
+        queries.add(`${originalTitle} ${year}`);
+      }
+      queries.add(originalTitle);
     }
 
-    if (rawCandidates.length < 5 && originalTitle && originalTitle.toLowerCase() !== title.toLowerCase()) {
-      const origQuery = year ? `${originalTitle} ${year}` : originalTitle;
-      const res3 = await fetchQ(origQuery);
-      rawCandidates.push(...res3);
-      if (rawCandidates.length < 5 && year) {
-        const res4 = await fetchQ(originalTitle);
-        rawCandidates.push(...res4);
+    const results = await Promise.allSettled(
+      Array.from(queries).map((q) => fetchQ(q))
+    );
+
+    let rawCandidates: any[] = [];
+    for (const r of results) {
+      if (r.status === "fulfilled" && Array.isArray(r.value)) {
+        rawCandidates.push(...r.value);
       }
     }
 

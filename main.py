@@ -29,10 +29,31 @@ from socketserver import ThreadingMixIn
 import traceback
 import hashlib
 import asyncio
+import secrets
 
-# DNS-обход блокировки/спуфинга api.themoviedb.org в РФ с кэшированием работающего IP
+# DNS-обход блокировки/спуфинга api.themoviedb.org и image.tmdb.org через DoH (Google/Cloudflare) с кэшированием работающего IP
 _orig_getaddrinfo = socket.getaddrinfo
 _working_ip_cache = {}
+
+def _resolve_doh(host):
+    for doh_url in [
+        f"https://dns.google/resolve?name={host}&type=A",
+        f"https://cloudflare-dns.com/dns-query?name={host}&type=A"
+    ]:
+        try:
+            req = urllib.request.Request(
+                doh_url,
+                headers={"Accept": "application/dns-json", "User-Agent": "Projacktor/1.0"}
+            )
+            with urllib.request.urlopen(req, timeout=2.5) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                answers = data.get("Answer", [])
+                for ans in answers:
+                    if ans.get("type") == 1 and ans.get("data"):
+                        return ans["data"]
+        except Exception:
+            continue
+    return None
 
 def _custom_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
     if host in ("api.themoviedb.org", "image.tmdb.org"):
@@ -43,36 +64,39 @@ def _custom_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
             except Exception:
                 _working_ip_cache.pop(host, None)
 
-        if host == "api.themoviedb.org":
-            try:
-                res = _orig_getaddrinfo(host, port, family, type, proto, flags)
-                if res and res[0][4][0] in ("127.0.0.1", "::1"):
-                    raise ValueError("Poisoned DNS")
+        # 1. Проверяем системный DNS
+        try:
+            res = _orig_getaddrinfo(host, port, family, type, proto, flags)
+            if res and res[0][4][0] not in ("127.0.0.1", "::1", "0.0.0.0"):
                 return res
-            except Exception:
-                for ip in ["99.84.152.85", "99.84.152.8", "99.84.152.53", "99.84.152.32"]:
-                    try:
-                        res = _orig_getaddrinfo(ip, port, family, type, proto, flags)
-                        if res:
-                            _working_ip_cache[host] = ip
-                            return res
-                    except Exception:
-                        continue
-        elif host == "image.tmdb.org":
+        except Exception:
+            pass
+
+        # 2. Динамический опрос через DNS over HTTPS (DoH)
+        doh_ip = _resolve_doh(host)
+        if doh_ip:
             try:
-                res = _orig_getaddrinfo(host, port, family, type, proto, flags)
-                if res and res[0][4][0] in ("127.0.0.1", "::1"):
-                    raise ValueError("Poisoned DNS")
-                return res
+                res = _orig_getaddrinfo(doh_ip, port, family, type, proto, flags)
+                if res:
+                    _working_ip_cache[host] = doh_ip
+                    return res
             except Exception:
-                for ip in ["152.233.60.225", "152.233.60.226", "152.233.60.227"]:
-                    try:
-                        res = _orig_getaddrinfo(ip, port, family, type, proto, flags)
-                        if res:
-                            _working_ip_cache[host] = ip
-                            return res
-                    except Exception:
-                        continue
+                pass
+
+        # 3. Резервный статический пул на случай отсутствия связи с DoH
+        fallback_ips = {
+            "api.themoviedb.org": ["99.84.152.85", "99.84.152.8", "99.84.152.53", "99.84.152.32"],
+            "image.tmdb.org": ["185.111.111.159", "152.233.60.225", "152.233.60.226"]
+        }
+        for ip in fallback_ips.get(host, []):
+            try:
+                res = _orig_getaddrinfo(ip, port, family, type, proto, flags)
+                if res:
+                    _working_ip_cache[host] = ip
+                    return res
+            except Exception:
+                continue
+
     return _orig_getaddrinfo(host, port, family, type, proto, flags)
 socket.getaddrinfo = _custom_getaddrinfo
 
@@ -132,7 +156,8 @@ DEFAULT_SETTINGS = {
     "tmdb_api_key": "4ef0d7355d9ffb5151e987764708ce96",
     "download_path": INITIAL_DOWNLOAD_PATH,
     "language": "ru",
-    "aria2_port": 6800
+    "aria2_port": 6800,
+    "torrserver_port": 8095
 }
 
 # --- Database ---
@@ -141,6 +166,7 @@ def init_db():
     conn = sqlite3.connect(DB_PATH, timeout=20.0)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA foreign_keys = ON")
     cursor = conn.cursor()
     cursor.executescript('''
     CREATE TABLE IF NOT EXISTS media (
@@ -208,6 +234,11 @@ def init_db():
         watched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         duration INTEGER DEFAULT 0
     );
+
+    CREATE INDEX IF NOT EXISTS idx_media_files_media_id ON media_files(media_id);
+    CREATE INDEX IF NOT EXISTS idx_downloads_media_id ON downloads(media_id);
+    CREATE INDEX IF NOT EXISTS idx_downloads_aria2_gid ON downloads(aria2_gid);
+    CREATE INDEX IF NOT EXISTS idx_downloads_status ON downloads(status);
     ''')
 
     # Safe migrations for media table to support in-library management
@@ -232,6 +263,7 @@ def get_db():
     conn = sqlite3.connect(DB_PATH, timeout=20.0)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA foreign_keys = ON")
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -297,10 +329,19 @@ def load_settings():
 
 def save_settings(settings):
     os.makedirs(CONFIG_DIR, exist_ok=True)
-    if isinstance(settings, dict) and "jacred_url" in settings:
-        settings["jacred_url"] = normalize_jacred_url(settings.get("jacred_url"))
+    current = DEFAULT_SETTINGS.copy()
+    if os.path.exists(SETTINGS_PATH):
+        try:
+            with open(SETTINGS_PATH, 'r', encoding='utf-8') as f:
+                current.update(json.load(f))
+        except Exception:
+            pass
+    if isinstance(settings, dict):
+        current.update(settings)
+    if "jacred_url" in current:
+        current["jacred_url"] = normalize_jacred_url(current.get("jacred_url"))
     with open(SETTINGS_PATH, 'w', encoding='utf-8') as f:
-        json.dump(settings, f, indent=4)
+        json.dump(current, f, indent=4)
 
 # --- Helper: Binary locator and Execution Environment ---
 def get_bin_path(name: str) -> str:
@@ -323,7 +364,7 @@ def get_bin_path(name: str) -> str:
 
 def _clean_env():
     env = os.environ.copy()
-    for key in ("LD_LIBRARY_PATH", "LD_PRELOAD", "APPDIR", "APPIMAGE"):
+    for key in ("LD_LIBRARY_PATH", "LD_PRELOAD", "APPDIR", "APPIMAGE", "GST_PLUGIN_PATH", "GST_PLUGIN_SYSTEM_PATH", "PYTHONHOME", "PYTHONPATH"):
         env.pop(key, None)
     return env
 
@@ -356,8 +397,54 @@ class DownloadManager:
         self.process = None
         self._running = False
         self._sync_thread = None
+        self.secret = self._init_secret()
+
+    def _init_secret(self):
+        secret_file = os.path.join(CONFIG_DIR, "aria2.secret")
+        if os.path.exists(secret_file):
+            try:
+                with open(secret_file, "r") as f:
+                    sec = f.read().strip()
+                    if sec: return sec
+            except Exception:
+                pass
+        sec = secrets.token_hex(16)
+        try:
+            with open(secret_file, "w") as f:
+                f.write(sec)
+        except Exception as e:
+            logger.warning(f"Could not save aria2 secret file: {e}")
+        return sec
+
+    def is_running(self):
+        try:
+            res = self._rpc_call("aria2.getVersion")
+            return res is not None and "version" in res
+        except Exception:
+            return False
 
     def start(self):
+        if self.is_running():
+            logger.info(f"Aria2c is already running and responding on port {self.port}.")
+            self._running = True
+            self._sync_thread = threading.Thread(target=self._sync_loop, daemon=True)
+            self._sync_thread.start()
+            return True
+
+        if self.process:
+            try:
+                self.process.poll()
+            except Exception:
+                pass
+            self.process = None
+
+        try:
+            subprocess.run(["pkill", "-f", f"aria2c.*--rpc-listen-port={self.port}"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(0.3)
+        except Exception:
+            pass
+
         aria2c_path = get_bin_path("aria2c")
         if not os.path.isfile(aria2c_path) and not shutil.which("aria2c"):
             logger.error(f"aria2c not found at {aria2c_path}!")
@@ -374,7 +461,8 @@ class DownloadManager:
             aria2c_path,
             "--enable-rpc",
             f"--rpc-listen-port={self.port}",
-            "--rpc-allow-origin-all",
+            f"--rpc-secret={self.secret}",
+            "--rpc-listen-all=false",
             "--seed-time=0",
             "--max-concurrent-downloads=3",
             "--daemon=false",
@@ -393,7 +481,14 @@ class DownloadManager:
         ]
         
         env = _clean_env()
-        self.process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
+        self.process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env, start_new_session=True)
+        
+        # Wait for aria2c to start responding
+        for _ in range(10):
+            time.sleep(0.3)
+            if self.is_running():
+                break
+
         self._running = True
         self._sync_thread = threading.Thread(target=self._sync_loop, daemon=True)
         self._sync_thread.start()
@@ -403,14 +498,31 @@ class DownloadManager:
     def stop(self):
         self._running = False
         if self.process:
-            self.process.terminate()
-            self.process.wait()
+            try:
+                self.process.terminate()
+                self.process.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                try:
+                    self.process.kill()
+                    self.process.wait(timeout=1.0)
+                except Exception:
+                    pass
+            except Exception:
+                pass
             self.process = None
+
+        try:
+            subprocess.run(["pkill", "-f", f"aria2c.*--rpc-listen-port={self.port}"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
         logger.info("Aria2c stopped.")
 
     def _rpc_call(self, method, params=None):
         if params is None:
             params = []
+        if self.secret:
+            params = [f"token:{self.secret}"] + params
         payload = {
             "jsonrpc": "2.0",
             "id": "projacktor",
@@ -488,8 +600,13 @@ class DownloadManager:
         task_map = {t["gid"]: t for t in all_tasks}
         
         db = get_db()
+        try:
+            self._update_db_inner(db, task_map)
+        finally:
+            db.close()
+
+    def _update_db_inner(self, db, task_map):
         cursor = db.cursor()
-        
         cursor.execute("SELECT id, aria2_gid, status, download_dir, media_id, magnet_uri FROM downloads WHERE status NOT IN ('completed')")
         for row in cursor.fetchall():
             row_id = row['id']
@@ -639,9 +756,7 @@ class DownloadManager:
                 cursor.execute("UPDATE downloads SET completed_at=CURRENT_TIMESTAMP WHERE id=?", (row_id,))
                 if row['download_dir'] and row['media_id']:
                     self._scan_and_add_files(cursor, row['media_id'], row['download_dir'])
-            
-        db.commit()
-        db.close()
+            db.commit()
         
     def _scan_and_add_files(self, cursor, media_id, ddir):
         if not os.path.isdir(ddir):
@@ -660,6 +775,254 @@ class DownloadManager:
                         cursor.execute("INSERT INTO media_files (media_id, file_path, file_name, file_size) VALUES (?, ?, ?, ?)",
                                        (media_id, fp, f, sz))
         cursor.execute("UPDATE media SET status='downloaded' WHERE id=?", (media_id,))
+
+def extract_hash_from_magnet(magnet):
+    if not magnet:
+        return ""
+    m = re.search(r'xt=urn:btih:([a-fA-F0-9]{40}|[a-zA-Z2-7]{32})', magnet)
+    if m:
+        return m.group(1).lower()
+    return ""
+
+# --- TorrServer Manager ---
+class TorrServerManager:
+    def __init__(self, port=8095):
+        self.port = port
+        self.base_url = f"http://127.0.0.1:{self.port}"
+        self.process = None
+        self._running = False
+        self._lock = threading.Lock()
+
+    def is_running(self):
+        try:
+            req = urllib.request.Request(f"{self.base_url}/echo")
+            with urllib.request.urlopen(req, timeout=1.5) as resp:
+                text = resp.read().decode('utf-8', errors='ignore')
+                return "MatriX" in text or "TorrServer" in text
+        except Exception:
+            return False
+
+    def ensure_running(self):
+        if self.is_running():
+            return True
+        logger.warning("TorrServer is not running. Starting it now...")
+        return self.start()
+
+    def start(self):
+        with self._lock:
+            if self.is_running():
+                logger.info(f"TorrServer is already running on port {self.port}")
+                self._running = True
+                threading.Thread(target=self.configure, daemon=True).start()
+                return True
+
+            # 1. Clean up dead child process if present to prevent zombies (<defunct>)
+            if self.process:
+                try:
+                    self.process.poll()
+                except Exception:
+                    pass
+                self.process = None
+
+            # 2. Terminate any orphan projacktor-ts processes on this port
+            try:
+                subprocess.run(["pkill", "-f", f"projacktor-ts.*-p {self.port}"],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                time.sleep(0.3)
+            except Exception:
+                pass
+
+            # 3. Locate binary: prefer 'projacktor-ts' (isolated from lampa-deck's killall TorrServer)
+            bin_path = get_bin_path("projacktor-ts")
+            if not os.path.isfile(bin_path) or os.path.getsize(bin_path) < 1000000:
+                # Check for TorrServer in plugin bin
+                orig_ts = get_bin_path("TorrServer")
+                if os.path.isfile(orig_ts) and os.path.getsize(orig_ts) > 1000000:
+                    try:
+                        shutil.copy2(orig_ts, bin_path)
+                        os.chmod(bin_path, 0o755)
+                        logger.info(f"Copied {orig_ts} to {bin_path}")
+                    except Exception as e:
+                        logger.warning(f"Failed to copy {orig_ts} to {bin_path}: {e}")
+
+            if not os.path.isfile(bin_path) or os.path.getsize(bin_path) < 1000000:
+                # Fallback checks on Steam Deck
+                home = get_user_home()
+                candidates = [
+                    os.path.join(home, "homebrew", "settings", "lampa-deck", "bin", "TorrServer"),
+                    os.path.join(home, "homebrew", "plugins", "lampa-deck", "bin", "TorrServer"),
+                    os.path.join(home, "homebrew", "settings", "Lampa Deck", "bin", "TorrServer")
+                ]
+                for c in candidates:
+                    if os.path.isfile(c) and os.path.getsize(c) > 1000000:
+                        try:
+                            os.makedirs(os.path.dirname(bin_path), exist_ok=True)
+                            shutil.copy2(c, bin_path)
+                            os.chmod(bin_path, 0o755)
+                            logger.info(f"Copied TorrServer binary from {c} to {bin_path}")
+                            break
+                        except Exception as e:
+                            logger.warning(f"Failed to copy TorrServer from {c}: {e}")
+
+            if not os.path.isfile(bin_path) or os.path.getsize(bin_path) < 1000000:
+                logger.error(f"TorrServer binary not found at {bin_path}!")
+                return False
+
+            try:
+                os.chmod(bin_path, 0o755)
+            except Exception:
+                pass
+
+            db_path = os.path.join(CONFIG_DIR, "torrserver")
+            os.makedirs(db_path, exist_ok=True)
+            log_path = os.path.join(CONFIG_DIR, "torrserver.log")
+
+            env = _clean_env()
+            cmd = [bin_path, "-p", str(self.port), "-d", db_path, "-l", log_path]
+
+            try:
+                self.process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    env=env,
+                    start_new_session=True
+                )
+                logger.info(f"TorrServer started with {bin_path} on port {self.port} (PID {self.process.pid}).")
+            except Exception as e:
+                logger.error(f"Failed to spawn TorrServer: {e}")
+                return False
+
+            # 4. Wait for TorrServer to become responsive
+            started = False
+            for _ in range(20):
+                time.sleep(0.5)
+                if self.is_running():
+                    started = True
+                    break
+                if self.process and self.process.poll() is not None:
+                    logger.error(f"TorrServer process exited prematurely with code {self.process.returncode}")
+                    break
+
+            if started:
+                self._running = True
+                threading.Thread(target=self.configure, daemon=True).start()
+                return True
+            else:
+                logger.error(f"TorrServer failed to respond on port {self.port} within timeout.")
+                return False
+
+    def configure(self):
+        for attempt in range(5):
+            try:
+                url = f"{self.base_url}/settings"
+                payload = {
+                    "action": "set",
+                    "sets": {
+                        "CacheSize": 268435456,        # 256MB RAM cache
+                        "ReaderReadAHead": 95,          # Buffer ahead percentage
+                        "PreloadCache": 30,             # Preload buffer
+                        "UseDisk": False,               # RAM only, zero disk writes
+                        "TorrentsSavePath": "",
+                        "RemoveCacheOnDrop": True,
+                        "TorrentDisconnectTimeout": 60, # Stop downloading when client disconnects
+                        "ConnectionsLimit": 120
+                    }
+                }
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload).encode('utf-8'),
+                    headers={"Content-Type": "application/json"}
+                )
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    logger.info("TorrServer settings optimized (RAM cache 256MB, UseDisk=False).")
+                    return True
+            except Exception as e:
+                if attempt == 4:
+                    logger.warning(f"Failed to configure TorrServer settings: {e}")
+                time.sleep(1)
+        return False
+
+    def stop(self):
+        self._running = False
+        if self.process:
+            logger.info("Stopping TorrServer...")
+            try:
+                self.process.terminate()
+                self.process.wait(timeout=2.5)
+            except subprocess.TimeoutExpired:
+                try:
+                    self.process.kill()
+                    self.process.wait(timeout=1.0)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+            self.process = None
+
+        try:
+            subprocess.run(["pkill", "-f", f"projacktor-ts.*-p {self.port}"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+        logger.info("TorrServer stopped.")
+
+    def add_torrent(self, magnet_or_link, title="", poster=""):
+        if not self.ensure_running():
+            logger.error("TorrServer is not running and could not be started for add_torrent.")
+            return None
+        try:
+            url = f"{self.base_url}/torrents"
+            payload = {
+                "action": "add",
+                "link": magnet_or_link,
+                "title": title,
+                "poster": poster,
+                "save_to_db": False
+            }
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode('utf-8'),
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                return json.loads(resp.read().decode('utf-8'))
+        except Exception as e:
+            logger.error(f"TorrServer add_torrent error: {e}")
+            return None
+
+    def get_torrent(self, torrent_hash):
+        if not self.ensure_running():
+            return None
+        try:
+            url = f"{self.base_url}/torrents"
+            payload = {"action": "get", "hash": torrent_hash}
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode('utf-8'),
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                return json.loads(resp.read().decode('utf-8'))
+        except Exception as e:
+            logger.error(f"TorrServer get_torrent error: {e}")
+            return None
+
+    def drop_torrent(self, torrent_hash):
+        if not self.is_running():
+            return False
+        try:
+            url = f"{self.base_url}/torrents"
+            payload = {"action": "drop", "hash": torrent_hash}
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode('utf-8'),
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=2) as resp:
+                return True
+        except Exception:
+            return False
 
 # --- HTTP Server ---
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
@@ -701,10 +1064,14 @@ def is_header_ready(filepath):
 def probe_media_file(filepath):
     if filepath in PROBE_CACHE:
         return PROBE_CACHE[filepath]
-    if not os.path.exists(filepath):
-        return {}
-    if not is_header_ready(filepath):
-        return {}
+    
+    is_http = filepath.startswith("http://") or filepath.startswith("https://")
+    if not is_http:
+        if not os.path.exists(filepath):
+            return {}
+        if not is_header_ready(filepath):
+            return {}
+
     ffprobe_bin = get_bin_path("ffprobe")
     cmd = [
         ffprobe_bin,
@@ -712,13 +1079,14 @@ def probe_media_file(filepath):
         "-print_format", "json",
         "-show_streams",
         "-show_format",
-        "-probesize", "10000000",
-        "-analyzeduration", "10000000",
+        "-probesize", "15000000",
+        "-analyzeduration", "15000000",
         filepath
     ]
     try:
         env = _clean_env()
-        out = subprocess.check_output(cmd, env=env, timeout=5).decode('utf-8')
+        probe_timeout = 12 if is_http else 5
+        out = subprocess.check_output(cmd, env=env, timeout=probe_timeout).decode('utf-8')
         data = json.loads(out)
         vcodec, acodec = None, None
         duration = 0.0
@@ -750,7 +1118,14 @@ def probe_media_file(filepath):
                     "lang": tags.get('language', tags.get('lang', '')),
                     "title": tags.get('title', f"Субтитры #{s.get('index')}")
                 })
-        direct = (vcodec in ['h264', 'avc1']) and (acodec in ['aac', 'mp3', 'opus']) and filepath.lower().endswith('.mp4')
+        
+        # Chromium in SteamOS supports H264, VP8, VP9 in MP4/WebM with AAC/MP3/Opus
+        ext = os.path.splitext(filepath.split('?')[0])[1].lower()
+        direct = (
+            (vcodec in ['h264', 'avc1', 'vp8', 'vp9']) and 
+            (acodec in ['aac', 'mp3', 'opus']) and 
+            (ext in ['.mp4', '.m4v', '.webm'])
+        )
         res = {
             "vcodec": vcodec,
             "acodec": acodec,
@@ -770,7 +1145,13 @@ def probe_media_file(filepath):
 class ProjacktorRequestHandler(BaseHTTPRequestHandler):
     
     def send_cors_headers(self):
-        self.send_header('Access-Control-Allow-Origin', '*')
+        origin = self.headers.get('Origin', '')
+        if origin and any(origin.startswith(prefix) for prefix in [
+            'http://127.0.0.1', 'http://localhost', 'https://steamloopback.host', 'steam://'
+        ]):
+            self.send_header('Access-Control-Allow-Origin', origin)
+        else:
+            self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS, HEAD')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type, Range, Origin, Accept')
         self.send_header('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges')
@@ -1322,42 +1703,81 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "not found"}, 404)
 
     def _handle_stream(self, query):
+        url = query.get('url', [''])[0]
         filepath = query.get('file', [''])[0]
+        source = url or filepath
+
+        if not source:
+            self.send_response(400)
+            self.end_headers()
+            return
+
+        is_http = source.startswith("http://") or source.startswith("https://")
+
+        # Security check for local files to prevent path traversal
+        if not is_http:
+            real_path = os.path.realpath(filepath)
+            sett = load_settings()
+            allowed_dirs = [
+                os.path.realpath(os.path.expanduser(sett.get('download_path', '~/Movies/Projacktor'))),
+                os.path.realpath(CONFIG_DIR),
+                "/run/media",
+                get_user_home()
+            ]
+            if not any(real_path.startswith(ad) for ad in allowed_dirs):
+                logger.warning(f"Path traversal attempt blocked: {filepath}")
+                self.send_response(403)
+                self.end_headers()
+                return
+            if not os.path.exists(real_path):
+                self.send_response(404)
+                self.end_headers()
+                return
+            source = real_path
+        else:
+            # For HTTP streams, verify it is local TorrServer or loopback
+            parsed = urllib.parse.urlparse(source)
+            if parsed.hostname not in ['127.0.0.1', 'localhost', '::1']:
+                logger.warning(f"External stream URL rejected: {source}")
+                self.send_response(403)
+                self.end_headers()
+                return
+
         transcode_mode = query.get('transcode', ['auto'])[0]
         start_time = query.get('start', ['0'])[0]
         audio_idx = query.get('audio', [''])[0]
-        is_online = (query.get('online', ['0'])[0] == '1' or 
+        is_online = (is_http or 
+                     query.get('online', ['0'])[0] == '1' or 
                      query.get('follow', ['0'])[0] == '1' or 
-                     os.path.exists(filepath + ".aria2"))
+                     os.path.exists(source + ".aria2"))
         
-        if is_online:
-            # Wait up to 60 seconds for torrent header to be downloaded and written to disk
+        if is_online and not is_http:
+            # Wait up to 30 seconds for torrent header to be downloaded and written to disk
             start_wait = time.time()
-            while time.time() - start_wait < 60:
-                if os.path.exists(filepath) and is_header_ready(filepath):
+            while time.time() - start_wait < 30:
+                if os.path.exists(source) and is_header_ready(source):
                     break
                 time.sleep(0.5)
 
-        if not os.path.exists(filepath):
-            self.send_response(404)
-            self.end_headers()
-            return
-            
-        info = probe_media_file(filepath)
+        info = probe_media_file(source)
         vcodec = (info.get('vcodec') or '').lower()
         acodec = (info.get('acodec') or '').lower()
-        ext = os.path.splitext(filepath)[1].lower()
+        clean_ext = os.path.splitext(source.split('?')[0])[1].lower()
 
         audio_needs_transcode = acodec not in ['aac', 'mp3', 'opus', 'vorbis', 'flac']
-        video_needs_transcode = vcodec not in ['h264', 'avc1', 'vp8', 'vp9', 'av1', 'hevc', 'h265']
-        container_needs_remux = ext not in ['.mp4', '.m4v'] or audio_needs_transcode
+        video_needs_transcode = vcodec not in ['h264', 'avc1', 'vp8', 'vp9']
+        container_needs_remux = is_http or (clean_ext not in ['.mp4', '.m4v', '.webm']) or audio_needs_transcode
         has_start_offset = False
         try:
             has_start_offset = float(start_time) > 0
-        except:
+        except Exception:
             pass
 
-        must_transcode = (transcode_mode == '1') or (transcode_mode == 'auto' and (audio_needs_transcode or video_needs_transcode or container_needs_remux or has_start_offset))
+        is_native_local = (not is_http) and (clean_ext in ['.mp4', '.m4v', '.webm']) and (not audio_needs_transcode) and (not video_needs_transcode)
+        if is_native_local and transcode_mode != '1':
+            must_transcode = False
+        else:
+            must_transcode = (transcode_mode == '1') or (transcode_mode == 'auto' and (audio_needs_transcode or video_needs_transcode or container_needs_remux))
 
         if must_transcode and transcode_mode != '0':
             self.send_response(200)
@@ -1368,12 +1788,14 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
             ffmpeg_bin = get_bin_path("ffmpeg")
-            cmd = [ffmpeg_bin, "-hide_banner", "-loglevel", "warning"]
-            if is_online:
-                cmd += ["-follow", "1"]
+            cmd = [ffmpeg_bin, "-hide_banner", "-loglevel", "error"]
             if has_start_offset:
                 cmd += ["-ss", str(start_time)]
-            cmd += ["-i", filepath]
+            if is_http:
+                cmd += ["-reconnect", "1", "-reconnect_at_eof", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "2"]
+            if is_online and not is_http:
+                cmd += ["-follow", "1"]
+            cmd += ["-i", source]
 
             if audio_idx:
                 cmd += ["-map", "0:v:0", "-map", f"0:{audio_idx}?"]
@@ -1398,9 +1820,16 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             ]
 
             env = _clean_env()
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+            # Note: stderr=subprocess.DEVNULL is required to prevent deadlocks from full stderr pipe buffer
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                env=env,
+                bufsize=1024*1024
+            )
             try:
-                chunk_size = 64 * 1024
+                chunk_size = 128 * 1024
                 while True:
                     data = proc.stdout.read(chunk_size)
                     if not data:
@@ -1409,15 +1838,18 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             except Exception:
                 pass
             finally:
-                proc.kill()
+                try:
+                    proc.terminate()
+                    proc.kill()
+                except Exception:
+                    pass
                 try:
                     proc.stdout.close()
-                    proc.stderr.close()
                 except Exception:
                     pass
             return
         else:
-            file_size = os.path.getsize(filepath)
+            file_size = os.path.getsize(source)
             range_header = self.headers.get('Range', None)
             
             if range_header:
@@ -1435,7 +1867,7 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                     self.send_header('Content-Length', str(end - start + 1))
                     self.end_headers()
                     
-                    with open(filepath, 'rb') as f:
+                    with open(source, 'rb') as f:
                         f.seek(start)
                         chunk_size = 1024 * 1024
                         to_read = end - start + 1
@@ -1444,7 +1876,7 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                             if not data: break
                             try:
                                 self.wfile.write(data)
-                            except:
+                            except Exception:
                                 break
                             to_read -= len(data)
                     return
@@ -1455,34 +1887,53 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             self.send_header('Content-Length', str(file_size))
             self.send_header('Accept-Ranges', 'bytes')
             self.end_headers()
-            with open(filepath, 'rb') as f:
+            with open(source, 'rb') as f:
                 try:
                     shutil.copyfileobj(f, self.wfile)
-                except:
+                except Exception:
                     pass
 
     def _handle_stream_probe(self, query):
+        url = query.get('url', [''])[0]
         filepath = query.get('file', [''])[0]
-        if not os.path.exists(filepath):
-            self._send_json({"error": "file not found"}, 404)
+        source = url or filepath
+
+        if not source:
+            self._send_json({"error": "missing file or url parameter"}, 400)
             return
-        info = probe_media_file(filepath)
+
+        if not (source.startswith("http://") or source.startswith("https://")):
+            if not os.path.exists(source):
+                self._send_json({"error": "file not found"}, 404)
+                return
+
+        info = probe_media_file(source)
         self._send_json(info)
 
     def _handle_stream_subtitles(self, query):
+        url = query.get('url', [''])[0]
         filepath = query.get('file', [''])[0]
+        source = url or filepath
         track_idx = query.get('track', [''])[0]
-        if not os.path.exists(filepath):
-            self.send_response(404)
+
+        if not source:
+            self.send_response(400)
             self.end_headers()
             return
+
+        if not (source.startswith("http://") or source.startswith("https://")):
+            if not os.path.exists(source):
+                self.send_response(404)
+                self.end_headers()
+                return
+
         self.send_response(200)
         self.send_cors_headers()
         self.send_header('Content-Type', 'text/vtt; charset=utf-8')
         self.send_header('Cache-Control', 'no-cache')
         self.end_headers()
         ffmpeg_bin = get_bin_path("ffmpeg")
-        cmd = [ffmpeg_bin, "-hide_banner", "-loglevel", "warning", "-i", filepath]
+        cmd = [ffmpeg_bin, "-hide_banner", "-loglevel", "error", "-i", source]
         if track_idx:
             cmd += ["-map", f"0:{track_idx}"]
         else:
@@ -1490,12 +1941,60 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
         cmd += ["-f", "webvtt", "pipe:1"]
         env = _clean_env()
         try:
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=env)
             out, _ = proc.communicate(timeout=10)
             self.wfile.write(out)
         except Exception as e:
             logger.error(f"stream_subtitles error: {e}")
             self.wfile.write(b"WEBVTT\n\n")
+
+def get_available_storage_drives():
+    drives = []
+    home_dir = get_user_home()
+    default_internal = os.path.join(home_dir, "Movies", "Projacktor")
+    try:
+        t, u, f = shutil.disk_usage(home_dir)
+        drives.append({
+            "id": "internal",
+            "name": "Внутренняя память (SSD)",
+            "path": default_internal,
+            "total": t,
+            "used": u,
+            "free": f,
+            "is_removable": False,
+            "writable": True
+        })
+    except Exception:
+        pass
+
+    media_bases = ["/run/media", os.path.join("/run/media", os.path.basename(home_dir))]
+    seen_paths = set()
+    for mb in media_bases:
+        if os.path.isdir(mb):
+            try:
+                for entry in os.listdir(mb):
+                    entry_path = os.path.join(mb, entry)
+                    if os.path.isdir(entry_path) and entry_path not in seen_paths and entry != os.path.basename(home_dir):
+                        seen_paths.add(entry_path)
+                        try:
+                            t, u, f = shutil.disk_usage(entry_path)
+                            is_writable = os.access(entry_path, os.W_OK)
+                            label = f"Карта памяти MicroSD ({entry})"
+                            drives.append({
+                                "id": f"sd_{entry}",
+                                "name": label,
+                                "path": os.path.join(entry_path, "Movies", "Projacktor"),
+                                "total": t,
+                                "used": u,
+                                "free": f,
+                                "is_removable": True,
+                                "writable": is_writable
+                            })
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+    return drives
 
 plugin_instance = None
 
@@ -1506,6 +2005,7 @@ class Plugin:
         self.server = None
         self.server_thread = None
         self.dm = None
+        self.ts = None
         self.inhibit_proc = None
 
     async def _main(self):
@@ -1515,6 +2015,10 @@ class Plugin:
         
         self.dm = DownloadManager(sett.get('aria2_port', 6800))
         self.dm.start()
+
+        ts_port = sett.get('torrserver_port', 8095)
+        self.ts = TorrServerManager(port=ts_port)
+        self.ts.start()
         
         self.server = ThreadedHTTPServer(('127.0.0.1', 8400), ProjacktorRequestHandler)
         self.server_thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -1532,6 +2036,8 @@ class Plugin:
             self.server.server_close()
         if self.dm:
             self.dm.stop()
+        if self.ts:
+            self.ts.stop()
 
     async def _uninstall(self):
         logger.info("Projacktor: Uninstalling plugin")
@@ -1569,20 +2075,45 @@ class Plugin:
         except Exception as e:
             logger.error(f"uninhibit_sleep error: {e}")
             return {"success": False, "error": str(e)}
+
+    async def get_torrserver_status(self):
+        running = self.ts.ensure_running() if self.ts else False
+        port = self.ts.port if self.ts else 8095
+        return {
+            "running": running,
+            "port": port
+        }
+
+    async def drop_stream(self, torrent_hash: str):
+        if self.ts and torrent_hash:
+            return self.ts.drop_torrent(torrent_hash)
+        return False
+
     async def get_status(self):
         sett = load_settings()
-        dp = os.path.expanduser(sett['download_path'])
+        dp = os.path.expanduser(sett.get('download_path', '~/Movies/Projacktor'))
         try:
             total, used, free = shutil.disk_usage(dp)
-        except:
-            free = 0
+        except Exception:
+            try:
+                total, used, free = shutil.disk_usage(get_user_home())
+            except Exception:
+                total, used, free = 0, 0, 0
             
         j_ok = ping_jacred(sett.get('jacred_url') or '', timeout=4)
+        ts_ok = self.ts.ensure_running() if self.ts else False
+        drives = get_available_storage_drives()
         
         return {
             "aria2_running": self.dm._running if self.dm else False,
+            "torrserver_running": ts_ok,
+            "torrserver_port": self.ts.port if self.ts else 8095,
             "jacred_status": j_ok,
-            "free_disk_space": free
+            "free_disk_space": free,
+            "total_disk_space": total,
+            "used_disk_space": used,
+            "download_path": dp,
+            "drives": drives
         }
 
     async def get_settings(self):
@@ -1602,14 +2133,26 @@ class Plugin:
         db.close()
         return c[0] if c else 0
 
+    async def get_storage_drives(self):
+        return get_available_storage_drives()
+
     async def get_disk_space(self):
         sett = load_settings()
-        dp = os.path.expanduser(sett['download_path'])
+        dp = os.path.expanduser(sett.get('download_path', '~/Movies/Projacktor'))
         try:
             total, used, free = shutil.disk_usage(dp)
-            return free
-        except:
-            return 0
+        except Exception:
+            try:
+                total, used, free = shutil.disk_usage(get_user_home())
+            except Exception:
+                total, used, free = 0, 0, 0
+        return {
+            "total": total,
+            "used": used,
+            "free": free,
+            "path": dp,
+            "drives": get_available_storage_drives()
+        }
 
     async def check_jacred(self, url: str):
         return ping_jacred(url, timeout=6)
@@ -1628,20 +2171,22 @@ class Plugin:
 
     async def get_downloads(self):
         db = get_db()
-        dls = db.execute("""
-            SELECT d.*, 
-                   COALESCE(m.title, d.torrent_title, 'Медиа') AS title,
-                   m.year,
-                   m.poster_path,
-                   m.backdrop_path,
-                   m.media_type,
-                   m.overview
-            FROM downloads d
-            LEFT JOIN media m ON d.media_id = m.id
-            ORDER BY d.id DESC
-        """).fetchall()
-        db.close()
-        return [dict(row) for row in dls]
+        try:
+            dls = db.execute("""
+                SELECT d.*, 
+                       COALESCE(m.title, d.torrent_title, 'Медиа') AS title,
+                       m.year,
+                       m.poster_path,
+                       m.backdrop_path,
+                       m.media_type,
+                       m.overview
+                FROM downloads d
+                LEFT JOIN media m ON d.media_id = m.id
+                ORDER BY d.id DESC
+            """).fetchall()
+            return [dict(row) for row in dls]
+        finally:
+            db.close()
 
     async def add_to_library(self, data: str):
         try:
@@ -1666,48 +2211,50 @@ class Plugin:
             os.makedirs(ddir, exist_ok=True)
             
             db = get_db()
-            cursor = db.cursor()
-            cursor.execute("SELECT id, in_library FROM media WHERE tmdb_id=?", (tmdb_id,))
-            row = cursor.fetchone()
-            if not row:
-                cursor.execute("""
-                    INSERT INTO media (tmdb_id, title, year, media_type, poster_path, backdrop_path, overview,
-                                       magnet_uri, torrent_title, quality, download_dir, in_library, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'catalog')
-                """, (tmdb_id, title, year, mtype, poster_path, backdrop_path, overview,
-                      magnet, torrent_title, quality, ddir, in_lib))
-                mid = cursor.lastrowid
-            else:
-                mid = row['id']
-                final_in_lib = 1 if (row['in_library'] == 1 or in_lib == 1) else 0
-                cursor.execute("""
-                    UPDATE media 
-                    SET title=?, year=?, media_type=?,
-                        poster_path=COALESCE(NULLIF(poster_path, ''), ?),
-                        backdrop_path=COALESCE(NULLIF(backdrop_path, ''), ?),
-                        overview=COALESCE(NULLIF(overview, ''), ?),
-                        magnet_uri=?, torrent_title=?, quality=?, download_dir=?, in_library=?
-                    WHERE id=?
-                """, (title, year, mtype, poster_path, backdrop_path, overview,
-                      magnet, torrent_title, quality, ddir, final_in_lib, mid))
-            
-            cursor.execute("SELECT id FROM downloads WHERE media_id=?", (mid,))
-            dl_row = cursor.fetchone()
-            if not dl_row:
-                cursor.execute("""
-                    INSERT INTO downloads (media_id, magnet_uri, torrent_title, download_dir, status, quality)
-                    VALUES (?, ?, ?, ?, 'queued', ?)
-                """, (mid, magnet, torrent_title, ddir, quality))
-            else:
-                cursor.execute("""
-                    UPDATE downloads 
-                    SET magnet_uri=?, torrent_title=?, download_dir=?, quality=?
-                    WHERE id=?
-                """, (magnet, torrent_title, ddir, quality, dl_row['id']))
+            try:
+                cursor = db.cursor()
+                cursor.execute("SELECT id, in_library FROM media WHERE tmdb_id=?", (tmdb_id,))
+                row = cursor.fetchone()
+                if not row:
+                    cursor.execute("""
+                        INSERT INTO media (tmdb_id, title, year, media_type, poster_path, backdrop_path, overview,
+                                           magnet_uri, torrent_title, quality, download_dir, in_library, status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'catalog')
+                    """, (tmdb_id, title, year, mtype, poster_path, backdrop_path, overview,
+                          magnet, torrent_title, quality, ddir, in_lib))
+                    mid = cursor.lastrowid
+                else:
+                    mid = row['id']
+                    final_in_lib = 1 if (row['in_library'] == 1 or in_lib == 1) else 0
+                    cursor.execute("""
+                        UPDATE media 
+                        SET title=?, year=?, media_type=?,
+                            poster_path=COALESCE(NULLIF(poster_path, ''), ?),
+                            backdrop_path=COALESCE(NULLIF(backdrop_path, ''), ?),
+                            overview=COALESCE(NULLIF(overview, ''), ?),
+                            magnet_uri=?, torrent_title=?, quality=?, download_dir=?, in_library=?
+                        WHERE id=?
+                    """, (title, year, mtype, poster_path, backdrop_path, overview,
+                          magnet, torrent_title, quality, ddir, final_in_lib, mid))
                 
-            db.commit()
-            db.close()
-            return {"success": True, "id": mid}
+                cursor.execute("SELECT id FROM downloads WHERE media_id=?", (mid,))
+                dl_row = cursor.fetchone()
+                if not dl_row:
+                    cursor.execute("""
+                        INSERT INTO downloads (media_id, magnet_uri, torrent_title, download_dir, status, quality)
+                        VALUES (?, ?, ?, ?, 'queued', ?)
+                    """, (mid, magnet, torrent_title, ddir, quality))
+                else:
+                    cursor.execute("""
+                        UPDATE downloads 
+                        SET magnet_uri=?, torrent_title=?, download_dir=?, quality=?
+                        WHERE id=?
+                    """, (magnet, torrent_title, ddir, quality, dl_row['id']))
+                    
+                db.commit()
+                return {"success": True, "id": mid}
+            finally:
+                db.close()
         except Exception as e:
             logger.error(f"Plugin add_to_library error: {e}")
             return {"success": False, "error": str(e)}
@@ -1715,60 +2262,59 @@ class Plugin:
     async def start_download(self, mid: int, file_indices: str = ""):
         try:
             db = get_db()
-            cursor = db.cursor()
-            m = cursor.execute("SELECT * FROM media WHERE id=?", (mid,)).fetchone()
-            if not m:
-                db.close()
-                return {"success": False, "error": "Media not found"}
-            
-            magnet = m['magnet_uri']
-            ddir = m['download_dir']
-            if not magnet or not ddir:
-                db.close()
-                return {"success": False, "error": "Magnet link missing"}
+            try:
+                cursor = db.cursor()
+                m = cursor.execute("SELECT * FROM media WHERE id=?", (mid,)).fetchone()
+                if not m:
+                    return {"success": False, "error": "Media not found"}
                 
-            os.makedirs(ddir, exist_ok=True)
-            dl = cursor.execute("SELECT * FROM downloads WHERE media_id=?", (mid,)).fetchone()
-            gid = dl['aria2_gid'] if dl else None
-            
-            options = {
-                "dir": ddir,
-                "file-allocation": "none",
-                "bt-prioritize-piece": "head=50M,tail=15M"
-            }
-            if file_indices:
-                options["select-file"] = str(file_indices)
-                
-            if gid and self.dm:
-                st = self.dm.get_status(gid)
-                if st:
-                    followed = st.get('followedBy')
-                    if followed and len(followed) > 0:
-                        gid = followed[0]
-                        st = self.dm.get_status(gid) or st
-                        cursor.execute("UPDATE downloads SET aria2_gid=? WHERE id=?", (gid, dl['id']))
-                    if file_indices:
-                        self.dm.select_files(gid, str(file_indices))
-                    self.dm.resume(gid)
-                    cursor.execute("UPDATE downloads SET status='downloading' WHERE id=?", (dl['id'],))
-                    cursor.execute("UPDATE media SET in_library=1, status='downloading' WHERE id=?", (mid,))
-                    db.commit()
-                    db.close()
-                    return {"success": True, "gid": gid}
+                magnet = m['magnet_uri']
+                ddir = m['download_dir']
+                if not magnet or not ddir:
+                    return {"success": False, "error": "Magnet link missing"}
                     
-            new_gid = self.dm.add_download(magnet, ddir, options) if self.dm else ""
-            if dl:
-                cursor.execute("UPDATE downloads SET aria2_gid=?, status='downloading' WHERE id=?", (new_gid, dl['id']))
-            else:
-                cursor.execute("""
-                    INSERT INTO downloads (media_id, magnet_uri, torrent_title, download_dir, aria2_gid, status, quality)
-                    VALUES (?, ?, ?, ?, ?, 'downloading', ?)
-                """, (mid, magnet, m['torrent_title'], ddir, new_gid, m['quality']))
+                os.makedirs(ddir, exist_ok=True)
+                dl = cursor.execute("SELECT * FROM downloads WHERE media_id=?", (mid,)).fetchone()
+                gid = dl['aria2_gid'] if dl else None
                 
-            cursor.execute("UPDATE media SET in_library=1, status='downloading' WHERE id=?", (mid,))
-            db.commit()
-            db.close()
-            return {"success": True, "gid": new_gid}
+                options = {
+                    "dir": ddir,
+                    "file-allocation": "none",
+                    "bt-prioritize-piece": "head=50M,tail=15M"
+                }
+                if file_indices:
+                    options["select-file"] = str(file_indices)
+                    
+                if gid and self.dm:
+                    st = self.dm.get_status(gid)
+                    if st:
+                        followed = st.get('followedBy')
+                        if followed and len(followed) > 0:
+                            gid = followed[0]
+                            st = self.dm.get_status(gid) or st
+                            cursor.execute("UPDATE downloads SET aria2_gid=? WHERE id=?", (gid, dl['id']))
+                        if file_indices:
+                            self.dm.select_files(gid, str(file_indices))
+                        self.dm.resume(gid)
+                        cursor.execute("UPDATE downloads SET status='downloading' WHERE id=?", (dl['id'],))
+                        cursor.execute("UPDATE media SET in_library=1, status='downloading' WHERE id=?", (mid,))
+                        db.commit()
+                        return {"success": True, "gid": gid}
+                        
+                new_gid = self.dm.add_download(magnet, ddir, options) if self.dm else ""
+                if dl:
+                    cursor.execute("UPDATE downloads SET aria2_gid=?, status='downloading' WHERE id=?", (new_gid, dl['id']))
+                else:
+                    cursor.execute("""
+                        INSERT INTO downloads (media_id, magnet_uri, torrent_title, download_dir, aria2_gid, status, quality)
+                        VALUES (?, ?, ?, ?, ?, 'downloading', ?)
+                    """, (mid, magnet, m['torrent_title'], ddir, new_gid, m['quality']))
+                    
+                cursor.execute("UPDATE media SET in_library=1, status='downloading' WHERE id=?", (mid,))
+                db.commit()
+                return {"success": True, "gid": new_gid}
+            finally:
+                db.close()
         except Exception as e:
             logger.error(f"Plugin start_download error: {e}")
             return {"success": False, "error": str(e)}
@@ -1810,9 +2356,8 @@ class Plugin:
                 db.close()
                 return []
             
-            video_exts = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov'}
+            video_exts = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov', '.m4v'}
             existing_files = db.execute("SELECT * FROM media_files WHERE media_id=? ORDER BY file_name ASC", (mid,)).fetchall()
-            dl = db.execute("SELECT * FROM downloads WHERE media_id=?", (mid,)).fetchone()
             
             # 1. If local files are already indexed in media_files
             if existing_files and len(existing_files) > 0:
@@ -1841,7 +2386,7 @@ class Plugin:
                             fp = os.path.join(root, f)
                             try:
                                 sz = os.path.getsize(fp)
-                            except:
+                            except Exception:
                                 sz = 0
                             is_dl = not os.path.exists(fp + ".aria2") and is_header_ready(fp)
                             disk_episodes.append({
@@ -1860,120 +2405,60 @@ class Plugin:
 
             # 3. Check cached episodes in media table
             cached_json = m['episodes_json'] if 'episodes_json' in m.keys() else None
-            gid = dl['aria2_gid'] if dl else None
-            
             if cached_json:
                 try:
                     cached_eps = json.loads(cached_json)
                     if cached_eps and len(cached_eps) > 0:
-                        # Update live status from aria2 if available
-                        if gid and self.dm:
-                            st = self.dm.get_status(gid)
-                            if st and st.get('followedBy'):
-                                gid = st['followedBy'][0]
-                                st = self.dm.get_status(gid) or st
-                            if st and st.get('files'):
-                                file_map = {int(f.get('index', 0)): f for f in st.get('files', [])}
-                                for ep in cached_eps:
-                                    af = file_map.get(ep['index'])
-                                    if af:
-                                        ep['completed'] = int(af.get('completedLength', ep['completed']))
-                                        ep['selected'] = af.get('selected', 'false') == 'true'
-                                        ep['downloaded'] = (ep['completed'] >= ep['size']) and ep['size'] > 0
                         db.close()
                         cached_eps.sort(key=self._episode_sort_key)
                         return cached_eps
                 except Exception as e:
                     logger.error(f"Error reading cached episodes: {e}")
 
-            # 4. Resolve metadata via aria2c
-            aria_files = []
-            if gid and self.dm:
-                st = self.dm.get_status(gid)
-                if st:
-                    followed = st.get('followedBy')
-                    if followed and len(followed) > 0:
-                        gid = followed[0]
-                        st = self.dm.get_status(gid) or st
-                        if dl:
-                            db.execute("UPDATE downloads SET aria2_gid=? WHERE id=?", (gid, dl['id']))
-                            db.commit()
-                    files = st.get('files', [])
-                    real_files = [f for f in files if f.get('path') and not f.get('path', '').startswith('[METADATA]')]
-                    if real_files:
-                        aria_files = real_files
-
-            if not aria_files and m['magnet_uri'] and self.dm:
-                os.makedirs(ddir, exist_ok=True)
-                st = self.dm.get_status(gid) if gid else None
-                if not st:
-                    gid = self.dm.add_download(m['magnet_uri'], ddir, {"pause": "false", "file-allocation": "none"})
-                    if gid:
-                        if dl:
-                            db.execute("UPDATE downloads SET aria2_gid=? WHERE id=?", (gid, dl['id']))
-                        else:
-                            db.execute("""
-                                INSERT INTO downloads (media_id, magnet_uri, torrent_title, download_dir, aria2_gid, status, quality)
-                                VALUES (?, ?, ?, ?, ?, 'queued', ?)
-                            """, (mid, m['magnet_uri'], m['torrent_title'], ddir, gid, m['quality']))
-                        db.commit()
-
-                # Poll aria2c up to 25s for metadata download
-                for _ in range(25):
-                    st = self.dm.get_status(gid) if gid else None
-                    if st:
-                        followed = st.get('followedBy')
-                        if followed and len(followed) > 0:
-                            gid = followed[0]
-                            st = self.dm.get_status(gid) or st
-                            if dl:
-                                db.execute("UPDATE downloads SET aria2_gid=? WHERE id=?", (gid, dl['id']))
-                                db.commit()
-                        files = st.get('files', [])
-                        real_files = [f for f in files if f.get('path') and not f.get('path', '').startswith('[METADATA]')]
-                        video_files = [f for f in real_files if os.path.splitext(f.get('path', ''))[1].lower() in video_exts]
-                        if video_files:
-                            aria_files = real_files
-                            if not dl or dl['status'] != 'downloading':
-                                try:
-                                    self.dm.pause(gid)
-                                except:
-                                    pass
+            # 4. Resolve metadata via TorrServer (Fast RAM discovery)
+            magnet = m['magnet_uri']
+            thash = extract_hash_from_magnet(magnet)
+            if not self.ts:
+                sett = load_settings()
+                self.ts = TorrServerManager(port=sett.get('torrserver_port', 8095))
+            if self.ts and magnet:
+                self.ts.ensure_running()
+                self.ts.add_torrent(magnet, title=m['title'], poster=m.get('poster_path', ''))
+                t_info = None
+                for _ in range(24): # wait up to 12s
+                    if thash:
+                        t_info = self.ts.get_torrent(thash)
+                        if t_info and t_info.get('file_stats'):
                             break
-                    await asyncio.sleep(1)
-
-            episodes = []
-            if aria_files:
-                for f in aria_files:
-                    path = f.get('path', '')
-                    ext = os.path.splitext(path)[1].lower()
-                    if ext in video_exts:
-                        idx = int(f.get('index', 0))
-                        length = int(f.get('length', 0))
-                        completed = int(f.get('completedLength', 0))
-                        selected = f.get('selected', 'false') == 'true'
-                        downloaded = (completed >= length) and length > 0
-                        name = os.path.basename(path)
-                        episodes.append({
-                            "index": idx,
-                            "name": name,
-                            "path": path,
-                            "size": length,
-                            "completed": completed,
-                            "selected": selected,
-                            "downloaded": downloaded
-                        })
-                episodes.sort(key=self._episode_sort_key)
-                # Cache episodes into DB
-                if episodes:
-                    try:
-                        db.execute("UPDATE media SET episodes_json=? WHERE id=?", (json.dumps(episodes), mid))
-                        db.commit()
-                    except Exception as e:
-                        logger.error(f"Error caching episodes: {e}")
+                    await asyncio.sleep(0.5)
+                
+                if t_info and t_info.get('file_stats'):
+                    episodes = []
+                    for f in t_info['file_stats']:
+                        f_path = f.get('path', '')
+                        ext = os.path.splitext(f_path)[1].lower()
+                        if ext in video_exts:
+                            episodes.append({
+                                "index": int(f.get('id', 0)),
+                                "name": os.path.basename(f_path),
+                                "path": f_path,
+                                "size": int(f.get('length', 0)),
+                                "completed": 0,
+                                "selected": True,
+                                "downloaded": False
+                            })
+                    episodes.sort(key=self._episode_sort_key)
+                    if episodes:
+                        try:
+                            db.execute("UPDATE media SET episodes_json=? WHERE id=?", (json.dumps(episodes), mid))
+                            db.commit()
+                        except Exception as e:
+                            logger.error(f"Error caching episodes in DB: {e}")
+                        db.close()
+                        return episodes
 
             db.close()
-            return episodes
+            return []
         except Exception as e:
             logger.error(f"Plugin get_episodes error: {e}")
             return []
@@ -1991,25 +2476,34 @@ class Plugin:
                 db.close()
                 return {"success": False, "error": "Медиа не найдено"}
             
-            video_exts = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov'}
+            video_exts = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov', '.m4v'}
 
-            # Check if media_files or download_dir has completed files
+            # 1. Check if local files are already downloaded
             m_files = db.execute("SELECT * FROM media_files WHERE media_id=? ORDER BY id ASC", (mid,)).fetchall()
-            dl = db.execute("SELECT * FROM downloads WHERE media_id=?", (mid,)).fetchone()
             db.close()
 
             if m_files and len(m_files) > 0:
                 target_file = None
                 if file_idx > 0:
                     for f in m_files:
-                        if str(file_idx) in f['file_name']:
+                        if f['id'] == file_idx:
                             target_file = f['file_path']
                             break
+                    if not target_file and 1 <= file_idx <= len(m_files):
+                        target_file = m_files[file_idx - 1]['file_path']
+                    if not target_file:
+                        for f in m_files:
+                            _, ep_num, _ = self._episode_sort_key(f['file_name'])
+                            if ep_num == file_idx:
+                                target_file = f['file_path']
+                                break
                 if not target_file:
                     target_file = m_files[0]['file_path']
                 if os.path.isfile(target_file) and is_header_ready(target_file):
+                    stream_url = f"http://127.0.0.1:8400/api/stream?file={urllib.parse.quote(target_file)}"
                     return {
                         "success": True,
+                        "stream_url": stream_url,
                         "file_path": target_file,
                         "title": m['title'],
                         "transcode": True,
@@ -2017,200 +2511,106 @@ class Plugin:
                     }
 
             ddir = m['download_dir'] or os.path.join(get_user_home(), "Video", "Projacktor", "Фильмы" if m['media_type'] == 'movie' else "Сериалы")
-            
-            # Check local files in ddir
             if os.path.isdir(ddir):
+                disk_files = []
                 for root, _, files in os.walk(ddir):
                     for f in sorted(files):
                         if os.path.splitext(f)[1].lower() in video_exts:
                             fp = os.path.join(root, f)
                             if not os.path.exists(fp + ".aria2") and is_header_ready(fp):
-                                if file_idx > 0 and str(file_idx) not in f:
-                                    continue
-                                return {
-                                    "success": True,
-                                    "file_path": fp,
-                                    "title": m['title'],
-                                    "transcode": True,
-                                    "online": False
-                                }
+                                disk_files.append((f, fp))
+                if disk_files:
+                    target_file = None
+                    if file_idx > 0:
+                        if 1 <= file_idx <= len(disk_files):
+                            target_file = disk_files[file_idx - 1][1]
+                        if not target_file:
+                            for f, fp in disk_files:
+                                _, ep_num, _ = self._episode_sort_key(f)
+                                if ep_num == file_idx:
+                                    target_file = fp
+                                    break
+                    if not target_file:
+                        target_file = disk_files[0][1]
+                    stream_url = f"http://127.0.0.1:8400/api/stream?file={urllib.parse.quote(target_file)}"
+                    return {
+                        "success": True,
+                        "stream_url": stream_url,
+                        "file_path": target_file,
+                        "title": m['title'],
+                        "transcode": True,
+                        "online": False
+                    }
 
+            # 2. Online streaming via TorrServer (Zero disk wear, RAM-only cache)
             magnet = m['magnet_uri']
             if not magnet:
                 return {"success": False, "error": "Нет magnet-ссылки для раздачи"}
-                
-            os.makedirs(ddir, exist_ok=True)
-            gid = dl['aria2_gid'] if dl else None
-            options = {
-                "dir": ddir,
-                "file-allocation": "none",
-                "bt-prioritize-piece": "head=50M,tail=15M"
-            }
-            if file_idx > 0:
-                options["select-file"] = str(file_idx)
-                
-            # Pause any other active streaming downloads so cache bandwidth is dedicated to this media
-            if self.dm:
-                try:
-                    all_active = self.dm.tell_active() or []
-                    for act in all_active:
-                        act_gid = act.get('gid')
-                        if act_gid and act_gid != gid:
-                            try:
-                                self.dm.pause(act_gid)
-                            except:
-                                pass
-                except Exception as e:
-                    logger.warning(f"Error pausing other downloads: {e}")
 
-            if not gid and self.dm:
-                gid = self.dm.add_download(magnet, ddir, options)
-                db = get_db()
-                if dl:
-                    db.execute("UPDATE downloads SET aria2_gid=?, status='downloading' WHERE id=?", (gid, dl['id']))
-                else:
-                    db.execute("""
-                        INSERT INTO downloads (media_id, magnet_uri, torrent_title, download_dir, aria2_gid, status, quality)
-                        VALUES (?, ?, ?, ?, ?, 'downloading', ?)
-                    """, (mid, magnet, m['torrent_title'], ddir, gid, m['quality']))
-                db.commit()
-                db.close()
-            elif gid and self.dm:
-                st = self.dm.get_status(gid)
-                if st and st.get('followedBy'):
-                    gid = st['followedBy'][0]
-                self.dm.change_options(gid, {"bt-prioritize-piece": "head=50M,tail=15M"})
-                if file_idx > 0:
-                    self.dm.select_files(gid, str(file_idx))
-                self.dm.resume(gid)
-                db = get_db()
-                db.execute("UPDATE downloads SET status='downloading' WHERE media_id=?", (mid,))
-                db.commit()
-                db.close()
-                
-            target_file = None
-            stream_title = f"{m['title']} (Онлайн)"
-            
-            # 1. If TV episode, check cached episodes in DB
-            if file_idx > 0 and 'episodes_json' in m.keys() and m['episodes_json']:
-                try:
-                    eps = json.loads(m['episodes_json'])
-                    for ep in eps:
-                        if int(ep.get('index', -1)) == file_idx:
-                            target_file = ep.get('path')
-                            stream_title = f"{m['title']} - {ep.get('name', f'Серия #{file_idx}')}"
-                            break
-                except Exception as e:
-                    logger.warning(f"Error parsing episodes_json: {e}")
+            if not self.ts:
+                sett = load_settings()
+                self.ts = TorrServerManager(port=sett.get('torrserver_port', 8095))
 
-            # 2. Check aria2 files if target_file not found yet (filter out [METADATA])
-            if not target_file and gid and self.dm:
-                st = self.dm.get_status(gid)
-                if st and st.get('followedBy'):
-                    gid = st['followedBy'][0]
-                    st = self.dm.get_status(gid) or st
-                if st and st.get('files'):
-                    for af in st['files']:
-                        af_path = af.get('path', '')
-                        if not af_path or af_path.startswith('[METADATA]'):
-                            continue
-                        af_idx = int(af.get('index', 0))
-                        if file_idx == 0 or af_idx == file_idx:
-                            if file_idx > 0 or os.path.splitext(af_path)[1].lower() in video_exts:
-                                target_file = af_path
-                                if file_idx > 0:
-                                    stream_title = f"{m['title']} - {os.path.basename(af_path)}"
-                                break
+            if not self.ts.ensure_running():
+                return {"success": False, "error": "Не удалось запустить TorrServer для онлайн-просмотра"}
 
-            # 3. Check ddir for matching files
-            if not target_file and os.path.isdir(ddir):
-                for root, _, files in os.walk(ddir):
-                    for f in sorted(files):
-                        if f.startswith('[METADATA]'):
-                            continue
-                        if os.path.splitext(f)[1].lower() in video_exts:
-                            if file_idx > 0 and str(file_idx) not in f:
-                                continue
-                            target_file = os.path.join(root, f)
-                            if file_idx > 0:
-                                stream_title = f"{m['title']} - {f}"
-                            break
-                    if target_file:
+            thash = extract_hash_from_magnet(magnet)
+            self.ts.add_torrent(magnet, title=m['title'], poster=m.get('poster_path', ''))
+
+            # Wait up to 15 seconds for TorrServer to fetch torrent metadata via DHT/Trackers
+            t_info = None
+            for _ in range(30):
+                if thash:
+                    t_info = self.ts.get_torrent(thash)
+                    if t_info and t_info.get('file_stats'):
                         break
+                await asyncio.sleep(0.5)
 
-            # 4. If still not found, wait for aria2 to fetch metadata and spawn followed task (up to 35s)
-            if not target_file and self.dm:
-                for _ in range(35):
-                    await asyncio.sleep(1)
-                    # Re-check DB in case download was started/updated asynchronously
-                    if not gid:
-                        try:
-                            db_chk = get_db()
-                            dl_chk = db_chk.execute("SELECT aria2_gid FROM downloads WHERE media_id=? ORDER BY id DESC LIMIT 1", (mid,)).fetchone()
-                            db_chk.close()
-                            if dl_chk and dl_chk['aria2_gid']:
-                                gid = dl_chk['aria2_gid']
-                        except Exception:
-                            pass
-
-                    if gid:
-                        st = self.dm.get_status(gid)
-                        if st and st.get('followedBy'):
-                            gid = st['followedBy'][0]
-                            st = self.dm.get_status(gid) or st
-                        if not st:
-                            # Check if any task is following our old gid
-                            waiting = self.dm.tell_waiting() or []
-                            active = self.dm.tell_active() or []
-                            for cand in (active + waiting):
-                                if cand.get('following') == gid:
-                                    gid = cand['gid']
-                                    st = cand
-                                    break
-                        if st and st.get('files'):
-                            for af in st['files']:
-                                af_path = af.get('path', '')
-                                if not af_path or af_path.startswith('[METADATA]'):
-                                    continue
-                                af_idx = int(af.get('index', 0))
-                                if file_idx == 0 or af_idx == file_idx:
-                                    if file_idx > 0 or os.path.splitext(af_path)[1].lower() in video_exts:
-                                        target_file = af_path
-                                        if file_idx > 0:
-                                            stream_title = f"{m['title']} - {os.path.basename(af_path)}"
-                                        break
-                    
-                    if not target_file and os.path.isdir(ddir):
-                        for root, _, files in os.walk(ddir):
-                            for f in sorted(files):
-                                if f.startswith('[METADATA]'):
-                                    continue
-                                if os.path.splitext(f)[1].lower() in video_exts:
-                                    if file_idx > 0 and str(file_idx) not in f:
-                                        continue
-                                    target_file = os.path.join(root, f)
-                                    if file_idx > 0:
-                                        stream_title = f"{m['title']} - {f}"
-                                    break
-                            if target_file:
-                                break
-
-                    if target_file:
-                        break
-
-            if target_file:
-                return {
-                    "success": True,
-                    "file_path": target_file,
-                    "title": stream_title,
-                    "transcode": True,
-                    "online": True
-                }
-            else:
+            if not t_info or not t_info.get('file_stats'):
                 return {
                     "success": False,
-                    "error": "Подключение к раздаче... Подождите несколько секунд и попробуйте снова."
+                    "error": "Подключение к раздаче TorrServer... Подождите несколько секунд и попробуйте снова."
                 }
+
+            all_files = t_info['file_stats']
+            video_files = [f for f in all_files if os.path.splitext(f.get('path', ''))[1].lower() in video_exts]
+            if not video_files:
+                video_files = all_files
+
+            target_f = None
+            if file_idx > 0:
+                for f in video_files:
+                    if int(f.get('id', -1)) == file_idx:
+                        target_f = f
+                        break
+                if not target_f:
+                    for f in video_files:
+                        _, ep_num, _ = self._episode_sort_key(f.get('path', ''))
+                        if ep_num == file_idx:
+                            target_f = f
+                            break
+            if not target_f:
+                # Default for movies: pick the largest video file
+                target_f = max(video_files, key=lambda x: x.get('length', 0))
+
+            chosen_id = target_f.get('id', 1)
+            chosen_path = target_f.get('path', 'video.mp4')
+            chosen_name = os.path.basename(chosen_path)
+            stream_title = f"{m['title']} - {chosen_name}" if file_idx > 0 else m['title']
+
+            direct_ts_url = f"{self.ts.base_url}/stream/{urllib.parse.quote(chosen_name)}?link={thash}&index={chosen_id}&play"
+            proxied_url = f"http://127.0.0.1:8400/api/stream?url={urllib.parse.quote(direct_ts_url)}"
+
+            return {
+                "success": True,
+                "stream_url": proxied_url,
+                "direct_stream_url": direct_ts_url,
+                "torrent_hash": thash,
+                "file_path": chosen_path,
+                "title": stream_title,
+                "transcode": True,
+                "online": True
+            }
         except Exception as e:
             logger.error(f"Plugin prepare_stream error: {e}")
             return {"success": False, "error": str(e)}
@@ -2222,8 +2622,8 @@ class Plugin:
         return res
 
     async def pause_download(self, did: int):
+        db = get_db()
         try:
-            db = get_db()
             row = db.execute("SELECT aria2_gid FROM downloads WHERE id=?", (did,)).fetchone()
             if row and row['aria2_gid'] and self.dm:
                 try:
@@ -2232,14 +2632,16 @@ class Plugin:
                     logger.warning(f"aria2 pause warning: {e}")
             db.execute("UPDATE downloads SET status='paused', download_speed=0, upload_speed=0 WHERE id=?", (did,))
             db.commit()
-            db.close()
             return True
-        except:
+        except Exception as e:
+            logger.error(f"Plugin pause_download error: {e}")
             return False
+        finally:
+            db.close()
 
     async def resume_download(self, did: int):
+        db = get_db()
         try:
-            db = get_db()
             row = db.execute("SELECT aria2_gid, magnet_uri, download_dir FROM downloads WHERE id=?", (did,)).fetchone()
             if row and self.dm:
                 res = None
@@ -2258,28 +2660,32 @@ class Plugin:
                         logger.error(f"Failed to re-add torrent on resume: {e}")
             db.execute("UPDATE downloads SET status='downloading' WHERE id=?", (did,))
             db.commit()
-            db.close()
             return True
-        except:
+        except Exception as e:
+            logger.error(f"Plugin resume_download error: {e}")
             return False
+        finally:
+            db.close()
 
     async def resume_all_downloads(self):
         try:
             if self.dm:
                 self.dm.unpause_all()
             db = get_db()
-            cursor = db.cursor()
-            rows = cursor.execute("SELECT aria2_gid FROM downloads WHERE status='paused'").fetchall()
-            if self.dm:
-                for r in rows:
-                    if r['aria2_gid']:
-                        try:
-                            self.dm.resume(r['aria2_gid'])
-                        except:
-                            pass
-            cursor.execute("UPDATE downloads SET status='downloading' WHERE status='paused'")
-            db.commit()
-            db.close()
+            try:
+                cursor = db.cursor()
+                rows = cursor.execute("SELECT aria2_gid FROM downloads WHERE status='paused'").fetchall()
+                if self.dm:
+                    for r in rows:
+                        if r['aria2_gid']:
+                            try:
+                                self.dm.resume(r['aria2_gid'])
+                            except:
+                                pass
+                cursor.execute("UPDATE downloads SET status='downloading' WHERE status='paused'")
+                db.commit()
+            finally:
+                db.close()
             if self.dm:
                 self.dm._update_db()
             return True
@@ -2288,8 +2694,8 @@ class Plugin:
             return False
 
     async def delete_download(self, did: int):
+        db = get_db()
         try:
-            db = get_db()
             row = db.execute("SELECT aria2_gid FROM downloads WHERE id=?", (did,)).fetchone()
             if row and row['aria2_gid'] and self.dm:
                 try:
@@ -2297,10 +2703,12 @@ class Plugin:
                 except: pass
             db.execute("DELETE FROM downloads WHERE id=?", (did,))
             db.commit()
-            db.close()
             return True
-        except:
+        except Exception as e:
+            logger.error(f"Plugin delete_download error: {e}")
             return False
+        finally:
+            db.close()
 
     async def get_library(self):
         if self.dm:
@@ -2309,58 +2717,60 @@ class Plugin:
             except Exception as e:
                 logger.error(f"get_library _update_db error: {e}")
         db = get_db()
-        rows = db.execute("""
-            SELECT m.*, 
-                   COUNT(f.id) AS file_count, 
-                   COALESCE(SUM(f.file_size), 0) AS total_file_size,
-                   d.id AS download_id,
-                   d.status AS download_status,
-                   d.progress AS download_progress,
-                   d.download_speed,
-                   d.total_size AS download_total_size,
-                   d.downloaded_size AS download_downloaded_size,
-                   d.aria2_gid,
-                   COALESCE(m.magnet_uri, d.magnet_uri) AS effective_magnet,
-                   COALESCE(m.quality, d.quality) AS effective_quality,
-                   COALESCE(m.torrent_title, d.torrent_title) AS effective_torrent_title,
-                   COALESCE(m.download_dir, d.download_dir) AS effective_download_dir
-            FROM media m
-            LEFT JOIN media_files f ON m.id = f.media_id
-            LEFT JOIN downloads d ON m.id = d.media_id
-            WHERE m.in_library = 1 OR d.id IS NOT NULL OR f.id IS NOT NULL
-            GROUP BY m.id
-            ORDER BY m.id DESC
-        """).fetchall()
-        result = []
-        for r in rows:
-            d = dict(r)
-            m_files = db.execute("SELECT * FROM media_files WHERE media_id=? ORDER BY id ASC", (d['id'],)).fetchall()
-            files_list = [dict(f) for f in m_files]
-            if not files_list and d.get('effective_download_dir') and os.path.isdir(d['effective_download_dir']):
-                for root, _, fnames in os.walk(d['effective_download_dir']):
-                    for fn in sorted(fnames):
-                        if os.path.splitext(fn)[1].lower() in {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov'}:
-                            fp = os.path.join(root, fn)
-                            if not os.path.exists(fp + ".aria2") and is_header_ready(fp):
-                                try:
-                                    sz = os.path.getsize(fp)
-                                except:
-                                    sz = 0
-                                files_list.append({"file_path": fp, "file_name": fn, "file_size": sz})
-            d['files'] = files_list
-            if files_list and d.get('download_status') not in ('completed',):
-                has_active_aria2 = any(os.path.exists(f['file_path'] + '.aria2') for f in files_list)
-                if not has_active_aria2:
-                    d['download_status'] = 'completed'
-                    d['download_progress'] = 100.0
-                    d['download_speed'] = 0
-            result.append(d)
-        db.close()
-        return result
+        try:
+            rows = db.execute("""
+                SELECT m.*, 
+                       COUNT(f.id) AS file_count, 
+                       COALESCE(SUM(f.file_size), 0) AS total_file_size,
+                       d.id AS download_id,
+                       d.status AS download_status,
+                       d.progress AS download_progress,
+                       d.download_speed,
+                       d.total_size AS download_total_size,
+                       d.downloaded_size AS download_downloaded_size,
+                       d.aria2_gid,
+                       COALESCE(m.magnet_uri, d.magnet_uri) AS effective_magnet,
+                       COALESCE(m.quality, d.quality) AS effective_quality,
+                       COALESCE(m.torrent_title, d.torrent_title) AS effective_torrent_title,
+                       COALESCE(m.download_dir, d.download_dir) AS effective_download_dir
+                FROM media m
+                LEFT JOIN media_files f ON m.id = f.media_id
+                LEFT JOIN downloads d ON m.id = d.media_id
+                WHERE m.in_library = 1 OR d.id IS NOT NULL OR f.id IS NOT NULL
+                GROUP BY m.id
+                ORDER BY m.id DESC
+            """).fetchall()
+            result = []
+            for r in rows:
+                d = dict(r)
+                m_files = db.execute("SELECT * FROM media_files WHERE media_id=? ORDER BY id ASC", (d['id'],)).fetchall()
+                files_list = [dict(f) for f in m_files]
+                if not files_list and d.get('effective_download_dir') and os.path.isdir(d['effective_download_dir']):
+                    for root, _, fnames in os.walk(d['effective_download_dir']):
+                        for fn in sorted(fnames):
+                            if os.path.splitext(fn)[1].lower() in {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov'}:
+                                fp = os.path.join(root, fn)
+                                if not os.path.exists(fp + ".aria2") and is_header_ready(fp):
+                                    try:
+                                        sz = os.path.getsize(fp)
+                                    except:
+                                        sz = 0
+                                    files_list.append({"file_path": fp, "file_name": fn, "file_size": sz})
+                d['files'] = files_list
+                if files_list and d.get('download_status') not in ('completed',):
+                    has_active_aria2 = any(os.path.exists(f['file_path'] + '.aria2') for f in files_list)
+                    if not has_active_aria2:
+                        d['download_status'] = 'completed'
+                        d['download_progress'] = 100.0
+                        d['download_speed'] = 0
+                result.append(d)
+            return result
+        finally:
+            db.close()
 
     async def delete_library_item(self, mid: int):
+        db = get_db()
         try:
-            db = get_db()
             files = db.execute("SELECT file_path FROM media_files WHERE media_id=?", (mid,)).fetchall()
             for f in files:
                 try:
@@ -2375,10 +2785,12 @@ class Plugin:
             db.execute("DELETE FROM downloads WHERE media_id=?", (mid,))
             db.execute("DELETE FROM media WHERE id=?", (mid,))
             db.commit()
-            db.close()
             return True
-        except:
+        except Exception as e:
+            logger.error(f"Plugin delete_library_item error: {e}")
             return False
+        finally:
+            db.close()
 
     async def play_media(self, file_path: str):
         if not os.path.exists(file_path):
@@ -2393,7 +2805,7 @@ class Plugin:
     async def clear_cache(self):
         try:
             # 1. Clear memory caches in HTTP server
-            ProjacktorHandler.tmdb_cache.clear()
+            ProjacktorRequestHandler.tmdb_cache.clear()
             
             # 2. Clear disk caches (TMDB metadata, images, etc.)
             cache_dir = os.path.join(CONFIG_DIR, "cache")

@@ -12,7 +12,7 @@ import { EpisodesModal } from "../components/EpisodesModal";
 
 
 interface LibraryViewProps {
-  onPlayVideo: (filePath: string, title: string, isOnline: boolean) => void;
+  onPlayVideo: (filePath: string, title: string, isOnline: boolean, torrentHash?: string) => void;
   onActivateMagicBlack?: () => void;
 }
 

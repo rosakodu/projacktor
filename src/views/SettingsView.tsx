@@ -7,7 +7,7 @@ import {
   TextField,
   Focusable,
 } from "@decky/ui";
-import { FaTrash, FaCheck, FaTimes, FaSpinner } from "react-icons/fa";
+import { FaTrash, FaCheck, FaTimes, FaSpinner, FaHdd, FaSdCard } from "react-icons/fa";
 import {
   rpcGetSettings,
   rpcSaveSettings,
@@ -15,6 +15,8 @@ import {
   rpcCheckJacred,
   rpcClearCache,
   clearLocalCache,
+  formatBytes,
+  StorageDrive,
 } from "../api";
 import { getActiveDocument } from "../runtime/activeDoc";
 
@@ -26,8 +28,15 @@ export const SettingsView: FC = memo(() => {
   const rootRef = useRef<HTMLDivElement>(null);
   const [jacredUrl, setJacredUrl] = useState<string>(() => cachedJacredUrl ?? "");
   const [jacredOk, setJacredOk] = useState<boolean | null>(() => cachedJacredOk);
+  const [torrServerOk, setTorrServerOk] = useState<boolean | null>(null);
+  const [torrServerPort, setTorrServerPort] = useState<number>(8095);
+  const [downloadPath, setDownloadPath] = useState<string>("");
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [pathSaving, setPathSaving] = useState(false);
+  const [pathSavedSuccess, setPathSavedSuccess] = useState(false);
   const [clearingCache, setClearingCache] = useState(false);
+  const [cacheClearedSuccess, setCacheClearedSuccess] = useState(false);
+  const [drives, setDrives] = useState<StorageDrive[]>([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -40,16 +49,29 @@ export const SettingsView: FC = memo(() => {
           cachedJacredUrl = url;
           setJacredUrl(url);
         }
+        if (sett && sett.download_path) {
+          setDownloadPath(sett.download_path);
+        }
       })
       .catch(() => {});
 
     rpcGetStatus()
-      .then((st) => {
+      .then((st: any) => {
         if (!isMounted) return;
         if (st) {
           const ok = !!st.jacred_status;
           cachedJacredOk = ok;
           setJacredOk(ok);
+          setTorrServerOk(!!st.torrserver_running);
+          if (st.torrserver_port) {
+            setTorrServerPort(st.torrserver_port);
+          }
+          if (Array.isArray(st.drives)) {
+            setDrives(st.drives);
+          }
+          if (st.download_path && !downloadPath) {
+            setDownloadPath(st.download_path);
+          }
         }
       })
       .catch(() => {});
@@ -127,12 +149,42 @@ export const SettingsView: FC = memo(() => {
     }
   }, [jacredUrl]);
 
+  const handleSaveDownloadPath = useCallback(async (customPath?: string) => {
+    const pathToSave = (customPath ?? downloadPath).trim();
+    if (!pathToSave) return;
+    setPathSaving(true);
+    setPathSavedSuccess(false);
+    try {
+      await rpcSaveSettings(JSON.stringify({ download_path: pathToSave }));
+      setDownloadPath(pathToSave);
+      setPathSavedSuccess(true);
+      setTimeout(() => setPathSavedSuccess(false), 2500);
+    } catch (err) {
+      console.error("Не удалось сохранить путь:", err);
+    } finally {
+      setPathSaving(false);
+    }
+  }, [downloadPath]);
+
+  const handleSelectDrivePreset = useCallback((drive: StorageDrive) => {
+    const targetPath = drive.path
+      ? (drive.path.endsWith("/Projacktor") ? drive.path : `${drive.path}/Movies/Projacktor`)
+      : "";
+    if (targetPath) {
+      setDownloadPath(targetPath);
+      handleSaveDownloadPath(targetPath);
+    }
+  }, [handleSaveDownloadPath]);
+
   const handleClearCache = useCallback(async () => {
     if (clearingCache) return;
     setClearingCache(true);
+    setCacheClearedSuccess(false);
     try {
       clearLocalCache();
       await rpcClearCache();
+      setCacheClearedSuccess(true);
+      setTimeout(() => setCacheClearedSuccess(false), 2500);
     } catch (err) {
       console.error("Не удалось полностью очистить кэш:", err);
     } finally {
@@ -148,16 +200,17 @@ export const SettingsView: FC = memo(() => {
       className="projacktor-content"
       style={{
         width: "100%",
-        padding: "6px 52px 24px 52px",
+        padding: "16px 52px 32px 52px",
         boxSizing: "border-box",
         overflowY: "auto",
       }}
     >
-      <div style={{ maxWidth: 840, width: "100%", margin: "0 auto" }}>
-        <PanelSection title="Парсер Jackett">
+      <div style={{ maxWidth: 840, width: "100%", margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 }}>
+        {/* Секция 1: Парсер Jackett */}
+        <PanelSection>
           <PanelSectionRow>
             <Field
-              label="Статус подключения"
+              label="Парсер Jackett / JacRed"
               description={
                 jacredOk === null
                   ? "Проверка соединения..."
@@ -220,11 +273,11 @@ export const SettingsView: FC = memo(() => {
           </PanelSectionRow>
 
           <PanelSectionRow>
-            <div style={{ width: "100%", marginTop: 2, marginBottom: 4 }}>
+            <div style={{ width: "100%", marginTop: 2, marginBottom: 6 }}>
               <TextField
                 value={jacredUrl}
                 onChange={(e) => setJacredUrl(e.target.value)}
-                {...({ placeholder: "URL парсера" } as any)}
+                {...({ placeholder: "https://jac.red" } as any)}
               />
             </div>
           </PanelSectionRow>
@@ -235,12 +288,152 @@ export const SettingsView: FC = memo(() => {
               onClick={handleSaveSettings}
               disabled={settingsSaving}
             >
-              {settingsSaving ? "Сохранение..." : "Сохранить и проверить"}
+              {settingsSaving ? "Сохранение..." : "Сохранить и проверить парсер"}
             </ButtonItem>
           </PanelSectionRow>
         </PanelSection>
 
-        <PanelSection title="Хранилище и кэш">
+        {/* Секция 2: Встроенный TorrServer */}
+        <PanelSection>
+          <PanelSectionRow>
+            <Field
+              label="Встроенный TorrServer"
+              description={`Порт: ${torrServerPort} • Кэш в RAM: 256 МБ • Запись на диск: отключена`}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontWeight: 600,
+                  fontSize: 13,
+                }}
+              >
+                {torrServerOk === null ? (
+                  <span
+                    style={{
+                      color: "rgba(255, 255, 255, 0.5)",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
+                    }}
+                  >
+                    <FaSpinner
+                      style={{
+                        fontSize: 11,
+                        animation: "projacktor-spin 1s linear infinite",
+                      }}
+                    />
+                    Проверка...
+                  </span>
+                ) : torrServerOk ? (
+                  <span
+                    style={{
+                      color: "#10b981",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
+                    }}
+                  >
+                    <FaCheck style={{ fontSize: 11 }} /> Работает
+                  </span>
+                ) : (
+                  <span
+                    style={{
+                      color: "#ef4444",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
+                    }}
+                  >
+                    <FaTimes style={{ fontSize: 11 }} /> Остановлен
+                  </span>
+                )}
+              </div>
+            </Field>
+          </PanelSectionRow>
+        </PanelSection>
+
+        {/* Секция 3: Путь для загрузок и накопители */}
+        <PanelSection>
+          <PanelSectionRow>
+            <Field
+              label="Путь для сохранения загрузок"
+              description="Папка на диске, куда сохраняются фильмы и сериалы при оффлайн-загрузке"
+            >
+              {pathSavedSuccess && (
+                <span style={{ color: "#10b981", fontSize: 12, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  <FaCheck style={{ fontSize: 10 }} /> Сохранено
+                </span>
+              )}
+            </Field>
+          </PanelSectionRow>
+
+          <PanelSectionRow>
+            <div style={{ width: "100%", marginTop: 2, marginBottom: 8 }}>
+              <TextField
+                value={downloadPath}
+                onChange={(e) => setDownloadPath(e.target.value)}
+                {...({ placeholder: "/home/deck/Movies/Projacktor" } as any)}
+              />
+            </div>
+          </PanelSectionRow>
+
+          {/* Быстрый выбор накопителей */}
+          {drives.length > 0 && (
+            <PanelSectionRow>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, width: "100%", marginBottom: 8 }}>
+                {drives.map((d) => {
+                  const isCurrent =
+                    downloadPath === d.path ||
+                    downloadPath.startsWith(d.path) ||
+                    (d.id === "internal" && !downloadPath.includes("/run/media"));
+                  return (
+                    <button
+                      key={d.id}
+                      type="button"
+                      onClick={() => handleSelectDrivePreset(d)}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "8px 14px",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        backgroundColor: isCurrent ? "rgba(16, 185, 129, 0.2)" : "rgba(255, 255, 255, 0.06)",
+                        border: isCurrent ? "1px solid #10b981" : "1px solid rgba(255, 255, 255, 0.12)",
+                        borderRadius: 6,
+                        color: isCurrent ? "#34d399" : "#ffffff",
+                      }}
+                    >
+                      {d.is_removable ? (
+                        <FaSdCard style={{ fontSize: 13, color: isCurrent ? "#34d399" : "#60a5fa" }} />
+                      ) : (
+                        <FaHdd style={{ fontSize: 13, color: isCurrent ? "#34d399" : "#94a3b8" }} />
+                      )}
+                      <span>{d.name}</span>
+                      <span style={{ fontSize: 11, opacity: 0.65 }}>({formatBytes(d.free)} своб.)</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </PanelSectionRow>
+          )}
+
+          <PanelSectionRow>
+            <ButtonItem
+              layout="below"
+              onClick={() => handleSaveDownloadPath()}
+              disabled={pathSaving}
+            >
+              {pathSaving ? "Сохранение..." : "Сохранить путь"}
+            </ButtonItem>
+          </PanelSectionRow>
+        </PanelSection>
+
+        {/* Секция 4: Сброс кэша */}
+        <PanelSection>
           <PanelSectionRow>
             <ButtonItem
               layout="below"
@@ -248,9 +441,7 @@ export const SettingsView: FC = memo(() => {
               disabled={clearingCache}
             >
               <FaTrash style={{ marginRight: 8, fontSize: 12 }} />
-              {clearingCache
-                ? "Очистка..."
-                : "Сбросить кэш"}
+              {clearingCache ? "Очистка..." : cacheClearedSuccess ? "Кэш успешно очищен!" : "Сбросить кэш"}
             </ButtonItem>
           </PanelSectionRow>
         </PanelSection>

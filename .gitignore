@@ -26,3 +26,15 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Local deployment & credentials
+deploy_deck.sh
+*.secret
+*.env
+*.env.*
+*.local
+
+# Local screenshots & dumps
+screenshot*.png
+deck_*.png
+*.dump

@@ -21,7 +21,7 @@ import {
 interface MovieModalProps {
   movie: MediaItem;
   closeModal?: () => void;
-  onWatchOnline?: (filePath: string, title: string) => void;
+  onWatchOnline?: (filePath: string, title: string, torrentHash?: string) => void;
   onStartMagicBlack?: () => void;
 }
 
@@ -188,7 +188,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
     return res.id!;
   };
 
-  // 1. Online stream for movies (does not add to library)
+  // 1. Online stream for movies (does not add to library or write to disk)
   const handleWatchOnlineMovie = async (torrent: TorrentItem) => {
     const tId = torrent.id || torrent.magnet;
     if (streamingTorrentId || downloadingTorrentId) return;
@@ -196,12 +196,15 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
 
     try {
       const mid = await getOrCreateMediaId(torrent, false);
-      await rpcStartDownload(mid);
       const streamRes = await rpcPrepareStream(mid);
-      if (streamRes && streamRes.success && streamRes.file_path) {
+      if (streamRes && streamRes.success && (streamRes.stream_url || streamRes.file_path)) {
         if (closeModal) closeModal();
         if (onWatchOnline) {
-          onWatchOnline(streamRes.file_path, streamRes.title || title);
+          onWatchOnline(
+            streamRes.stream_url || streamRes.file_path!,
+            streamRes.title || title,
+            streamRes.torrent_hash
+          );
         }
       } else {
         throw new Error(streamRes?.error || "Не удалось подготовить онлайн поток");
@@ -264,12 +267,15 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
     setStreamingEpIdx(ep.index);
     try {
       const mid = await getOrCreateMediaId(torrent, false);
-      await rpcStartDownload(mid, String(ep.index));
       const res = await rpcPrepareStream(mid, ep.index);
-      if (res && res.success && res.file_path) {
+      if (res && res.success && (res.stream_url || res.file_path)) {
         if (closeModal) closeModal();
         if (onWatchOnline) {
-          onWatchOnline(res.file_path, res.title || `${title} - ${ep.name}`);
+          onWatchOnline(
+            res.stream_url || res.file_path!,
+            res.title || `${title} - ${ep.name}`,
+            res.torrent_hash
+          );
         }
       } else {
         throw new Error(res?.error || "Не удалось подготовить серию");

@@ -1720,5 +1720,46 @@ body.projacktor-magicblack-active [class*="_3FIjYetykQsFYR08l1v7Ls"] {
   line-height: 1 !important;
   user-select: none !important;
 }
+
+/* ───── Settings View Controls ───── */
+.projacktor-content .DialogButton,
+.projacktor-content button {
+  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  border-radius: 6px !important;
+  transition: all 0.15s ease !important;
+}
+
+.projacktor-content .DialogButton:hover,
+.projacktor-content button:hover {
+  background: rgba(255, 255, 255, 0.15) !important;
+  border-color: rgba(255, 255, 255, 0.3) !important;
+}
+
+.projacktor-content .DialogButton:focus,
+.projacktor-content .DialogButton.gpfocus,
+.projacktor-content button:focus,
+.projacktor-content button.gpfocus {
+  background: #10b981 !important;
+  color: #ffffff !important;
+  border-color: #34d399 !important;
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.4) !important;
+  outline: none !important;
+}
+
+.projacktor-content input,
+.projacktor-content .DialogInput {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  border-radius: 6px !important;
+}
+
+.projacktor-content input:focus,
+.projacktor-content .DialogInput:focus {
+  border-color: #10b981 !important;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.3) !important;
+}
 `;
 

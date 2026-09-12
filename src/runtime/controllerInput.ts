@@ -262,6 +262,16 @@ function startPolling(): void {
   }, 25);
 }
 
+function stopPolling(): void {
+  if (pollTimer != null) {
+    const g = globalThis as any;
+    try {
+      g.clearInterval?.(pollTimer);
+    } catch {}
+    pollTimer = null;
+  }
+}
+
 function ensureInstalled(): void {
   if (installed) return;
   const bpOk = installBPInjection();
@@ -282,8 +292,10 @@ function ensureInstalled(): void {
   }
 
   if (bpOk || unregisterAll.length > 0) {
-    startPolling();
     installed = true;
+    if (listeners.size > 0) {
+      startPolling();
+    }
   }
 }
 
@@ -317,7 +329,21 @@ try {
 export function subscribeControllerInput(cb: Listener): () => void {
   ensureInstalled();
   listeners.add(cb);
+  startPolling();
   return () => {
     listeners.delete(cb);
+    if (listeners.size === 0) {
+      stopPolling();
+    }
   };
+}
+
+export function cleanupControllerInput(): void {
+  stopPolling();
+  listeners.clear();
+  for (const unreg of unregisterAll) {
+    try { unreg(); } catch {}
+  }
+  unregisterAll.length = 0;
+  installed = false;
 }
