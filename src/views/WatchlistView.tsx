@@ -355,7 +355,7 @@ export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie }) =>
                 {/* Нижняя панель действий */}
                 <div className="projacktor-dl-card-btns">
                   <Focusable
-                    className="ds-btn projacktor-dl-btn-icon projacktor-wl-del-btn"
+                    className="ds-btn projacktor-wl-del-btn"
                     noFocusRing
                     tabIndex={0}
                     onClick={(e: any) => handleRemove(item.tmdb_id, e)}

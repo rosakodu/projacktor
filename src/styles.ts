@@ -1946,5 +1946,32 @@ body.projacktor-magicblack-active [class*="_3FIjYetykQsFYR08l1v7Ls"] {
   background: rgba(239, 68, 68, 0.2) !important;
   color: #ef4444 !important;
 }
+
+.projacktor-wl-del-btn {
+  width: 100% !important;
+  height: 24px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  background: var(--ds-surface) !important;
+  border: 1px solid var(--ds-border) !important;
+  color: var(--ds-text) !important;
+  border-radius: 0px !important;
+  cursor: pointer !important;
+  outline: none !important;
+  box-sizing: border-box !important;
+}
+
+.projacktor-wl-del-btn:focus,
+.projacktor-wl-del-btn.gpfocus,
+.projacktor-wl-del-btn:hover {
+  background: rgba(239, 68, 68, 0.25) !important;
+  border-color: #ef4444 !important;
+  color: #fff !important;
+  outline: none !important;
+}
 `;
 
