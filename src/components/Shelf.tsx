@@ -12,6 +12,7 @@ interface ShelfProps {
   items: MediaItem[];
   onSelectMovie: (movie: MediaItem) => void;
   loading?: boolean;
+  onNavigateUp?: () => void;
 }
 
 function computeCenteredScrollLeft(
@@ -25,7 +26,7 @@ function computeCenteredScrollLeft(
 
 const CARD_STEP_COOLDOWN_MS = 110;
 
-export const Shelf: FC<ShelfProps> = memo(({ title, items, onSelectMovie, loading }) => {
+export const Shelf: FC<ShelfProps> = memo(({ title, items, onSelectMovie, loading, onNavigateUp }) => {
   const shelfRef = useRef<HTMLDivElement>(null);
   const rowRef = useRef<HTMLDivElement>(null);
   const lastCardStepAtRef = useRef(0);
@@ -93,10 +94,18 @@ export const Shelf: FC<ShelfProps> = memo(({ title, items, onSelectMovie, loadin
         } catch {}
         stepCard(1);
         return false;
+      } else if (btn === 9 && onNavigateUp) {
+        // DPAD_UP / STICK_UP: возвращаемся наверх (строка поиска)
+        try {
+          evt?.preventDefault?.();
+          evt?.stopPropagation?.();
+        } catch {}
+        onNavigateUp();
+        return false;
       }
       return undefined;
     },
-    [stepCard]
+    [stepCard, onNavigateUp]
   );
 
   // Подписка на raw-события геймпада (SteamClient.Input)
@@ -122,15 +131,24 @@ export const Shelf: FC<ShelfProps> = memo(({ title, items, onSelectMovie, loadin
         e.button === 5 ||
         e.button === 23;
 
+      const isUp =
+        e.button === RawButton.DPAD_UP ||
+        e.button === RawButton.LEFTSTICK_UP ||
+        e.button === RawButton.LEFTPAD_UP ||
+        e.button === 4 ||
+        e.button === 20;
+
       if (isLeft) {
         stepCard(-1);
       } else if (isRight) {
         stepCard(1);
+      } else if (isUp && onNavigateUp) {
+        onNavigateUp();
       }
     });
 
     return un;
-  }, [stepCard]);
+  }, [stepCard, onNavigateUp]);
 
   // Перехват стрелок клавиатуры
   useEffect(() => {
@@ -152,6 +170,10 @@ export const Shelf: FC<ShelfProps> = memo(({ title, items, onSelectMovie, loadin
         e.preventDefault();
         e.stopPropagation();
         stepCard(1);
+      } else if (e.key === "ArrowUp" && onNavigateUp) {
+        e.preventDefault();
+        e.stopPropagation();
+        onNavigateUp();
       }
     };
 
@@ -161,7 +183,7 @@ export const Shelf: FC<ShelfProps> = memo(({ title, items, onSelectMovie, loadin
       doc?.removeEventListener?.("keydown", handleKeyDown, true);
       window.removeEventListener("keydown", handleKeyDown, true);
     };
-  }, [stepCard]);
+  }, [stepCard, onNavigateUp]);
 
   useEffect(() => {
     const rowEl = rowRef.current;

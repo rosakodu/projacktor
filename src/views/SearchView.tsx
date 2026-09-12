@@ -4,6 +4,9 @@ import { MediaItem } from "../types";
 import { searchCatalog } from "../api";
 import { Shelf } from "../components/Shelf";
 import { getActiveDocument } from "../runtime/activeDoc";
+import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
+import { isModalOpen } from "../runtime/homeInputBus";
+import { playNavSound } from "../runtime/navSound";
 
 interface SearchViewProps {
   onSelectMovie: (movie: MediaItem) => void;
@@ -11,9 +14,56 @@ interface SearchViewProps {
 
 export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
   const rootRef = useRef<HTMLDivElement>(null);
-  const [searchQuery, setSearchQuery] = useState<string>("" );
+  const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchResults, setSearchResults] = useState<MediaItem[]>([]);
   const [searchLoading, setSearchLoading] = useState<boolean>(false);
+  const lastNavAtRef = useRef<number>(0);
+
+  const focusSearchInput = useCallback(() => {
+    const now = Date.now();
+    if (now - lastNavAtRef.current < 100) return;
+    lastNavAtRef.current = now;
+
+    const root = rootRef.current;
+    if (!root) return;
+    const doc = getActiveDocument(root);
+
+    // Скроллим контейнер наверх к строке поиска
+    const parentScroll = root.closest(".projacktor-content-scroll") as HTMLElement | null;
+    if (parentScroll) {
+      parentScroll.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    const input = root.querySelector<HTMLElement>("input, .DialogInput");
+    if (input) {
+      try {
+        doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+        input.focus();
+        input.classList.add("gpfocus");
+        playNavSound();
+      } catch {}
+    }
+  }, []);
+
+  const focusFirstCard = useCallback(() => {
+    const now = Date.now();
+    if (now - lastNavAtRef.current < 100) return;
+    lastNavAtRef.current = now;
+
+    const root = rootRef.current;
+    if (!root) return;
+    const doc = getActiveDocument(root);
+
+    const firstCard = root.querySelector<HTMLElement>(".projacktor-shelf .projacktor-card");
+    if (firstCard) {
+      try {
+        doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+        firstCard.focus();
+        firstCard.classList.add("gpfocus");
+        playNavSound();
+      } catch {}
+    }
+  }, []);
 
   // Авто-фокус на поле ввода при переходе в поиск
   useEffect(() => {
@@ -69,29 +119,104 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
       if (e.key === "Enter" || e.keyCode === 13) {
         e.preventDefault();
         handleSearch();
+      } else if (e.key === "ArrowDown") {
+        if (searchResults.length > 0) {
+          e.preventDefault();
+          focusFirstCard();
+        }
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
       }
     },
-    [handleSearch]
+    [handleSearch, searchResults.length, focusFirstCard]
   );
+
+  // Подписка на события контроллера для надежной вертикальной навигации между поиском и результатами
+  useEffect(() => {
+    const un = subscribeControllerInput((e) => {
+      if (!e.pressed) return;
+      if (isModalOpen()) return;
+
+      const root = rootRef.current;
+      if (!root) return;
+      const doc = getActiveDocument(root);
+      const active = doc?.activeElement;
+      if (!active || !root.contains(active as Node)) return;
+
+      const searchBar = root.querySelector(".projacktor-search-bar-row, form");
+      const isInsideSearchBar = !!(searchBar && (searchBar === active || searchBar.contains(active as Node)));
+
+      const isUp =
+        e.button === RawButton.DPAD_UP ||
+        e.button === RawButton.LEFTSTICK_UP ||
+        e.button === RawButton.LEFTPAD_UP ||
+        e.button === 4 ||
+        e.button === 20;
+
+      const isDown =
+        e.button === RawButton.DPAD_DOWN ||
+        e.button === RawButton.LEFTSTICK_DOWN ||
+        e.button === RawButton.LEFTPAD_DOWN ||
+        e.button === 6 ||
+        e.button === 21;
+
+      if (isUp) {
+        if (!isInsideSearchBar) {
+          // С карточки возвращаемся на поиск
+          focusSearchInput();
+        }
+      } else if (isDown) {
+        if (isInsideSearchBar && searchResults.length > 0) {
+          focusFirstCard();
+        }
+      }
+    });
+
+    return un;
+  }, [searchResults.length, focusSearchInput, focusFirstCard]);
 
   return (
     <Focusable
       ref={rootRef}
       flow-children="vertical"
       noFocusRing
-      className="projacktor-content"
+      className="projacktor-content projacktor-search-view"
       onGamepadDirection={(evt: any) => {
         const btn = evt?.detail?.button;
+        const doc = getActiveDocument(rootRef.current);
+        const active = doc?.activeElement;
+        const root = rootRef.current;
+        if (!root) return undefined;
+
+        const searchBar = root.querySelector(".projacktor-search-bar-row, form");
+        const isInsideSearchBar = !!(searchBar && (searchBar === active || searchBar.contains(active as Node)));
+
         if (btn === 9) {
-          // DPAD_UP: блокируем переход вверх на вкладки из поиска
-          const doc = getActiveDocument(rootRef.current);
-          const active = doc?.activeElement;
-          const searchBar = rootRef.current?.querySelector("form, input, .ds-btn--primary");
-          if (active && searchBar && (searchBar === active || searchBar.contains(active))) {
+          // DPAD_UP:
+          if (isInsideSearchBar) {
+            // В строке поиска блокируем переход вверх на вкладки
             try {
               evt?.preventDefault?.();
               evt?.stopPropagation?.();
             } catch {}
+            return false;
+          } else {
+            // На карточке или ниже — возвращаемся на строку поиска!
+            try {
+              evt?.preventDefault?.();
+              evt?.stopPropagation?.();
+            } catch {}
+            focusSearchInput();
+            return false;
+          }
+        } else if (btn === 10) {
+          // DPAD_DOWN:
+          if (isInsideSearchBar && searchResults.length > 0) {
+            try {
+              evt?.preventDefault?.();
+              evt?.stopPropagation?.();
+            } catch {}
+            focusFirstCard();
             return false;
           }
         }
@@ -99,8 +224,30 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
       }}
     >
       <Focusable
+        flow-children="row"
         noFocusRing
+        className="projacktor-search-bar-row"
         style={{ display: "flex", gap: 12, marginBottom: 20, alignItems: "center", padding: "0 52px" }}
+        onGamepadDirection={(evt: any) => {
+          const btn = evt?.detail?.button;
+          if (btn === 9) {
+            // DPAD_UP: блокируем переход на вкладки
+            try {
+              evt?.preventDefault?.();
+              evt?.stopPropagation?.();
+            } catch {}
+            return false;
+          } else if (btn === 10 && searchResults.length > 0) {
+            // DPAD_DOWN: переходим на карточки
+            try {
+              evt?.preventDefault?.();
+              evt?.stopPropagation?.();
+            } catch {}
+            focusFirstCard();
+            return false;
+          }
+          return undefined;
+        }}
       >
         <form
           onSubmit={(e) => {
@@ -111,6 +258,7 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
         >
           <div style={{ flex: 1 }}>
             <TextField
+              className="projacktor-search-input"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -123,6 +271,34 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
           noFocusRing
           onActivate={handleSearch}
           onClick={handleSearch}
+          onGamepadDirection={(evt: any) => {
+            const btn = evt?.detail?.button;
+            if (btn === 11) {
+              // DPAD_LEFT: фокус на поле ввода
+              try {
+                evt?.preventDefault?.();
+                evt?.stopPropagation?.();
+              } catch {}
+              focusSearchInput();
+              return false;
+            } else if (btn === 10 && searchResults.length > 0) {
+              // DPAD_DOWN: переходим на карточки
+              try {
+                evt?.preventDefault?.();
+                evt?.stopPropagation?.();
+              } catch {}
+              focusFirstCard();
+              return false;
+            } else if (btn === 9) {
+              // DPAD_UP: блокируем переход на вкладки
+              try {
+                evt?.preventDefault?.();
+                evt?.stopPropagation?.();
+              } catch {}
+              return false;
+            }
+            return undefined;
+          }}
         >
           {searchLoading ? "Поиск..." : "Найти"}
         </Focusable>
@@ -132,6 +308,7 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
         items={searchResults}
         onSelectMovie={onSelectMovie}
         loading={searchLoading}
+        onNavigateUp={focusSearchInput}
       />
     </Focusable>
   );

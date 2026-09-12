@@ -1806,5 +1806,55 @@ body.projacktor-magicblack-active [class*="_3FIjYetykQsFYR08l1v7Ls"] {
   outline: 2px solid #1a9fff !important;
   outline-offset: 1px !important;
 }
+
+/* ───── Search View Input (Убираем обводку и свечение у поиска) ───── */
+.projacktor-search-view input,
+.projacktor-search-view input:focus,
+.projacktor-search-view input.gpfocus,
+.projacktor-search-view .DialogInput,
+.projacktor-search-view .DialogInput:focus,
+.projacktor-search-view .DialogInput.gpfocus,
+.projacktor-search-view .DialogTextInputBase,
+.projacktor-search-view .DialogTextInputBase:focus,
+.projacktor-search-view .DialogTextInputBase:focus-within,
+.projacktor-search-view .DialogTextInputBase.gpfocus,
+.projacktor-search-bar-row,
+.projacktor-search-bar-row:focus,
+.projacktor-search-bar-row.gpfocus,
+.projacktor-search-bar-row input,
+.projacktor-search-bar-row input:focus,
+.projacktor-search-bar-row input.gpfocus,
+.projacktor-search-bar-row .DialogInput,
+.projacktor-search-bar-row .DialogInput:focus,
+.projacktor-search-bar-row .DialogInput.gpfocus,
+.projacktor-search-bar-row .DialogTextInputBase,
+.projacktor-search-bar-row .DialogTextInputBase:focus,
+.projacktor-search-bar-row .DialogTextInputBase:focus-within,
+.projacktor-search-bar-row .DialogTextInputBase.gpfocus {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.projacktor-search-view input:focus,
+.projacktor-search-view input.gpfocus,
+.projacktor-search-view .DialogInput:focus,
+.projacktor-search-view .DialogInput.gpfocus,
+.projacktor-search-view .DialogTextInputBase:focus,
+.projacktor-search-view .DialogTextInputBase:focus-within,
+.projacktor-search-view .DialogTextInputBase.gpfocus,
+.projacktor-search-bar-row input:focus,
+.projacktor-search-bar-row input.gpfocus,
+.projacktor-search-bar-row .DialogInput:focus,
+.projacktor-search-bar-row .DialogInput.gpfocus,
+.projacktor-search-bar-row .DialogTextInputBase:focus,
+.projacktor-search-bar-row .DialogTextInputBase:focus-within,
+.projacktor-search-bar-row .DialogTextInputBase.gpfocus {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  background: rgba(255, 255, 255, 0.12) !important;
+}
 `;
 
