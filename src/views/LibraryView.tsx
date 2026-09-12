@@ -98,20 +98,13 @@ export const LibraryView: FC<LibraryViewProps> = memo(
 
 
 
-    // Авто-фокус на элементе библиотеки при переходе во вкладку (если фокус не на табах)
+    // Авто-фокус на элементе библиотеки при переходе во вкладку
     useEffect(() => {
       let cancelled = false;
       const focusLib = () => {
         if (cancelled) return true;
         const root = rootRef.current;
         const doc = getActiveDocument(root);
-        const active = doc?.activeElement;
-        const inTabs = !!(
-          active &&
-          (active.classList?.contains("projacktor-tab-item") ||
-            doc?.querySelector(".projacktor-nav-bar")?.contains(active))
-        );
-        if (inTabs) return true;
 
         const target = root
           ? root.querySelector<HTMLElement>(

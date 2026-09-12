@@ -84,20 +84,13 @@ export const SettingsView: FC = memo(() => {
     };
   }, []);
 
-  // Авто-фокус на первом интерактивном элементе при переходе в настройки (если фокус не на табах)
+  // Авто-фокус на первом интерактивном элементе при переходе в настройки
   useEffect(() => {
     let cancelled = false;
     const focusSett = () => {
       if (cancelled) return true;
       const root = rootRef.current;
       const doc = getActiveDocument(root);
-      const active = doc?.activeElement;
-      const inTabs = !!(
-        active &&
-        (active.classList?.contains("projacktor-tab-item") ||
-          doc?.querySelector(".projacktor-nav-bar")?.contains(active))
-      );
-      if (inTabs) return true;
 
       const firstInteractive = root
         ? root.querySelector<HTMLElement>(
@@ -106,7 +99,9 @@ export const SettingsView: FC = memo(() => {
         : null;
       if (firstInteractive) {
         try {
+          doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
           firstInteractive.focus();
+          firstInteractive.classList.add("gpfocus");
         } catch {}
         return true;
       }
@@ -201,6 +196,23 @@ export const SettingsView: FC = memo(() => {
       flow-children="vertical"
       noFocusRing
       className="projacktor-content"
+      onGamepadDirection={(evt: any) => {
+        const btn = evt?.detail?.button;
+        if (btn === 9) {
+          // DPAD_UP: блокируем переход вверх, если фокус в первом блоке настроек
+          const doc = getActiveDocument(rootRef.current);
+          const active = doc?.activeElement;
+          const firstSection = rootRef.current?.querySelector(".PanelSectionRow, [flow-children='row']");
+          if (active && firstSection && (firstSection === active || firstSection.contains(active))) {
+            try {
+              evt?.preventDefault?.();
+              evt?.stopPropagation?.();
+            } catch {}
+            return false;
+          }
+        }
+        return undefined;
+      }}
       style={{
         width: "100%",
         padding: "12px 36px 24px 36px",

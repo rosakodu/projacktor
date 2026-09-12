@@ -162,34 +162,12 @@ export const PROJACKTOR_STYLES = `
   flex-shrink: 0 !important;
 }
 
-.projacktor-tab-item:hover,
-.projacktor-tab-item:focus,
-.projacktor-tab-item.gpfocus,
-.projacktor-tab-item.gpfocuswithin,
-.projacktor-tab-item:focus-visible {
+.projacktor-tab-item:hover {
   color: #ffffff !important;
   background: transparent !important;
-  outline: none !important;
-  box-shadow: none !important;
 }
 
 .projacktor-tab-item.active {
-  color: #ffffff !important;
-  font-weight: 600 !important;
-  background: transparent !important;
-  border-top: none !important;
-  border-left: none !important;
-  border-right: none !important;
-  border-bottom: 3px solid #1a9fff !important;
-  margin: 0 !important;
-  outline: none !important;
-  box-shadow: none !important;
-}
-
-.projacktor-tab-item.active:focus,
-.projacktor-tab-item.active.gpfocus,
-.projacktor-tab-item.active.gpfocuswithin,
-.projacktor-tab-item.active:focus-visible {
   color: #ffffff !important;
   font-weight: 600 !important;
   background: transparent !important;

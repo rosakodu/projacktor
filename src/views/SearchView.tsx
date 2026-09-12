@@ -15,27 +15,22 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
   const [searchResults, setSearchResults] = useState<MediaItem[]>([]);
   const [searchLoading, setSearchLoading] = useState<boolean>(false);
 
-  // Авто-фокус на поле ввода при переходе в поиск (если фокус не на табах)
+  // Авто-фокус на поле ввода при переходе в поиск
   useEffect(() => {
     let cancelled = false;
     const focusSearch = () => {
       if (cancelled) return true;
       const root = rootRef.current;
       const doc = getActiveDocument(root);
-      const active = doc?.activeElement;
-      const inTabs = !!(
-        active &&
-        (active.classList?.contains("projacktor-tab-item") ||
-          doc?.querySelector(".projacktor-nav-bar")?.contains(active))
-      );
-      if (inTabs) return true;
 
       const input = root
         ? root.querySelector<HTMLElement>("input, button, .ds-btn")
         : null;
       if (input) {
         try {
+          doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
           input.focus();
+          input.classList.add("gpfocus");
         } catch {}
         return true;
       }
@@ -85,6 +80,23 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
       flow-children="vertical"
       noFocusRing
       className="projacktor-content"
+      onGamepadDirection={(evt: any) => {
+        const btn = evt?.detail?.button;
+        if (btn === 9) {
+          // DPAD_UP: блокируем переход вверх на вкладки из поиска
+          const doc = getActiveDocument(rootRef.current);
+          const active = doc?.activeElement;
+          const searchBar = rootRef.current?.querySelector("form, input, .ds-btn--primary");
+          if (active && searchBar && (searchBar === active || searchBar.contains(active))) {
+            try {
+              evt?.preventDefault?.();
+              evt?.stopPropagation?.();
+            } catch {}
+            return false;
+          }
+        }
+        return undefined;
+      }}
     >
       <Focusable
         noFocusRing

@@ -67,7 +67,7 @@ function restoreFocus(): void {
         for (const w of wins) {
           try {
             const target = w.document?.querySelector<HTMLElement>(
-              ".projacktor-lib-card, .projacktor-tab-item.active, .projacktor-card, .projacktor-magicblack-btn, [tabindex=\"0\"], button"
+              ".projacktor-lib-card, .projacktor-card, .projacktor-dl-poster-btn, .projacktor-magicblack-btn, [tabindex=\"0\"], button"
             );
             if (target) {
               target.focus?.();

@@ -54,16 +54,6 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
       lastSectionChangeAtRef.current = now;
 
       if (!hasPrevSection) {
-        const doc = getActiveDocument(rowRef.current);
-        const activeTabEl = doc?.querySelector<HTMLElement>(
-          ".projacktor-tab-item.active, [role='tab'][aria-selected='true']"
-        );
-        if (activeTabEl) {
-          playNavSound();
-          doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-          activeTabEl.focus();
-          activeTabEl.classList.add("gpfocus");
-        }
         return;
       }
       if (onPrevSection) {

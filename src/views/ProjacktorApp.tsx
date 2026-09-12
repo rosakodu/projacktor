@@ -127,7 +127,7 @@ export const ProjacktorApp: FC = () => {
     });
   }, []);
 
-  // Гарантированная фокусировка при переключении вкладок или потере фокуса
+  // Гарантированная фокусировка на контенте активного раздела при переключении вкладок или потере фокуса
   const ensureContentFocus = useCallback((forceContent = false) => {
     if (!ready) return false;
     const root = rootRef.current;
@@ -136,27 +136,10 @@ export const ProjacktorApp: FC = () => {
     const doc = getActiveDocument(root);
     const active = doc?.activeElement;
 
-    // Проверяем, находится ли фокус на конкретной вкладке
-    const isTabItemActive = !!(active && active.classList?.contains("projacktor-tab-item"));
-    if (isTabItemActive && !forceContent) {
-      // Пользователь осознанно перемещается по табам — не сбиваем его фокус!
-      return true;
-    }
-
-    const isNavActive = !!(
-      active && root.querySelector(".projacktor-nav-bar")?.contains(active)
-    );
-
-    // Если фокус на панели вкладок (например, на pill L1/R1) и не форсирован уход вниз — фокусируем активный таб
-    if (isNavActive && !forceContent) {
-      const activeTabEl = root.querySelector<HTMLElement>(
-        ".projacktor-tab-item.active, [role='tab'][aria-selected='true']"
-      );
-      if (activeTabEl && activeTabEl !== active) {
-        doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-        activeTabEl.focus();
-        activeTabEl.classList.add("gpfocus");
-      }
+    // Проверяем, находится ли фокус внутри контента вкладки
+    const container = root.querySelector(".projacktor-view-container");
+    const isInsideContent = !!(active && container && container.contains(active));
+    if (isInsideContent && !forceContent) {
       return true;
     }
 
@@ -176,17 +159,11 @@ export const ProjacktorApp: FC = () => {
       );
     } else if (activeTab === "library") {
       target = root.querySelector<HTMLElement>(
-        ".projacktor-library-content .projacktor-dl-poster-btn, .projacktor-library-content .projacktor-dl-btn-play, .projacktor-library-content .projacktor-empty-lib"
+        ".projacktor-library-content .projacktor-dl-poster-btn, .projacktor-library-content .projacktor-dl-btn-play, .projacktor-empty-lib"
       );
     } else if (activeTab === "settings") {
       target = root.querySelector<HTMLElement>(
         ".projacktor-content input, .projacktor-content button, .projacktor-content .DialogButton, .projacktor-content [tabindex='0']"
-      );
-    }
-
-    if (!target) {
-      target = root.querySelector<HTMLElement>(
-        ".projacktor-tab-item.active, [role='tab'][aria-selected='true']"
       );
     }
 
@@ -202,10 +179,10 @@ export const ProjacktorApp: FC = () => {
   }, [activeTab, ready]);
 
   useEffect(() => {
-    ensureContentFocus(false);
-    const t1 = setTimeout(() => ensureContentFocus(false), 40);
-    const t2 = setTimeout(() => ensureContentFocus(false), 120);
-    const t3 = setTimeout(() => ensureContentFocus(false), 250);
+    ensureContentFocus(true);
+    const t1 = setTimeout(() => ensureContentFocus(true), 40);
+    const t2 = setTimeout(() => ensureContentFocus(true), 120);
+    const t3 = setTimeout(() => ensureContentFocus(true), 250);
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
