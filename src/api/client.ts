@@ -192,8 +192,7 @@ function isTvRelease(title: string): boolean {
     /\b\d+\s*[xX]\s*\d+\b/i,
     /(?:^|[^\p{L}\p{N}])(сезон|сезона|сезоны|сезонов|сери[яий]|серия|серии|серий|эпизод|эпизоды|мини[- ]?сериал|сериал)(?:$|[^\p{L}\p{N}])/iu,
     /\b\d+\s*из\s*\d+\b/i,
-    /\[\s*\d+[\s_-]+\d+\s*\]/,
-    /\(\s*\d+[\s_-]+\d+\s*\)/,
+    /(?:\[|\()\s*(?!\d{4})\d{1,3}\s*[\s_-]+\s*(?!\d{4})\d{1,3}\s*(?:\]|\))/,
     /\[\s*(?:TV|ТВ|OVA|OAD|Special|Спешл)\b/i,
     /\b(?:s\d+|season\s*\d+)\b/i,
   ];
@@ -268,6 +267,37 @@ function filterTorrents(
 
 const hasCJK = (str: string) => /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f\uac00-\ud7af]/.test(str);
 
+export function parseQuality(title: string, existingQuality?: string): string {
+  const t = (title || "").toLowerCase();
+  const isTs = /\b(telesync|tsrip|hdts|hd-ts)\b|(?:\s|^|[\[\(/])ts(?:\s|$|[\]\)/])/i.test(t);
+  const isCam = /\b(camrip|hdcam)\b|(?:\s|^|[\[\(/])cam(?:\s|$|[\]\)/])/i.test(t);
+  const isTc = /\b(telecine)\b|(?:\s|^|[\[\(/])tc(?:\s|$|[\]\)/])/i.test(t);
+
+  let res = "";
+  if (t.includes("2160p") || t.includes("4k") || t.includes("uhd")) res = "4K";
+  else if (t.includes("1080p") || t.includes("fhd")) res = "1080p";
+  else if (t.includes("720p") || t.includes("hd")) res = "720p";
+
+  if (isTs) return res ? `TS ${res}` : "TS";
+  if (isCam) return res ? `CAM ${res}` : "CAM";
+  if (isTc) return res ? `TC ${res}` : "TC";
+
+  if (existingQuality && existingQuality.trim()) {
+    const eq = existingQuality.trim();
+    if (!eq.toLowerCase().startsWith("http")) {
+      return eq;
+    }
+  }
+
+  if (res) return res;
+  if (t.includes("web-dl") || t.includes("webrip")) return "WEB-DL";
+  if (t.includes("bdrip") || t.includes("bdremux") || t.includes("bluray")) return "BDRip";
+  if (t.includes("hdrip")) return "HDRip";
+  if (t.includes("dvd")) return "DVD";
+
+  return "";
+}
+
 export async function searchTorrents(
   title: string,
   year?: string,
@@ -292,8 +322,19 @@ export async function searchTorrents(
 
     const queries = new Set<string>();
     queries.add(cleanTitle);
+
+    const hasOriginal = originalTitle && originalTitle.trim() && originalTitle.toLowerCase() !== cleanTitle.toLowerCase();
+    let cleanOrig = "";
+    if (hasOriginal && !hasCJK(originalTitle)) {
+      cleanOrig = originalTitle.replace(/[№#]/g, " ").replace(/\s+/g, " ").trim();
+      queries.add(cleanOrig);
+    }
+
     if (year) {
       queries.add(`${cleanTitle} ${year}`);
+      if (cleanOrig) {
+        queries.add(`${cleanOrig} ${year}`);
+      }
     }
 
     const colonIdx = cleanTitle.indexOf(":");
@@ -304,17 +345,7 @@ export async function searchTorrents(
       }
     }
 
-    if (originalTitle && originalTitle.trim() && originalTitle.toLowerCase() !== cleanTitle.toLowerCase()) {
-      if (!hasCJK(originalTitle)) {
-        const cleanOrig = originalTitle.replace(/[№#]/g, " ").replace(/\s+/g, " ").trim();
-        queries.add(cleanOrig);
-        if (year) {
-          queries.add(`${cleanOrig} ${year}`);
-        }
-      }
-    }
-
-    const queryList = Array.from(queries).slice(0, 3);
+    const queryList = Array.from(queries).slice(0, 5);
     const results = await Promise.allSettled(
       queryList.map((q) => fetchQ(q))
     );
@@ -328,7 +359,7 @@ export async function searchTorrents(
 
     if (rawCandidates.length === 0) {
       const fallbackResults = await Promise.allSettled(
-        queryList.slice(0, 2).map((q) => fetchQ(q, ""))
+        queryList.slice(0, 3).map((q) => fetchQ(q, ""))
       );
       for (const r of fallbackResults) {
         if (r.status === "fulfilled" && Array.isArray(r.value)) {
@@ -351,7 +382,7 @@ export async function searchTorrents(
         seeds: t.seeds ?? t.seeders ?? 0,
         peers: t.peers ?? 0,
         size: typeof t.size === "number" ? formatBytes(t.size) : t.size,
-        quality: t.quality || "",
+        quality: parseQuality(t.title || "", t.quality),
       });
     }
 

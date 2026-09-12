@@ -602,14 +602,10 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
               >
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 600, color: "#fff", marginBottom: 3 }}>
-                    {year && parseInt(year, 10) >= 2025
-                      ? "Раздач пока нет в сети"
-                      : "Раздач не найдено"}
+                    Раздач пока нет в сети
                   </div>
-                  <div>
-                    {year && parseInt(year, 10) >= 2025
-                      ? `Релиз (${year}) ещё не вышел в цифровом качестве.`
-                      : "Для данного релиза не найдено подходящих раздач на трекерах."}
+                  <div style={{ color: "rgba(255, 255, 255, 0.6)" }}>
+                    Для данного релиза не найдено подходящих раздач на трекерах (включая TS и цифровые релизы).
                   </div>
                 </div>
                 {closeModal && (
@@ -633,6 +629,11 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                   const episodes = episodesMap[tId] || [];
                   const isEpLoading = !!loadingEpisodesMap[tId];
                   const primaryTracker = tor.tracker ? tor.tracker.split(",")[0].trim() : "";
+                  const isScreener =
+                    tor.quality &&
+                    (tor.quality.startsWith("TS") ||
+                      tor.quality.startsWith("CAM") ||
+                      tor.quality.startsWith("TC"));
 
                   return (
                     <div key={tId || `${tor.tracker}-${idx}`} className="projacktor-torrent-card">
@@ -642,7 +643,15 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                             {tor.title}
                           </div>
                           <div className="projacktor-torrent-meta">
-                            {tor.quality && <span className="projacktor-badge-quality">{tor.quality}</span>}
+                            {tor.quality && (
+                              <span
+                                className={`projacktor-badge-quality ${
+                                  isScreener ? "projacktor-badge-quality--screener" : ""
+                                }`}
+                              >
+                                {tor.quality}
+                              </span>
+                            )}
                             {tor.size && <span style={{ fontWeight: 600, color: "#fff" }}>{tor.size}</span>}
                             <span className="projacktor-torrent-seeds">↑ {tor.seeds}</span>
                             <span className="projacktor-torrent-peers">↓ {tor.peers}</span>

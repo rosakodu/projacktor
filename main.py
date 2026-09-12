@@ -1614,12 +1614,32 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                     peers = item.get("Peers") or item.get("peers") or item.get("pir") or 0
                     magnet = item.get("MagnetUri") or item.get("magnet") or item.get("Link") or item.get("link") or ""
                     tracker = item.get("Tracker") or item.get("tracker") or "tracker"
-                    # Auto-detect quality from title
+                    # Auto-detect quality from title (including TS, TeleSync, TC, CAM, WEB-DL, BDRip, etc.)
                     quality = ""
-                    for qk in ["2160p", "4K", "1080p", "720p", "HDRip", "BDRip", "WEB-DL", "WEBRip"]:
-                        if qk.lower() in title.lower():
-                            quality = qk
+                    title_l = title.lower()
+                    is_ts = bool(re.search(r'\b(telesync|tsrip|hdts|hd-ts)\b|(?:\s|^|[\[\(/])ts(?:\s|$|[\]\)/])', title_l))
+                    is_cam = bool(re.search(r'\b(camrip|hdcam)\b|(?:\s|^|[\[\(/])cam(?:\s|$|[\]\)/])', title_l))
+                    is_tc = bool(re.search(r'\b(telecine)\b|(?:\s|^|[\[\(/])tc(?:\s|$|[\]\)/])', title_l))
+
+                    res = ""
+                    for rk in ["2160p", "4K", "1080p", "720p"]:
+                        if rk.lower() in title_l:
+                            res = rk
                             break
+
+                    if is_ts:
+                        quality = f"TS {res}".strip()
+                    elif is_cam:
+                        quality = f"CAM {res}".strip()
+                    elif is_tc:
+                        quality = f"TC {res}".strip()
+                    elif res:
+                        quality = res
+                    else:
+                        for qk in ["HDRip", "BDRip", "BDRemux", "BluRay", "WEB-DL", "WEBRip", "DVDRip"]:
+                            if qk.lower() in title_l:
+                                quality = qk
+                                break
                             
                     details = item.get("Details") or item.get("details") or item.get("url") or ""
                     s_count = int(seeders) if str(seeders).isdigit() else 0

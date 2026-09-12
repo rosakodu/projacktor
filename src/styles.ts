@@ -1485,6 +1485,12 @@ div:has(> .projacktor-modal-root) {
   letter-spacing: 0.2px;
 }
 
+.projacktor-badge-quality--screener {
+  background: rgba(234, 138, 0, 0.28) !important;
+  color: #ffb84d !important;
+  border: 1px solid rgba(234, 138, 0, 0.5) !important;
+}
+
 /* ───── Fixed Size Action Icon Buttons (Strict 30x30 and 26x26) ───── */
 .projacktor-torrent-actions {
   display: flex !important;
