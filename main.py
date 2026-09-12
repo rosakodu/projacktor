@@ -30,6 +30,7 @@ import traceback
 import hashlib
 import asyncio
 import secrets
+from datetime import datetime
 
 # Импорт Decky Loader API
 try:
@@ -158,19 +159,77 @@ def init_db():
         cached_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (tmdb_id, image_type)
     );
+
+    CREATE TABLE IF NOT EXISTS watchlist (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tmdb_id INTEGER UNIQUE,
+        media_type TEXT NOT NULL DEFAULT 'movie',
+        title TEXT NOT NULL,
+        original_title TEXT,
+        year TEXT,
+        overview TEXT,
+        poster_path TEXT,
+        backdrop_path TEXT,
+        vote_average REAL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_watchlist_tmdb_id ON watchlist(tmdb_id);
+
     CREATE TABLE IF NOT EXISTS watch_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
-        file_id INTEGER REFERENCES media_files(id),
-        watched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        duration INTEGER DEFAULT 0
+        tmdb_id INTEGER,
+        title TEXT NOT NULL,
+        original_title TEXT,
+        media_type TEXT DEFAULT 'movie',
+        year TEXT,
+        poster_path TEXT,
+        backdrop_path TEXT,
+        overview TEXT,
+        file_path TEXT,
+        stream_url TEXT,
+        torrent_hash TEXT,
+        is_online BOOLEAN DEFAULT 0,
+        episode_name TEXT,
+        season_number INTEGER,
+        episode_number INTEGER,
+        current_time REAL DEFAULT 0,
+        duration REAL DEFAULT 0,
+        progress REAL DEFAULT 0,
+        watched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE INDEX IF NOT EXISTS idx_watch_history_watched_at ON watch_history(watched_at DESC);
 
     CREATE INDEX IF NOT EXISTS idx_media_files_media_id ON media_files(media_id);
     CREATE INDEX IF NOT EXISTS idx_downloads_media_id ON downloads(media_id);
     CREATE INDEX IF NOT EXISTS idx_downloads_aria2_gid ON downloads(aria2_gid);
     CREATE INDEX IF NOT EXISTS idx_downloads_status ON downloads(status);
     ''')
+
+    # Safe migrations for watch_history table if it already existed with old schema
+    for col, col_type in [
+        ("tmdb_id", "INTEGER"),
+        ("title", "TEXT"),
+        ("original_title", "TEXT"),
+        ("media_type", "TEXT DEFAULT 'movie'"),
+        ("year", "TEXT"),
+        ("poster_path", "TEXT"),
+        ("backdrop_path", "TEXT"),
+        ("overview", "TEXT"),
+        ("file_path", "TEXT"),
+        ("stream_url", "TEXT"),
+        ("torrent_hash", "TEXT"),
+        ("is_online", "BOOLEAN DEFAULT 0"),
+        ("episode_name", "TEXT"),
+        ("season_number", "INTEGER"),
+        ("episode_number", "INTEGER"),
+        ("current_time", "REAL DEFAULT 0"),
+        ("duration", "REAL DEFAULT 0"),
+        ("progress", "REAL DEFAULT 0"),
+    ]:
+        try:
+            cursor.execute(f"ALTER TABLE watch_history ADD COLUMN {col} {col_type}")
+        except sqlite3.OperationalError:
+            pass
 
     # Safe migrations for media table to support in-library management
     for col, col_type in [
@@ -2195,6 +2254,195 @@ class Plugin:
         except: pass
         return "ru"
 
+    async def get_watchlist(self):
+        db = get_db()
+        try:
+            rows = db.execute("SELECT * FROM watchlist ORDER BY id DESC").fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            db.close()
+
+    async def add_to_watchlist(self, data: str):
+        try:
+            body = json.loads(data) if isinstance(data, str) else data
+            tmdb_id = body.get('tmdb_id') or body.get('id')
+            if not tmdb_id:
+                return {"success": False, "error": "tmdb_id is required"}
+            title = body.get('title') or body.get('name') or "Без названия"
+            original_title = body.get('original_title') or body.get('original_name') or ""
+            media_type = body.get('media_type') or "movie"
+            year = str(body.get('year') or body.get('release_date') or body.get('first_air_date') or "")[:4]
+            overview = body.get('overview') or ""
+            poster_path = body.get('poster_path') or ""
+            backdrop_path = body.get('backdrop_path') or ""
+            vote_average = float(body.get('vote_average') or 0)
+
+            db = get_db()
+            try:
+                db.execute("""
+                    INSERT INTO watchlist (tmdb_id, media_type, title, original_title, year, overview, poster_path, backdrop_path, vote_average)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(tmdb_id) DO UPDATE SET
+                        title=excluded.title,
+                        original_title=excluded.original_title,
+                        media_type=excluded.media_type,
+                        year=excluded.year,
+                        overview=excluded.overview,
+                        poster_path=excluded.poster_path,
+                        backdrop_path=excluded.backdrop_path,
+                        vote_average=excluded.vote_average
+                """, (tmdb_id, media_type, title, original_title, year, overview, poster_path, backdrop_path, vote_average))
+                db.commit()
+                return {"success": True}
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Plugin add_to_watchlist error: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def remove_from_watchlist(self, tmdb_id: int):
+        try:
+            db = get_db()
+            try:
+                db.execute("DELETE FROM watchlist WHERE tmdb_id=?", (tmdb_id,))
+                db.commit()
+                return True
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Plugin remove_from_watchlist error: {e}")
+            return False
+
+    async def is_in_watchlist(self, tmdb_id: int):
+        try:
+            db = get_db()
+            try:
+                row = db.execute("SELECT id FROM watchlist WHERE tmdb_id=?", (tmdb_id,)).fetchone()
+                return bool(row)
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Plugin is_in_watchlist error: {e}")
+            return False
+
+    async def get_watch_history(self):
+        db = get_db()
+        try:
+            rows = db.execute("SELECT * FROM watch_history ORDER BY watched_at DESC LIMIT 100").fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            db.close()
+
+    async def save_watch_progress(self, data: str):
+        try:
+            body = json.loads(data) if isinstance(data, str) else data
+            title = (body.get('title') or '').strip()
+            if not title:
+                return False
+
+            clean_title = re.sub(r'\s*\(Онлайн\)\s*', '', title, flags=re.I).strip()
+            tmdb_id = body.get('tmdb_id')
+            original_title = body.get('original_title') or ""
+            media_type = body.get('media_type') or "movie"
+            year = str(body.get('year') or "")[:4]
+            poster_path = body.get('poster_path') or ""
+            backdrop_path = body.get('backdrop_path') or ""
+            overview = body.get('overview') or ""
+            file_path = body.get('file_path') or ""
+            stream_url = body.get('stream_url') or ""
+            torrent_hash = body.get('torrent_hash') or ""
+            is_online = 1 if body.get('is_online') else 0
+            episode_name = (body.get('episode_name') or '').strip()
+            season_number = body.get('season_number')
+            episode_number = body.get('episode_number')
+            current_time = float(body.get('current_time') or 0)
+            duration = float(body.get('duration') or 0)
+            progress = round((current_time / duration * 100), 1) if duration > 0 else 0
+
+            # Не сохраняем случайные кратковременные клики менее 10 секунд
+            if current_time < 10 and progress < 1:
+                return True
+
+            db = get_db()
+            try:
+                # Ищем запись по названию и серии
+                existing = None
+                if episode_name:
+                    existing = db.execute(
+                        "SELECT id FROM watch_history WHERE title=? AND episode_name=?",
+                        (clean_title, episode_name)
+                    ).fetchone()
+                else:
+                    existing = db.execute(
+                        "SELECT id FROM watch_history WHERE title=? AND (episode_name IS NULL OR episode_name='')",
+                        (clean_title,)
+                    ).fetchone()
+
+                now_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                if existing:
+                    db.execute("""
+                        UPDATE watch_history
+                        SET current_time=?, duration=?, progress=?, watched_at=?,
+                            file_path=COALESCE(NULLIF(?, ''), file_path),
+                            stream_url=COALESCE(NULLIF(?, ''), stream_url),
+                            torrent_hash=COALESCE(NULLIF(?, ''), torrent_hash),
+                            is_online=?,
+                            poster_path=COALESCE(NULLIF(?, ''), poster_path),
+                            backdrop_path=COALESCE(NULLIF(?, ''), backdrop_path),
+                            tmdb_id=COALESCE(?, tmdb_id)
+                        WHERE id=?
+                    """, (current_time, duration, progress, now_ts,
+                          file_path, stream_url, torrent_hash, is_online,
+                          poster_path, backdrop_path, tmdb_id, existing['id']))
+                else:
+                    db.execute("""
+                        INSERT INTO watch_history (
+                            tmdb_id, title, original_title, media_type, year,
+                            poster_path, backdrop_path, overview,
+                            file_path, stream_url, torrent_hash, is_online,
+                            episode_name, season_number, episode_number,
+                            current_time, duration, progress, watched_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (tmdb_id, clean_title, original_title, media_type, year,
+                          poster_path, backdrop_path, overview,
+                          file_path, stream_url, torrent_hash, is_online,
+                          episode_name, season_number, episode_number,
+                          current_time, duration, progress, now_ts))
+                db.commit()
+                return True
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Plugin save_watch_progress error: {e}")
+            return False
+
+    async def delete_watch_history_item(self, item_id: int):
+        try:
+            db = get_db()
+            try:
+                db.execute("DELETE FROM watch_history WHERE id=?", (item_id,))
+                db.commit()
+                return True
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Plugin delete_watch_history_item error: {e}")
+            return False
+
+    async def clear_watch_history(self):
+        try:
+            db = get_db()
+            try:
+                db.execute("DELETE FROM watch_history")
+                db.commit()
+                return True
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Plugin clear_watch_history error: {e}")
+            return False
+
     async def get_downloads(self):
         db = get_db()
         try:
@@ -2208,6 +2456,8 @@ class Plugin:
                        m.overview
                 FROM downloads d
                 LEFT JOIN media m ON d.media_id = m.id
+                WHERE d.status IN ('downloading', 'paused', 'queued', 'seeding', 'completed', 'error')
+                  AND (d.downloaded_size > 0 OR (d.aria2_gid IS NOT NULL AND d.aria2_gid != '') OR d.status != 'queued')
                 ORDER BY d.id DESC
             """).fetchall()
             return [dict(row) for row in dls]

@@ -1,19 +1,24 @@
 import { FC, useState, useEffect, useRef, useCallback } from "react";
 import { ModalRoot, Focusable, Spinner } from "@decky/ui";
-import { FaPlay, FaDownload, FaList, FaSpinner, FaMoon } from "react-icons/fa";
+import { FaPlay, FaDownload, FaList, FaSpinner, FaMoon, FaBookmark, FaCheck } from "react-icons/fa";
 import { PROJACKTOR_STYLES } from "../styles";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
 import { getActiveDocument } from "../runtime/activeDoc";
+import { playNavSound } from "../runtime/navSound";
 import {
   MediaItem,
   TorrentItem,
   EpisodeItem,
+  PlayerMediaInfo,
   searchTorrents,
   rpcAddToLibrary,
   rpcStartDownload,
   rpcPrepareStream,
   rpcGetEpisodes,
   rpcDownloadEpisode,
+  rpcAddToWatchlist,
+  rpcRemoveFromWatchlist,
+  rpcIsInWatchlist,
   formatBytes,
   sortEpisodes,
 } from "../api";
@@ -21,7 +26,13 @@ import {
 interface MovieModalProps {
   movie: MediaItem;
   closeModal?: () => void;
-  onWatchOnline?: (filePath: string, title: string, torrentHash?: string, isOnline?: boolean) => void;
+  onWatchOnline?: (
+    filePath: string,
+    title: string,
+    torrentHash?: string,
+    isOnline?: boolean,
+    mediaInfo?: PlayerMediaInfo
+  ) => void;
   onStartMagicBlack?: () => void;
 }
 
@@ -107,6 +118,57 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
   const date = movie.release_date || movie.first_air_date || "";
   const year = date ? String(date).split("-")[0] : "";
   const rating = movie.vote_average ? movie.vote_average.toFixed(1) : null;
+
+  const [inWatchlist, setInWatchlist] = useState<boolean>(false);
+  const [watchlistLoading, setWatchlistLoading] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (movie.id) {
+      rpcIsInWatchlist(movie.id).then((inList) => setInWatchlist(!!inList)).catch(() => {});
+    }
+  }, [movie.id]);
+
+  const handleToggleWatchlist = useCallback(async () => {
+    if (watchlistLoading || !movie.id) return;
+    setWatchlistLoading(true);
+    playNavSound();
+    try {
+      if (inWatchlist) {
+        await rpcRemoveFromWatchlist(movie.id);
+        setInWatchlist(false);
+      } else {
+        await rpcAddToWatchlist(
+          JSON.stringify({
+            tmdb_id: movie.id,
+            title,
+            original_title: origTitle,
+            media_type: movie.media_type || "movie",
+            year,
+            overview: movie.overview || "",
+            poster_path: movie.poster_path || "",
+            backdrop_path: movie.backdrop_path || "",
+            vote_average: movie.vote_average || 0,
+          })
+        );
+        setInWatchlist(true);
+      }
+    } catch (err) {
+      console.error("Failed to toggle watchlist:", err);
+    } finally {
+      setWatchlistLoading(false);
+    }
+  }, [watchlistLoading, movie, inWatchlist, title, origTitle, year]);
+
+  const currentMediaInfo: PlayerMediaInfo = {
+    tmdbId: movie.id,
+    title,
+    originalTitle: origTitle,
+    mediaType: (movie.media_type as any) || "movie",
+    year,
+    posterPath: movie.poster_path,
+    backdropPath: movie.backdrop_path,
+    overview: movie.overview,
+  };
 
   useEffect(() => {
     let active = true;
@@ -207,7 +269,8 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
             streamRes.stream_url || streamRes.file_path!,
             streamRes.title || title,
             streamRes.torrent_hash,
-            isOnline
+            isOnline,
+            currentMediaInfo
           );
         }
       } else {
@@ -300,7 +363,12 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
             res.stream_url || res.file_path!,
             res.title || `${title} - ${ep.name}`,
             res.torrent_hash,
-            isOnline
+            isOnline,
+            {
+              ...currentMediaInfo,
+              episodeName: ep.name,
+              episodeNumber: ep.index,
+            }
           );
         }
       } else {
@@ -444,6 +512,35 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
               </div>
             )}
           </div>
+
+          {/* Кнопка добавления в фильмотеку */}
+          <Focusable
+            className={`ds-btn projacktor-watchlist-btn ${inWatchlist ? "active" : ""}`}
+            noFocusRing
+            tabIndex={0}
+            onClick={handleToggleWatchlist}
+            onActivate={handleToggleWatchlist}
+            title={inWatchlist ? "Удалить из фильмотеки" : "Добавить в фильмотеку"}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "6px 12px",
+              fontSize: 11,
+              fontWeight: 600,
+              borderRadius: 6,
+              cursor: "pointer",
+              flexShrink: 0,
+              alignSelf: "flex-start",
+              background: inWatchlist ? "rgba(34, 197, 94, 0.2)" : "rgba(255, 255, 255, 0.08)",
+              border: inWatchlist ? "1px solid rgba(34, 197, 94, 0.4)" : "1px solid rgba(255, 255, 255, 0.15)",
+              color: inWatchlist ? "#4ade80" : "#fff",
+              transition: "all 0.15s ease",
+            }}
+          >
+            {inWatchlist ? <FaCheck size={10} /> : <FaBookmark size={10} />}
+            <span>{inWatchlist ? "В фильмотеке" : "В фильмотеку"}</span>
+          </Focusable>
         </div>
 
         {/* Torrents Section */}

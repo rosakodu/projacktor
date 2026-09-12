@@ -88,6 +88,57 @@ export interface EpisodeItem {
   downloaded: boolean;
 }
 
+export interface WatchlistItem {
+  id?: number;
+  tmdb_id: number;
+  media_type: "movie" | "tv";
+  title: string;
+  original_title?: string;
+  year?: string;
+  overview?: string;
+  poster_path?: string | null;
+  backdrop_path?: string | null;
+  vote_average?: number;
+  created_at?: string;
+}
+
+export interface WatchHistoryItem {
+  id: number;
+  tmdb_id?: number;
+  title: string;
+  original_title?: string;
+  media_type: "movie" | "tv";
+  year?: string;
+  poster_path?: string | null;
+  backdrop_path?: string | null;
+  overview?: string;
+  file_path?: string;
+  stream_url?: string;
+  torrent_hash?: string;
+  is_online: number | boolean;
+  episode_name?: string;
+  season_number?: number;
+  episode_number?: number;
+  current_time: number;
+  duration: number;
+  progress: number;
+  watched_at: string;
+}
+
+export interface PlayerMediaInfo {
+  tmdbId?: number;
+  title: string;
+  originalTitle?: string;
+  mediaType?: "movie" | "tv";
+  year?: string;
+  posterPath?: string | null;
+  backdropPath?: string | null;
+  overview?: string;
+  episodeName?: string;
+  seasonNumber?: number;
+  episodeNumber?: number;
+}
+
 export type CatalogCategory = "movie" | "tv" | "cartoon" | "anime";
 
 export type TabId =
@@ -96,6 +147,8 @@ export type TabId =
   | "cartoons"
   | "anime"
   | "search"
+  | "watchlist"
+  | "history"
   | "library"
   | "settings";
 
@@ -105,3 +158,4 @@ export interface SectorConfig {
   key: SectorKey;
   title: string;
 }
+

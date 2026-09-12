@@ -1900,5 +1900,51 @@ body.projacktor-magicblack-active [class*="_3FIjYetykQsFYR08l1v7Ls"] {
   border-radius: 0px !important;
   background: rgba(255, 255, 255, 0.12) !important;
 }
+
+/* ───── Section Header Rows (Фильмотека / Просмотрено / Загрузки) ───── */
+.projacktor-section-header-row {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 8px 52px 4px 52px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  flex-shrink: 0 !important;
+  user-select: none !important;
+}
+
+.projacktor-section-title {
+  font-size: 17px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.2px !important;
+  color: #ffffff !important;
+}
+
+.projacktor-watchlist-btn {
+  transition: all 0.15s ease !important;
+}
+
+.projacktor-watchlist-btn:hover,
+.projacktor-watchlist-btn:focus,
+.projacktor-watchlist-btn.gpfocus {
+  background: rgba(255, 255, 255, 0.2) !important;
+  border-color: #ffffff !important;
+  color: #ffffff !important;
+}
+
+.projacktor-watchlist-btn.active:hover,
+.projacktor-watchlist-btn.active:focus,
+.projacktor-watchlist-btn.active.gpfocus {
+  background: rgba(34, 197, 94, 0.35) !important;
+  border-color: #4ade80 !important;
+  color: #ffffff !important;
+}
+
+.projacktor-clear-hist-btn:hover,
+.projacktor-clear-hist-btn:focus,
+.projacktor-clear-hist-btn.gpfocus {
+  background: rgba(239, 68, 68, 0.2) !important;
+  color: #ef4444 !important;
+}
 `;
 

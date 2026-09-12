@@ -7,6 +7,7 @@ import { getActiveDocument } from "../runtime/activeDoc";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
 import { isModalOpen } from "../runtime/homeInputBus";
 import { playNavSound } from "../runtime/navSound";
+import { setBackdropMovie } from "../runtime/backdropBus";
 
 interface SearchViewProps {
   onSelectMovie: (movie: MediaItem) => void;
@@ -23,6 +24,9 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
     const now = Date.now();
     if (now - lastNavAtRef.current < 100) return;
     lastNavAtRef.current = now;
+
+    // Сбрасываем фон фильма на чистый темный фон поиска
+    setBackdropMovie(null);
 
     const root = rootRef.current;
     if (!root) return;
@@ -61,8 +65,16 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
         firstCard.focus();
         firstCard.classList.add("gpfocus");
         playNavSound();
+        if (searchResults.length > 0) {
+          setBackdropMovie(searchResults[0]);
+        }
       } catch {}
     }
+  }, [searchResults]);
+
+  // Сброс фона на чистый темный при монтировании вкладки поиска
+  useEffect(() => {
+    setBackdropMovie(null, true);
   }, []);
 
   // Авто-фокус на поле ввода при переходе в поиск
@@ -106,6 +118,7 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
   const handleSearch = useCallback(async () => {
     if (!searchQuery.trim() || searchLoading) return;
     setSearchLoading(true);
+    setBackdropMovie(null);
     try {
       const results = await searchCatalog(searchQuery);
       setSearchResults(results);
@@ -261,6 +274,7 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
               className="projacktor-search-input"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={() => setBackdropMovie(null)}
               onKeyDown={handleKeyDown}
               {...({ placeholder: "Введите название фильма или сериала..." } as any)}
             />
@@ -269,6 +283,7 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
         <Focusable
           className="ds-btn ds-btn--primary"
           noFocusRing
+          onFocus={() => setBackdropMovie(null)}
           onActivate={handleSearch}
           onClick={handleSearch}
           onGamepadDirection={(evt: any) => {

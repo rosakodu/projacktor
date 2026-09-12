@@ -1,11 +1,13 @@
 import { FC, useState, useCallback, useEffect, useRef } from "react";
 import { Navigation, Focusable, showModal } from "@decky/ui";
 import { PROJACKTOR_STYLES } from "../styles";
-import { MediaItem } from "../types";
+import { MediaItem, PlayerMediaInfo } from "../types";
 import { Header, TabBar, MovieModal, PlayerModal, HeroBackdrop } from "../components";
 import { setBackdropMovie } from "../runtime/backdropBus";
 import { CatalogView } from "./CatalogView";
 import { SearchView } from "./SearchView";
+import { WatchlistView } from "./WatchlistView";
+import { HistoryView } from "./HistoryView";
 import { LibraryView } from "./LibraryView";
 import { SettingsView } from "./SettingsView";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
@@ -21,6 +23,8 @@ const TABS_CONFIG = [
   { id: "cartoons", title: "Мультфильмы" },
   { id: "anime", title: "Аниме" },
   { id: "search", title: "Поиск" },
+  { id: "watchlist", title: "Фильмотека" },
+  { id: "history", title: "Просмотрено" },
   { id: "library", title: "Загрузки" },
   { id: "settings", title: "Настройки" },
 ];
@@ -52,7 +56,14 @@ export const ProjacktorApp: FC = () => {
   };
 
   const handlePlayVideo = useCallback(
-    (filePath: string, title: string, isOnline: boolean, torrentHash?: string) => {
+    (
+      filePath: string,
+      title: string,
+      isOnline: boolean,
+      torrentHash?: string,
+      mediaInfo?: PlayerMediaInfo,
+      initialTime?: number
+    ) => {
       let playerInstance: any = null;
       const closePlayer = () => {
         if (playerInstance && typeof playerInstance.Close === "function") {
@@ -65,6 +76,8 @@ export const ProjacktorApp: FC = () => {
           title={title}
           isOnline={isOnline}
           torrentHash={torrentHash}
+          mediaInfo={mediaInfo}
+          initialTime={initialTime}
           closeModal={closePlayer}
         />,
         getParentWindow(),
@@ -82,9 +95,15 @@ export const ProjacktorApp: FC = () => {
           modalInstance.Close();
         }
       };
-      const onWatchOnline = (filePath: string, streamTitle: string, torrentHash?: string, isOnline: boolean = true) => {
+      const onWatchOnline = (
+        filePath: string,
+        streamTitle: string,
+        torrentHash?: string,
+        isOnline: boolean = true,
+        mediaInfo?: PlayerMediaInfo
+      ) => {
         close();
-        handlePlayVideo(filePath, streamTitle, isOnline, torrentHash);
+        handlePlayVideo(filePath, streamTitle, isOnline, torrentHash, mediaInfo);
       };
       const onStartMagicBlack = () => {
         close();
@@ -157,6 +176,14 @@ export const ProjacktorApp: FC = () => {
     } else if (activeTab === "search") {
       target = root.querySelector<HTMLElement>(
         ".projacktor-content input, .projacktor-content button, .projacktor-content .ds-btn"
+      );
+    } else if (activeTab === "watchlist") {
+      target = root.querySelector<HTMLElement>(
+        ".projacktor-watchlist-card, .projacktor-empty-lib"
+      );
+    } else if (activeTab === "history") {
+      target = root.querySelector<HTMLElement>(
+        ".projacktor-history-card, .projacktor-empty-lib"
       );
     } else if (activeTab === "library") {
       target = root.querySelector<HTMLElement>(
@@ -252,8 +279,8 @@ export const ProjacktorApp: FC = () => {
     >
       <style>{PROJACKTOR_STYLES}</style>
 
-      {/* Динамический кинематографичный бэкдроп выбранного фильма в стиле Steam Deck (кроме настроек и поиска) */}
-      {activeTab !== "settings" && activeTab !== "search" && <HeroBackdrop />}
+      {/* Динамический кинематографичный бэкдроп выбранного фильма в стиле Steam Deck (кроме настроек) */}
+      {activeTab !== "settings" && <HeroBackdrop />}
 
       {/* Заголовок Projacktor */}
       <Header />
@@ -296,6 +323,12 @@ export const ProjacktorApp: FC = () => {
         )}
         {activeTab === "search" && (
           <SearchView onSelectMovie={handleOpenMovie} />
+        )}
+        {activeTab === "watchlist" && (
+          <WatchlistView onSelectMovie={handleOpenMovie} />
+        )}
+        {activeTab === "history" && (
+          <HistoryView onPlayVideo={handlePlayVideo} />
         )}
         {activeTab === "library" && (
           <LibraryView

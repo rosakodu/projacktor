@@ -6,11 +6,23 @@ import {
   LibraryItem,
   EpisodeItem,
   CatalogCategory,
+  WatchlistItem,
+  WatchHistoryItem,
 } from "../types";
 import { API_BASE, formatBytes } from "./utils";
 import { getCachedCatalog, setCachedCatalog } from "./cache";
 
 // ── RPC Functions ──────────────────────────────────────────────
+export const rpcGetWatchlist = callable<[], WatchlistItem[]>("get_watchlist");
+export const rpcAddToWatchlist = callable<[string], { success: boolean; error?: string }>("add_to_watchlist");
+export const rpcRemoveFromWatchlist = callable<[number], boolean>("remove_from_watchlist");
+export const rpcIsInWatchlist = callable<[number], boolean>("is_in_watchlist");
+
+export const rpcGetWatchHistory = callable<[], WatchHistoryItem[]>("get_watch_history");
+export const rpcSaveWatchProgress = callable<[string], boolean>("save_watch_progress");
+export const rpcDeleteWatchHistoryItem = callable<[number], boolean>("delete_watch_history_item");
+export const rpcClearWatchHistory = callable<[], boolean>("clear_watch_history");
+
 export const rpcGetDownloads = callable<[], DownloadItem[]>("get_downloads");
 export const rpcAddDownload = callable<[string], { success: boolean; id?: number; gid?: string }>("add_download");
 export const rpcAddToLibrary = callable<[string], { success: boolean; id?: number; error?: string }>("add_to_library");

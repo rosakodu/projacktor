@@ -13,7 +13,8 @@ import {
   FaUndo,
 } from "react-icons/fa";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
-import { rpcResumeAllDownloads, rpcDropStream } from "../api";
+import { rpcResumeAllDownloads, rpcDropStream, rpcSaveWatchProgress } from "../api";
+import { PlayerMediaInfo } from "../types";
 import { getActiveDocument } from "../runtime/activeDoc";
 import { playNavSound } from "../runtime/navSound";
 
@@ -37,6 +38,8 @@ interface PlayerModalProps {
   title: string;
   isOnline?: boolean;
   torrentHash?: string;
+  mediaInfo?: PlayerMediaInfo;
+  initialTime?: number;
   closeModal?: () => void;
 }
 
@@ -52,7 +55,15 @@ function formatTime(seconds: number): string {
   return `${pad(m)}:${pad(s)}`;
 }
 
-export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = false, torrentHash, closeModal }) => {
+export const PlayerModal: FC<PlayerModalProps> = ({
+  filePath,
+  title,
+  isOnline = false,
+  torrentHash,
+  mediaInfo,
+  initialTime,
+  closeModal,
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -70,6 +81,9 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
 
   const getSavedProgress = useCallback((): number => {
     try {
+      if (initialTime !== undefined && initialTime > 0) {
+        return Math.floor(initialTime);
+      }
       const fileTarget = actualFilePath || filePath;
       const fileName = fileTarget.split(/[\/\\]/).pop() || fileTarget;
       const raw = localStorage.getItem(`projacktor_progress_${fileName}`);
@@ -87,7 +101,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
       }
     } catch {}
     return 0;
-  }, [actualFilePath, filePath, title]);
+  }, [actualFilePath, filePath, title, initialTime]);
 
   const savedStartTimeRef = useRef<number>(getSavedProgress());
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
@@ -403,9 +417,34 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
             localStorage.setItem(`projacktor_progress_t_${cleanTitle}`, String(Math.floor(sec)));
           }
         }
+
+        // Сохранение в базу данных для вкладки «Просмотрено»
+        if (sec > 10) {
+          rpcSaveWatchProgress(
+            JSON.stringify({
+              tmdb_id: mediaInfo?.tmdbId,
+              title: mediaInfo?.title || cleanTitle,
+              original_title: mediaInfo?.originalTitle,
+              media_type: mediaInfo?.mediaType || "movie",
+              year: mediaInfo?.year,
+              poster_path: mediaInfo?.posterPath,
+              backdrop_path: mediaInfo?.backdropPath,
+              overview: mediaInfo?.overview,
+              file_path: actualFilePath || filePath,
+              stream_url: filePath.startsWith("http") ? filePath : undefined,
+              torrent_hash: torrentHash,
+              is_online: isOnline,
+              episode_name: mediaInfo?.episodeName,
+              season_number: mediaInfo?.seasonNumber,
+              episode_number: mediaInfo?.episodeNumber,
+              current_time: sec,
+              duration: dur || 0,
+            })
+          ).catch(() => {});
+        }
       } catch {}
     },
-    [actualFilePath, filePath, title]
+    [actualFilePath, filePath, title, mediaInfo, isOnline, torrentHash]
   );
 
   const lastToggleAtRef = useRef<number>(0);

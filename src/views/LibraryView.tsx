@@ -393,17 +393,32 @@ export const LibraryView: FC<LibraryViewProps> = memo(
         className="projacktor-library-content"
         onGamepadDirection={handleGamepadDir}
       >
-        {library.length === 0 ? (
-          <Focusable
-            className="projacktor-empty-lib"
-            tabIndex={0}
-            noFocusRing
-            onGamepadDirection={handleGamepadDir}
-            style={{ textAlign: "center", padding: 50, color: "rgba(255,255,255,0.4)" }}
-          >
-            Загрузки пусты. Добавьте фильмы или сериалы из каталога.
-          </Focusable>
-        ) : (
+      {/* Шапка загрузок */}
+      <div className="projacktor-section-header-row">
+        <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+          <span className="projacktor-section-title">Загрузки</span>
+          <span style={{ fontSize: 13, color: "rgba(255,255,255,0.4)" }}>
+            {library.length > 0 ? `${library.length} ${library.length === 1 ? "загрузка" : "загрузок"}` : "Пусто"}
+          </span>
+        </div>
+      </div>
+
+      {library.length === 0 ? (
+        <Focusable
+          className="projacktor-empty-lib"
+          tabIndex={0}
+          noFocusRing
+          onGamepadDirection={handleGamepadDir}
+          style={{ textAlign: "center", padding: "60px 20px", color: "rgba(255,255,255,0.4)" }}
+        >
+          <div style={{ fontSize: 16, fontWeight: 600, color: "#fff", marginBottom: 6 }}>
+            Нет активных или скачанных загрузок
+          </div>
+          <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.6)" }}>
+            Здесь отображается очередь скачивания и сохраненные на диск файлы.
+          </div>
+        </Focusable>
+      ) : (
           <div ref={rowRef} className="projacktor-downloads-grid">
             {library.map((item, index) => {
               const isDownloading = item.download_status === "downloading";
