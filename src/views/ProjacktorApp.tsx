@@ -191,9 +191,9 @@ export const ProjacktorApp: FC = () => {
     };
   }, [activeTab, ready, ensureContentFocus]);
 
-  // Сброс бэкдропа при переходе в настройки
+  // Сброс бэкдропа при переходе в настройки или поиск
   useEffect(() => {
-    if (activeTab === "settings") {
+    if (activeTab === "settings" || activeTab === "search") {
       setBackdropMovie(null, true);
     }
   }, [activeTab]);
@@ -252,8 +252,8 @@ export const ProjacktorApp: FC = () => {
     >
       <style>{PROJACKTOR_STYLES}</style>
 
-      {/* Динамический кинематографичный бэкдроп выбранного фильма в стиле Steam Deck */}
-      <HeroBackdrop />
+      {/* Динамический кинематографичный бэкдроп выбранного фильма в стиле Steam Deck (кроме настроек и поиска) */}
+      {activeTab !== "settings" && activeTab !== "search" && <HeroBackdrop />}
 
       {/* Заголовок Projacktor */}
       <Header />
