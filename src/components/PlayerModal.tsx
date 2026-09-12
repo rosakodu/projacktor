@@ -419,9 +419,10 @@ export const PlayerModal: FC<PlayerModalProps> = ({
         }
 
         // Сохранение в базу данных для вкладки «Просмотрено»
-        if (sec > 10) {
+        if (sec >= 0) {
           rpcSaveWatchProgress(
             JSON.stringify({
+              media_id: mediaInfo?.mediaId,
               tmdb_id: mediaInfo?.tmdbId,
               title: mediaInfo?.title || cleanTitle,
               original_title: mediaInfo?.originalTitle,
@@ -446,6 +447,11 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     },
     [actualFilePath, filePath, title, mediaInfo, isOnline, torrentHash]
   );
+
+  // Сразу при монтировании плеера фиксируем проект в «Просмотрено»
+  useEffect(() => {
+    saveProgress(initialTime || 0, 0);
+  }, [saveProgress, initialTime]);
 
   const lastToggleAtRef = useRef<number>(0);
   const togglePlay = useCallback(() => {

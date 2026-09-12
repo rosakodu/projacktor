@@ -45,6 +45,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
       streamLoading,
       pauseDownload,
       resumeDownload,
+      startDownload,
       deleteItem,
       downloadEpisode,
       watchOnline,
@@ -562,13 +563,21 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                         className="projacktor-dl-btn-icon"
                         noFocusRing
                         onActivate={() =>
-                          isDownloading ? pauseDownload(item.id) : resumeDownload(item.id)
+                          isDownloading
+                            ? pauseDownload(item.id)
+                            : isPaused
+                            ? resumeDownload(item.id)
+                            : startDownload(item)
                         }
                         onClick={() =>
-                          isDownloading ? pauseDownload(item.id) : resumeDownload(item.id)
+                          isDownloading
+                            ? pauseDownload(item.id)
+                            : isPaused
+                            ? resumeDownload(item.id)
+                            : startDownload(item)
                         }
                         onGamepadDirection={handleGamepadDir}
-                        title={isDownloading ? "Приостановить" : "Возобновить"}
+                        title={isDownloading ? "Приостановить" : isPaused ? "Возобновить" : "Загрузить"}
                       >
                         {isDownloading ? <FaPause style={{ fontSize: 9.5 }} /> : <FaDownload style={{ fontSize: 9.5 }} />}
                       </Focusable>

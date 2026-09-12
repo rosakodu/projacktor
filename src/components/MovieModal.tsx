@@ -270,7 +270,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
             streamRes.title || title,
             streamRes.torrent_hash,
             isOnline,
-            currentMediaInfo
+            { ...currentMediaInfo, mediaId: mid }
           );
         }
       } else {
@@ -366,6 +366,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
             isOnline,
             {
               ...currentMediaInfo,
+              mediaId: mid,
               episodeName: ep.name,
               episodeNumber: ep.index,
             }

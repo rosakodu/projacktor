@@ -20,6 +20,7 @@ export const rpcIsInWatchlist = callable<[number], boolean>("is_in_watchlist");
 
 export const rpcGetWatchHistory = callable<[], WatchHistoryItem[]>("get_watch_history");
 export const rpcSaveWatchProgress = callable<[string], boolean>("save_watch_progress");
+export const rpcStartHistoryDownload = callable<[number], { success: boolean; media_id?: number; error?: string }>("start_history_download");
 export const rpcDeleteWatchHistoryItem = callable<[number], boolean>("delete_watch_history_item");
 export const rpcClearWatchHistory = callable<[], boolean>("clear_watch_history");
 

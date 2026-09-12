@@ -104,6 +104,7 @@ export interface WatchlistItem {
 
 export interface WatchHistoryItem {
   id: number;
+  media_id?: number;
   tmdb_id?: number;
   title: string;
   original_title?: string;
@@ -117,6 +118,7 @@ export interface WatchHistoryItem {
   torrent_hash?: string;
   is_online: number | boolean;
   is_downloaded?: boolean;
+  download_status?: string | null;
   episode_name?: string;
   season_number?: number;
   episode_number?: number;
@@ -127,6 +129,7 @@ export interface WatchHistoryItem {
 }
 
 export interface PlayerMediaInfo {
+  mediaId?: number;
   tmdbId?: number;
   title: string;
   originalTitle?: string;

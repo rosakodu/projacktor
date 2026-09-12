@@ -1,11 +1,13 @@
 import { FC, memo, useEffect, useRef, useState, useCallback } from "react";
 import { Focusable } from "@decky/ui";
-import { FaTrash, FaBookmark, FaStar } from "react-icons/fa";
+import { FaPlay, FaTrash, FaBookmark } from "react-icons/fa";
 import { MediaItem, WatchlistItem } from "../types";
 import { rpcGetWatchlist, rpcRemoveFromWatchlist, getImageUrl } from "../api";
 import { getActiveDocument } from "../runtime/activeDoc";
 import { playNavSound } from "../runtime/navSound";
 import { setBackdropMovie } from "../runtime/backdropBus";
+import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
+import { isModalOpen } from "../runtime/homeInputBus";
 
 interface WatchlistViewProps {
   onSelectMovie: (movie: MediaItem) => void;
@@ -122,15 +124,15 @@ export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie }) =>
       if (!root) return false;
       const doc = getActiveDocument(root);
       const target = root.querySelector<HTMLElement>(
-        ".projacktor-watchlist-card, .projacktor-empty-lib"
+        ".projacktor-dl-poster-btn, .projacktor-empty-lib"
       );
       if (target) {
         try {
           doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
           target.focus();
           target.classList.add("gpfocus");
-          if (items.length > 0 && target.classList.contains("projacktor-watchlist-card")) {
-            handleCardFocus(items[0], target);
+          if (items.length > 0) {
+            handleCardFocus(items[0], target.closest(".projacktor-dl-grid-card"));
           }
         } catch {}
         return true;
@@ -154,102 +156,175 @@ export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie }) =>
     };
   }, [items.length, handleCardFocus]);
 
-  // Навигация геймпада
+  // Основной 2D обработчик навигации
+  const handleDirection = useCallback(
+    (dir: "up" | "down" | "left" | "right") => {
+      if (isModalOpen()) return;
+
+      const now = Date.now();
+      if (now - lastNavAtRef.current < NAV_COOLDOWN_MS) return;
+
+      const root = rootRef.current;
+      if (!root) return;
+      const doc = getActiveDocument(root);
+      if (!doc) return;
+
+      const active = doc.activeElement as HTMLElement | null;
+      if (!active || !root.contains(active)) return;
+
+      const doFocus = (target: HTMLElement | null) => {
+        if (!target) return;
+        lastNavAtRef.current = Date.now();
+        doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+        target.focus();
+        target.classList.add("gpfocus");
+        playNavSound();
+        const card = target.closest(".projacktor-dl-grid-card") as HTMLElement | null;
+        scrollCardHorizontal(rowRef.current, card || target);
+      };
+
+      if (active.classList.contains("projacktor-empty-lib") || active.closest(".projacktor-empty-lib")) {
+        return;
+      }
+
+      const cards = Array.from(root.querySelectorAll<HTMLElement>(".projacktor-dl-grid-card"));
+      if (!cards.length) return;
+
+      const curCard = active.closest(".projacktor-dl-grid-card") as HTMLElement | null;
+      if (!curCard) return;
+
+      const cardIndex = cards.indexOf(curCard);
+      if (cardIndex === -1) return;
+
+      const isPoster = !!active.closest(".projacktor-dl-poster-btn");
+      const isButton = !isPoster && !!active.closest(".projacktor-dl-card-btns");
+
+      if (isPoster) {
+        if (dir === "left") {
+          const targetIndex = cardIndex > 0 ? cardIndex - 1 : cards.length - 1;
+          const prevPoster = cards[targetIndex].querySelector<HTMLElement>(".projacktor-dl-poster-btn");
+          doFocus(prevPoster);
+          if (items[targetIndex]) handleCardFocus(items[targetIndex], cards[targetIndex]);
+        } else if (dir === "right") {
+          const targetIndex = cardIndex < cards.length - 1 ? cardIndex + 1 : 0;
+          const nextPoster = cards[targetIndex].querySelector<HTMLElement>(".projacktor-dl-poster-btn");
+          doFocus(nextPoster);
+          if (items[targetIndex]) handleCardFocus(items[targetIndex], cards[targetIndex]);
+        } else if (dir === "down") {
+          const playBtn = curCard.querySelector<HTMLElement>(".projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0']");
+          doFocus(playBtn);
+        } else if (dir === "up") {
+          return;
+        }
+      } else if (isButton) {
+        const cardButtons = Array.from(
+          curCard.querySelectorAll<HTMLElement>(
+            ".projacktor-dl-card-btns .projacktor-dl-btn-play, .projacktor-dl-card-btns .projacktor-dl-btn-icon, .projacktor-dl-card-btns [tabindex='0']"
+          )
+        );
+        const btnIndex = cardButtons.findIndex((b) => b === active || b.contains(active));
+
+        if (dir === "up") {
+          const poster = curCard.querySelector<HTMLElement>(".projacktor-dl-poster-btn");
+          doFocus(poster);
+          if (items[cardIndex]) handleCardFocus(items[cardIndex], curCard);
+        } else if (dir === "left") {
+          if (btnIndex > 0) {
+            doFocus(cardButtons[btnIndex - 1]);
+          } else {
+            const prevCardIndex = cardIndex > 0 ? cardIndex - 1 : cards.length - 1;
+            const prevCard = cards[prevCardIndex];
+            const prevBtns = prevCard.querySelectorAll<HTMLElement>(
+              ".projacktor-dl-card-btns .projacktor-dl-btn-play, .projacktor-dl-card-btns .projacktor-dl-btn-icon, .projacktor-dl-card-btns [tabindex='0']"
+            );
+            if (prevBtns.length > 0) {
+              doFocus(prevBtns[prevBtns.length - 1]);
+              if (items[prevCardIndex]) handleCardFocus(items[prevCardIndex], prevCard);
+            }
+          }
+        } else if (dir === "right") {
+          if (btnIndex !== -1 && btnIndex < cardButtons.length - 1) {
+            doFocus(cardButtons[btnIndex + 1]);
+          } else {
+            const nextCardIndex = cardIndex < cards.length - 1 ? cardIndex + 1 : 0;
+            const nextCard = cards[nextCardIndex];
+            const nextBtn = nextCard.querySelector<HTMLElement>(
+              ".projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0']"
+            );
+            if (nextBtn) {
+              doFocus(nextBtn);
+              if (items[nextCardIndex]) handleCardFocus(items[nextCardIndex], nextCard);
+            }
+          }
+        }
+      }
+    },
+    [items, handleCardFocus]
+  );
+
+  // Слушатель событий Decky onGamepadDirection
   const handleGamepadDirection = useCallback(
     (evt: any) => {
       const btn = evt?.detail?.button;
-      const now = Date.now();
-      if (now - lastNavAtRef.current < NAV_COOLDOWN_MS) return false;
-
-      const root = rootRef.current;
-      if (!root) return undefined;
-      const doc = getActiveDocument(root);
-      const active = doc?.activeElement as HTMLElement | null;
-      if (!active || !root.contains(active)) return undefined;
-
-      const cards = Array.from(root.querySelectorAll<HTMLElement>(".projacktor-watchlist-card"));
-      if (!cards.length) return undefined;
-
-      const curCard = active.closest(".projacktor-watchlist-card") as HTMLElement | null;
-      if (!curCard) return undefined;
-
-      const curIdx = cards.indexOf(curCard);
-      if (curIdx === -1) return undefined;
-
-      const isDelBtn = active.closest(".projacktor-wl-del-btn");
-
-      if (btn === 11) {
-        // DPAD_LEFT
-        try {
-          evt?.preventDefault?.();
-          evt?.stopPropagation?.();
-        } catch {}
-        lastNavAtRef.current = now;
-        const prevIdx = curIdx > 0 ? curIdx - 1 : cards.length - 1;
-        const target = cards[prevIdx];
-        doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-        target.focus();
-        target.classList.add("gpfocus");
-        playNavSound();
-        if (items[prevIdx]) handleCardFocus(items[prevIdx], target);
-        return false;
-      } else if (btn === 12) {
-        // DPAD_RIGHT
-        try {
-          evt?.preventDefault?.();
-          evt?.stopPropagation?.();
-        } catch {}
-        lastNavAtRef.current = now;
-        const nextIdx = curIdx < cards.length - 1 ? curIdx + 1 : 0;
-        const target = cards[nextIdx];
-        doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-        target.focus();
-        target.classList.add("gpfocus");
-        playNavSound();
-        if (items[nextIdx]) handleCardFocus(items[nextIdx], target);
+      if (btn === 9) {
+        try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+        handleDirection("up");
         return false;
       } else if (btn === 10) {
-        // DPAD_DOWN: переходим на кнопку удаления карточки
-        if (!isDelBtn) {
-          const delBtn = curCard.querySelector<HTMLElement>(".projacktor-wl-del-btn");
-          if (delBtn) {
-            try {
-              evt?.preventDefault?.();
-              evt?.stopPropagation?.();
-            } catch {}
-            lastNavAtRef.current = now;
-            doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-            delBtn.focus();
-            delBtn.classList.add("gpfocus");
-            playNavSound();
-            return false;
-          }
-        }
-      } else if (btn === 9) {
-        // DPAD_UP: с кнопки удаления возвращаемся на саму карточку
-        if (isDelBtn) {
-          try {
-            evt?.preventDefault?.();
-            evt?.stopPropagation?.();
-          } catch {}
-          lastNavAtRef.current = now;
-          doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-          curCard.focus();
-          curCard.classList.add("gpfocus");
-          playNavSound();
-          return false;
-        }
-        // Блокируем выход в табы
-        try {
-          evt?.preventDefault?.();
-          evt?.stopPropagation?.();
-        } catch {}
+        try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+        handleDirection("down");
+        return false;
+      } else if (btn === 11) {
+        try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+        handleDirection("left");
+        return false;
+      } else if (btn === 12) {
+        try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+        handleDirection("right");
         return false;
       }
       return undefined;
     },
-    [items, handleCardFocus]
+    [handleDirection]
   );
+
+  // Слушатель стиков и геймпада
+  useEffect(() => {
+    const un = subscribeControllerInput((e) => {
+      if (!e.pressed) return;
+      if (isModalOpen()) return;
+
+      const isUp =
+        e.button === RawButton.DPAD_UP ||
+        e.button === RawButton.LEFTSTICK_UP ||
+        e.button === 4 ||
+        e.button === 20;
+
+      const isDown =
+        e.button === RawButton.DPAD_DOWN ||
+        e.button === RawButton.LEFTSTICK_DOWN ||
+        e.button === 6 ||
+        e.button === 21;
+
+      const isLeft =
+        e.button === RawButton.DPAD_LEFT ||
+        e.button === RawButton.LEFTSTICK_LEFT ||
+        e.button === 7 ||
+        e.button === 22;
+
+      const isRight =
+        e.button === RawButton.DPAD_RIGHT ||
+        e.button === RawButton.LEFTSTICK_RIGHT ||
+        e.button === 5 ||
+        e.button === 23;
+
+      if (isUp) handleDirection("up");
+      else if (isDown) handleDirection("down");
+      else if (isLeft) handleDirection("left");
+      else if (isRight) handleDirection("right");
+    });
+    return un;
+  }, [handleDirection]);
 
   return (
     <Focusable
@@ -289,20 +364,26 @@ export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie }) =>
         </Focusable>
       ) : (
         <div ref={rowRef} className="projacktor-downloads-grid">
-          {items.map((item) => {
+          {items.map((item, index) => {
             const posterUrl = item.poster_path ? getImageUrl(item.poster_path) : null;
             const isTv = item.media_type === "tv";
 
             return (
-              <div key={item.tmdb_id || item.id} className="projacktor-dl-grid-card">
-                {/* Постер / Основная карточка */}
+              <div
+                key={item.tmdb_id || item.id}
+                className="projacktor-dl-grid-card"
+                data-item-id={item.tmdb_id || item.id}
+                data-card-index={index}
+              >
+                {/* Постер / Карточка */}
                 <Focusable
-                  className="projacktor-dl-poster-btn projacktor-watchlist-card"
+                  className="projacktor-dl-poster-btn"
                   noFocusRing
                   tabIndex={0}
                   onClick={() => handleCardClick(item)}
                   onActivate={() => handleCardClick(item)}
                   onFocus={(e: any) => handleCardFocus(item, e.currentTarget?.closest(".projacktor-dl-grid-card"))}
+                  title={item.title}
                 >
                   {posterUrl ? (
                     <img
@@ -310,6 +391,7 @@ export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie }) =>
                       alt={item.title}
                       className="projacktor-dl-poster-img"
                       loading="lazy"
+                      draggable={false}
                     />
                   ) : (
                     <div className="projacktor-dl-poster-placeholder">
@@ -318,53 +400,52 @@ export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie }) =>
                   )}
 
                   {/* Бейдж типа медиа */}
-                  <span className="projacktor-card-badge">
+                  <div className="projacktor-dl-badge-status queued">
                     {isTv ? "Сериал" : "Фильм"}
-                  </span>
+                  </div>
 
                   {/* Рейтинг */}
                   {item.vote_average && item.vote_average > 0 ? (
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: 6,
-                        right: 6,
-                        background: "rgba(0,0,0,0.75)",
-                        padding: "2px 6px",
-                        borderRadius: 4,
-                        fontSize: 10,
-                        fontWeight: 700,
-                        color: "#fbbf24",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 3,
-                      }}
-                    >
-                      <FaStar size={8} />
-                      <span>{item.vote_average.toFixed(1)}</span>
+                    <div className="projacktor-dl-badge-quality">
+                      ★ {item.vote_average.toFixed(1)}
                     </div>
                   ) : null}
-
-                  {/* Название и год внизу постера */}
-                  <div className="projacktor-dl-poster-overlay">
-                    <div className="projacktor-dl-title">{item.title}</div>
-                    {item.year && <div className="projacktor-dl-meta">{item.year}</div>}
-                  </div>
                 </Focusable>
+
+                {/* Название и год */}
+                <div className="projacktor-dl-info">
+                  <div className="projacktor-dl-title" title={item.title}>
+                    {item.title}
+                  </div>
+                  {item.year ? (
+                    <div className="projacktor-dl-year">{item.year}</div>
+                  ) : null}
+                </div>
 
                 {/* Нижняя панель действий */}
                 <div className="projacktor-dl-card-btns">
+                  {/* Кнопка Открыть/Смотреть */}
                   <Focusable
-                    className="ds-btn projacktor-wl-del-btn"
+                    className="projacktor-dl-btn-play success"
+                    noFocusRing
+                    tabIndex={0}
+                    onClick={() => handleCardClick(item)}
+                    onActivate={() => handleCardClick(item)}
+                    title="Открыть проект"
+                  >
+                    <FaPlay style={{ fontSize: 10, marginLeft: 1 }} />
+                  </Focusable>
+
+                  {/* Кнопка Удалить из фильмотеки */}
+                  <Focusable
+                    className="projacktor-dl-btn-icon danger"
                     noFocusRing
                     tabIndex={0}
                     onClick={(e: any) => handleRemove(item.tmdb_id, e)}
                     onActivate={(e: any) => handleRemove(item.tmdb_id, e)}
                     title="Удалить из фильмотеки"
-                    style={{ width: "100%", justifyContent: "center", gap: 6, fontSize: 11 }}
                   >
-                    <FaTrash size={11} style={{ color: "#ef4444" }} />
-                    <span>Удалить</span>
+                    <FaTrash style={{ fontSize: 9.5 }} />
                   </Focusable>
                 </div>
               </div>

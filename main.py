@@ -177,6 +177,8 @@ def init_db():
 
     CREATE TABLE IF NOT EXISTS watch_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        media_id INTEGER,
+        file_id INTEGER,
         tmdb_id INTEGER,
         title TEXT NOT NULL,
         original_title TEXT,
@@ -205,8 +207,56 @@ def init_db():
     CREATE INDEX IF NOT EXISTS idx_downloads_status ON downloads(status);
     ''')
 
+    # Safe migration for watch_history to drop NOT NULL constraint on media_id if present
+    try:
+        cursor.execute("PRAGMA table_info(watch_history)")
+        wh_cols = cursor.fetchall()
+        needs_wh_migration = any(c[1] == 'media_id' and c[3] == 1 for c in wh_cols)
+        if needs_wh_migration:
+            logger.info("Migrating watch_history to remove NOT NULL constraint on media_id")
+            cursor.execute("ALTER TABLE watch_history RENAME TO watch_history_old")
+            cursor.execute("""
+                CREATE TABLE watch_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    media_id INTEGER,
+                    file_id INTEGER,
+                    tmdb_id INTEGER,
+                    title TEXT NOT NULL,
+                    original_title TEXT,
+                    media_type TEXT DEFAULT 'movie',
+                    year TEXT,
+                    poster_path TEXT,
+                    backdrop_path TEXT,
+                    overview TEXT,
+                    file_path TEXT,
+                    stream_url TEXT,
+                    torrent_hash TEXT,
+                    is_online BOOLEAN DEFAULT 0,
+                    episode_name TEXT,
+                    season_number INTEGER,
+                    episode_number INTEGER,
+                    current_time REAL DEFAULT 0,
+                    duration REAL DEFAULT 0,
+                    progress REAL DEFAULT 0,
+                    watched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cursor.execute("PRAGMA table_info(watch_history_old)")
+            old_cols = {c[1] for c in cursor.fetchall()}
+            target_cols = ['id', 'media_id', 'file_id', 'tmdb_id', 'title', 'original_title', 'media_type', 'year', 'poster_path', 'backdrop_path', 'overview', 'file_path', 'stream_url', 'torrent_hash', 'is_online', 'episode_name', 'season_number', 'episode_number', 'current_time', 'duration', 'progress', 'watched_at']
+            valid_cols = [c for c in target_cols if c in old_cols]
+            if valid_cols:
+                c_str = ", ".join(valid_cols)
+                cursor.execute(f"INSERT INTO watch_history ({c_str}) SELECT {c_str} FROM watch_history_old")
+            cursor.execute("DROP TABLE watch_history_old")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_watch_history_watched_at ON watch_history(watched_at DESC)")
+    except Exception as e:
+        logger.error(f"Migration watch_history error: {e}")
+
     # Safe migrations for watch_history table if it already existed with old schema
     for col, col_type in [
+        ("media_id", "INTEGER"),
+        ("file_id", "INTEGER"),
         ("tmdb_id", "INTEGER"),
         ("title", "TEXT"),
         ("original_title", "TEXT"),
@@ -230,6 +280,18 @@ def init_db():
             cursor.execute(f"ALTER TABLE watch_history ADD COLUMN {col} {col_type}")
         except sqlite3.OperationalError:
             pass
+
+    # Clean up orphan media entries marked in_library=1 without downloads or files
+    try:
+        cursor.execute("""
+            UPDATE media 
+            SET in_library = 0 
+            WHERE in_library = 1 
+              AND id NOT IN (SELECT media_id FROM downloads) 
+              AND id NOT IN (SELECT media_id FROM media_files)
+        """)
+    except Exception:
+        pass
 
     # Safe migrations for media table to support in-library management
     for col, col_type in [
@@ -2377,11 +2439,46 @@ class Plugin:
                         if mf and os.path.isfile(mf['file_path']):
                             local_file = mf['file_path']
 
+                # Enrich missing or broken poster/backdrop from media table
+                m_row = None
+                if d.get('media_id'):
+                    m_row = db.execute("SELECT tmdb_id, poster_path, backdrop_path FROM media WHERE id=?", (d['media_id'],)).fetchone()
+                if not m_row and d.get('tmdb_id'):
+                    m_row = db.execute("SELECT tmdb_id, poster_path, backdrop_path FROM media WHERE tmdb_id=?", (d['tmdb_id'],)).fetchone()
+                if not m_row and d.get('title'):
+                    m_row = db.execute("SELECT tmdb_id, poster_path, backdrop_path FROM media WHERE title=?", (d['title'],)).fetchone()
+
+                if m_row:
+                    if not d.get('tmdb_id') and m_row['tmdb_id']:
+                        d['tmdb_id'] = m_row['tmdb_id']
+                    if (not d.get('poster_path') or len(d.get('poster_path', '')) < 10 or d['poster_path'] == '/3908.jpg') and m_row['poster_path']:
+                        d['poster_path'] = m_row['poster_path']
+                    if not d.get('backdrop_path') and m_row['backdrop_path']:
+                        d['backdrop_path'] = m_row['backdrop_path']
+
+                dl_status = None
                 if local_file:
                     d['file_path'] = local_file
                     d['is_downloaded'] = True
+                    dl_status = 'completed'
                 else:
                     d['is_downloaded'] = False
+                    dl_row = None
+                    if d.get('media_id'):
+                        dl_row = db.execute(
+                            "SELECT status FROM downloads WHERE media_id=? ORDER BY id DESC LIMIT 1",
+                            (d['media_id'],)
+                        ).fetchone()
+                    if not dl_row and d.get('tmdb_id'):
+                        dl_row = db.execute("""
+                            SELECT d.status FROM downloads d
+                            JOIN media m ON d.media_id = m.id
+                            WHERE m.tmdb_id = ?
+                            ORDER BY d.id DESC LIMIT 1
+                        """, (d['tmdb_id'],)).fetchone()
+                    if dl_row:
+                        dl_status = dl_row['status']
+                d['download_status'] = dl_status
                 items.append(d)
             return items
         finally:
@@ -2396,6 +2493,7 @@ class Plugin:
 
             clean_title = re.sub(r'\s*\(Онлайн\)\s*', '', title, flags=re.I).strip()
             tmdb_id = body.get('tmdb_id')
+            media_id = body.get('media_id')
             original_title = body.get('original_title') or ""
             media_type = body.get('media_type') or "movie"
             year = str(body.get('year') or "")[:4]
@@ -2413,24 +2511,53 @@ class Plugin:
             duration = float(body.get('duration') or 0)
             progress = round((current_time / duration * 100), 1) if duration > 0 else 0
 
-            # Не сохраняем случайные кратковременные клики менее 10 секунд
-            if current_time < 10 and progress < 1:
-                return True
-
             db = get_db()
             try:
-                # Ищем запись по названию и серии
+                # Если media_id не передан, попробуем найти его в базе media
+                if not media_id:
+                    if tmdb_id:
+                        m_row = db.execute("SELECT id, tmdb_id, poster_path, backdrop_path FROM media WHERE tmdb_id=?", (tmdb_id,)).fetchone()
+                        if m_row:
+                            media_id = m_row['id']
+                            if not poster_path:
+                                poster_path = m_row['poster_path']
+                            if not backdrop_path:
+                                backdrop_path = m_row['backdrop_path']
+                    if not media_id and clean_title:
+                        m_row = db.execute("SELECT id, tmdb_id, poster_path, backdrop_path FROM media WHERE title=?", (clean_title,)).fetchone()
+                        if m_row:
+                            media_id = m_row['id']
+                            if not tmdb_id and m_row['tmdb_id']:
+                                tmdb_id = m_row['tmdb_id']
+                            if not poster_path:
+                                poster_path = m_row['poster_path']
+                            if not backdrop_path:
+                                backdrop_path = m_row['backdrop_path']
+
+                # Ищем существующую запись по названию и серии (или tmdb_id)
                 existing = None
                 if episode_name:
-                    existing = db.execute(
-                        "SELECT id FROM watch_history WHERE title=? AND episode_name=?",
-                        (clean_title, episode_name)
-                    ).fetchone()
+                    if tmdb_id:
+                        existing = db.execute(
+                            "SELECT id FROM watch_history WHERE tmdb_id=? AND episode_name=?",
+                            (tmdb_id, episode_name)
+                        ).fetchone()
+                    if not existing:
+                        existing = db.execute(
+                            "SELECT id FROM watch_history WHERE title=? AND episode_name=?",
+                            (clean_title, episode_name)
+                        ).fetchone()
                 else:
-                    existing = db.execute(
-                        "SELECT id FROM watch_history WHERE title=? AND (episode_name IS NULL OR episode_name='')",
-                        (clean_title,)
-                    ).fetchone()
+                    if tmdb_id:
+                        existing = db.execute(
+                            "SELECT id FROM watch_history WHERE tmdb_id=? AND (episode_name IS NULL OR episode_name='')",
+                            (tmdb_id,)
+                        ).fetchone()
+                    if not existing:
+                        existing = db.execute(
+                            "SELECT id FROM watch_history WHERE title=? AND (episode_name IS NULL OR episode_name='')",
+                            (clean_title,)
+                        ).fetchone()
 
                 now_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -2444,21 +2571,22 @@ class Plugin:
                             is_online=?,
                             poster_path=COALESCE(NULLIF(?, ''), poster_path),
                             backdrop_path=COALESCE(NULLIF(?, ''), backdrop_path),
-                            tmdb_id=COALESCE(?, tmdb_id)
+                            tmdb_id=COALESCE(?, tmdb_id),
+                            media_id=COALESCE(?, media_id)
                         WHERE id=?
                     """, (current_time, duration, progress, now_ts,
                           file_path, stream_url, torrent_hash, is_online,
-                          poster_path, backdrop_path, tmdb_id, existing['id']))
+                          poster_path, backdrop_path, tmdb_id, media_id, existing['id']))
                 else:
                     db.execute("""
                         INSERT INTO watch_history (
-                            tmdb_id, title, original_title, media_type, year,
+                            media_id, tmdb_id, title, original_title, media_type, year,
                             poster_path, backdrop_path, overview,
                             file_path, stream_url, torrent_hash, is_online,
                             episode_name, season_number, episode_number,
                             current_time, duration, progress, watched_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (tmdb_id, clean_title, original_title, media_type, year,
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (media_id, tmdb_id, clean_title, original_title, media_type, year,
                           poster_path, backdrop_path, overview,
                           file_path, stream_url, torrent_hash, is_online,
                           episode_name, season_number, episode_number,
@@ -2470,6 +2598,44 @@ class Plugin:
         except Exception as e:
             logger.error(f"Plugin save_watch_progress error: {e}")
             return False
+
+    async def start_history_download(self, history_id: int):
+        db = get_db()
+        try:
+            h = db.execute("SELECT * FROM watch_history WHERE id=?", (history_id,)).fetchone()
+            if not h:
+                return {"success": False, "error": "Запись истории не найдена"}
+
+            mid = h['media_id'] if 'media_id' in h.keys() and h['media_id'] else None
+            m = None
+            if mid:
+                m = db.execute("SELECT * FROM media WHERE id=?", (mid,)).fetchone()
+            if not m and h.get('tmdb_id'):
+                m = db.execute("SELECT * FROM media WHERE tmdb_id=?", (h['tmdb_id'],)).fetchone()
+            if not m and h.get('title'):
+                m = db.execute("SELECT * FROM media WHERE title=?", (h['title'],)).fetchone()
+
+            if not m:
+                return {"success": False, "error": "Медиа-проект не найден в базе"}
+
+            mid = m['id']
+            # Включаем проект в библиотеку
+            db.execute("UPDATE media SET in_library=1 WHERE id=?", (mid,))
+            db.commit()
+            db.close()
+
+            # Запускаем загрузку
+            ep_idx = str(h.get('episode_number') or '') if h.get('episode_number') is not None else ''
+            res = await self.start_download(mid, ep_idx)
+            return {"success": True, "media_id": mid, "result": res}
+        except Exception as e:
+            logger.error(f"Plugin start_history_download error: {e}")
+            return {"success": False, "error": str(e)}
+        finally:
+            try:
+                db.close()
+            except:
+                pass
 
     async def delete_watch_history_item(self, item_id: int):
         try:
@@ -2822,13 +2988,6 @@ class Plugin:
                 db.close()
                 return {"success": False, "error": "Медиа не найдено"}
             
-            # Mark media as added to library when user clicks watch
-            try:
-                db.execute("UPDATE media SET in_library=1 WHERE id=?", (mid,))
-                db.commit()
-            except Exception:
-                pass
-
             video_exts = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov', '.m4v'}
 
             # 1. Check if local files are already downloaded
@@ -2979,13 +3138,16 @@ class Plugin:
     async def pause_download(self, did: int):
         db = get_db()
         try:
-            row = db.execute("SELECT aria2_gid FROM downloads WHERE id=?", (did,)).fetchone()
+            row = db.execute("SELECT aria2_gid, id FROM downloads WHERE id=? OR media_id=?", (did, did)).fetchone()
             if row and row['aria2_gid'] and self.dm:
                 try:
                     self.dm.pause(row['aria2_gid'])
                 except Exception as e:
                     logger.warning(f"aria2 pause warning: {e}")
-            db.execute("UPDATE downloads SET status='paused', download_speed=0, upload_speed=0 WHERE id=?", (did,))
+            if row:
+                db.execute("UPDATE downloads SET status='paused', download_speed=0, upload_speed=0 WHERE id=?", (row['id'],))
+            else:
+                db.execute("UPDATE downloads SET status='paused', download_speed=0, upload_speed=0 WHERE media_id=?", (did,))
             db.commit()
             return True
         except Exception as e:
@@ -2997,7 +3159,16 @@ class Plugin:
     async def resume_download(self, did: int):
         db = get_db()
         try:
-            row = db.execute("SELECT aria2_gid, magnet_uri, download_dir FROM downloads WHERE id=?", (did,)).fetchone()
+            row = db.execute("SELECT aria2_gid, magnet_uri, download_dir, id, media_id FROM downloads WHERE id=? OR media_id=?", (did, did)).fetchone()
+            if not row:
+                # Если задачи еще нет в downloads, но проект есть в media - запускаем загрузку
+                m = db.execute("SELECT id FROM media WHERE id=?", (did,)).fetchone()
+                if m:
+                    db.close()
+                    res = await self.start_download(m['id'])
+                    return bool(res and res.get('success'))
+                return False
+
             if row and self.dm:
                 res = None
                 if row['aria2_gid']:
@@ -3010,10 +3181,10 @@ class Plugin:
                     try:
                         new_gid = self.dm.add_uri(row['magnet_uri'], row['download_dir'])
                         if new_gid:
-                            db.execute("UPDATE downloads SET aria2_gid=? WHERE id=?", (new_gid, did))
+                            db.execute("UPDATE downloads SET aria2_gid=? WHERE id=?", (new_gid, row['id']))
                     except Exception as e:
                         logger.error(f"Failed to re-add torrent on resume: {e}")
-            db.execute("UPDATE downloads SET status='downloading' WHERE id=?", (did,))
+            db.execute("UPDATE downloads SET status='downloading' WHERE id=?", (row['id'],))
             db.commit()
             return True
         except Exception as e:
