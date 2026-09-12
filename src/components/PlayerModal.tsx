@@ -141,8 +141,8 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
   const handleMenuDirection = useCallback(
     (dir: "up" | "down", menuKey: "sub" | "audio") => {
       const now = Date.now();
-      if (now - lastMenuNavTimeRef.current < 130) {
-        return; // Игнорируем быстрый дребезг
+      if (now - lastMenuNavTimeRef.current < 200) {
+        return; // Игнорируем быстрый дребезг / удержание кнопки
       }
       lastMenuNavTimeRef.current = now;
 
@@ -158,20 +158,16 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
           setActiveSubMenuIdx(nextIndex);
           activeSubMenuIdxRef.current = nextIndex;
           playNavSound();
-          setTimeout(() => {
-            const menuEl = subtitleMenuRef.current;
-            if (!menuEl) return;
+          const menuEl = subtitleMenuRef.current;
+          if (menuEl) {
             const items = Array.from(menuEl.querySelectorAll<HTMLElement>(".ds-btn"));
             const target = items[nextIndex];
             if (target) {
               try {
-                target.focus();
-              } catch {}
-              try {
                 target.scrollIntoView({ block: "nearest", behavior: "smooth" });
               } catch {}
             }
-          }, 20);
+          }
         }
       } else {
         const totalItems = audioTracksRef.current.length;
@@ -185,20 +181,16 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
           setActiveAudioMenuIdx(nextIndex);
           activeAudioMenuIdxRef.current = nextIndex;
           playNavSound();
-          setTimeout(() => {
-            const menuEl = audioMenuRef.current;
-            if (!menuEl) return;
+          const menuEl = audioMenuRef.current;
+          if (menuEl) {
             const items = Array.from(menuEl.querySelectorAll<HTMLElement>(".ds-btn"));
             const target = items[nextIndex];
             if (target) {
               try {
-                target.focus();
-              } catch {}
-              try {
                 target.scrollIntoView({ block: "nearest", behavior: "smooth" });
               } catch {}
             }
-          }, 20);
+          }
         }
       }
     },
@@ -221,9 +213,6 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
         const items = Array.from(menuEl.querySelectorAll<HTMLElement>(".ds-btn"));
         const target = items[initialIdx];
         if (target) {
-          try {
-            target.focus();
-          } catch {}
           try {
             target.scrollIntoView({ block: "nearest", behavior: "smooth" });
           } catch {}
@@ -250,9 +239,6 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
         const items = Array.from(menuEl.querySelectorAll<HTMLElement>(".ds-btn"));
         const target = items[initialIdx];
         if (target) {
-          try {
-            target.focus();
-          } catch {}
           try {
             target.scrollIntoView({ block: "nearest", behavior: "smooth" });
           } catch {}
@@ -957,14 +943,6 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
               evt?.preventDefault?.();
               evt?.stopPropagation?.();
             } catch {}
-            const btn = evt?.detail?.button;
-            if (btn === 9) {
-              if (showAudioMenuRef.current) handleMenuDirection("up", "audio");
-              if (showSubtitleMenuRef.current) handleMenuDirection("up", "sub");
-            } else if (btn === 10) {
-              if (showAudioMenuRef.current) handleMenuDirection("down", "audio");
-              if (showSubtitleMenuRef.current) handleMenuDirection("down", "sub");
-            }
             return false;
           }
           const btn = evt?.detail?.button;
@@ -1294,24 +1272,9 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
             </Focusable>
 
             {showSubtitleMenu && (
-              <Focusable
+              <div
                 ref={subtitleMenuRef}
                 className="projacktor-player-dropdown-menu"
-                flow-children="column"
-                onGamepadDirection={(evt: any) => {
-                  try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
-                  const btn = evt?.detail?.button;
-                  if (btn === 9) {
-                    handleMenuDirection("up", "sub");
-                    return false;
-                  } else if (btn === 10) {
-                    handleMenuDirection("down", "sub");
-                    return false;
-                  } else if (btn === 11 || btn === 12) {
-                    return false;
-                  }
-                  return false;
-                }}
                 style={{
                   position: "absolute",
                   bottom: "100%",
@@ -1335,17 +1298,13 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
                 <div style={{ padding: "4px 8px", fontSize: 11, fontWeight: 700, color: "var(--ds-text-dim)", textTransform: "uppercase" }}>
                   Субтитры
                 </div>
-                <Focusable
+                <div
+                  role="button"
                   tabIndex={0}
                   className={`ds-btn ds-btn--compact ${activeSubMenuIdx === 0 ? "gpfocus active-nav" : ""}`}
                   data-selected={selectedSubtitle === null ? "true" : undefined}
-                  onActivate={() => selectSubtitleTrack(null)}
                   onClick={() => selectSubtitleTrack(null)}
                   onMouseEnter={() => {
-                    setActiveSubMenuIdx(0);
-                    activeSubMenuIdxRef.current = 0;
-                  }}
-                  onFocus={() => {
                     setActiveSubMenuIdx(0);
                     activeSubMenuIdxRef.current = 0;
                   }}
@@ -1357,11 +1316,12 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
                     borderColor: selectedSubtitle === null ? "rgba(255,255,255,0.3)" : "transparent",
                     gap: 8,
                     textAlign: "left",
+                    cursor: "pointer",
                   }}
                 >
                   <FaCheck style={{ fontSize: 10, opacity: selectedSubtitle === null ? 1 : 0, flexShrink: 0 }} />
                   <span style={{ fontSize: 12 }}>Отключить субтитры</span>
-                </Focusable>
+                </div>
 
                 {subtitleTracks.length === 0 ? (
                   <div style={{ padding: "8px 10px", fontSize: 12, color: "rgba(255,255,255,0.4)" }}>
@@ -1372,18 +1332,14 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
                     const itemIdx = sIdx + 1;
                     const isNavActive = activeSubMenuIdx === itemIdx;
                     return (
-                      <Focusable
+                      <div
                         key={sub.index}
+                        role="button"
                         tabIndex={0}
                         className={`ds-btn ds-btn--compact ${isNavActive ? "gpfocus active-nav" : ""}`}
                         data-selected={sub.index === selectedSubtitle ? "true" : undefined}
-                        onActivate={() => selectSubtitleTrack(sub.index)}
                         onClick={() => selectSubtitleTrack(sub.index)}
                         onMouseEnter={() => {
-                          setActiveSubMenuIdx(itemIdx);
-                          activeSubMenuIdxRef.current = itemIdx;
-                        }}
-                        onFocus={() => {
                           setActiveSubMenuIdx(itemIdx);
                           activeSubMenuIdxRef.current = itemIdx;
                         }}
@@ -1395,17 +1351,18 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
                           borderColor: sub.index === selectedSubtitle ? "rgba(255,255,255,0.3)" : "transparent",
                           gap: 8,
                           textAlign: "left",
+                          cursor: "pointer",
                         }}
                       >
                         <FaCheck style={{ fontSize: 10, opacity: sub.index === selectedSubtitle ? 1 : 0, flexShrink: 0 }} />
                         <span style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {sub.title || (sub.lang ? `Субтитры (${sub.lang.toUpperCase()})` : `Субтитры #${sub.index}`)}
                         </span>
-                      </Focusable>
+                      </div>
                     );
                   })
                 )}
-              </Focusable>
+              </div>
             )}
 
             {/* Кнопка выбора аудиодорожки */}
@@ -1433,24 +1390,9 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
             </Focusable>
 
             {showAudioMenu && (
-              <Focusable
+              <div
                 ref={audioMenuRef}
                 className="projacktor-player-dropdown-menu"
-                flow-children="column"
-                onGamepadDirection={(evt: any) => {
-                  try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
-                  const btn = evt?.detail?.button;
-                  if (btn === 9) {
-                    handleMenuDirection("up", "audio");
-                    return false;
-                  } else if (btn === 10) {
-                    handleMenuDirection("down", "audio");
-                    return false;
-                  } else if (btn === 11 || btn === 12) {
-                    return false;
-                  }
-                  return false;
-                }}
                 style={{
                   position: "absolute",
                   bottom: "100%",
@@ -1482,18 +1424,14 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
                   audioTracks.map((track, tIdx) => {
                     const isNavActive = activeAudioMenuIdx === tIdx;
                     return (
-                      <Focusable
+                      <div
                         key={track.index}
+                        role="button"
                         tabIndex={0}
                         className={`ds-btn ds-btn--compact ${isNavActive ? "gpfocus active-nav" : ""}`}
                         data-selected={track.index === selectedAudio ? "true" : undefined}
-                        onActivate={() => selectAudioTrack(track.index)}
                         onClick={() => selectAudioTrack(track.index)}
                         onMouseEnter={() => {
-                          setActiveAudioMenuIdx(tIdx);
-                          activeAudioMenuIdxRef.current = tIdx;
-                        }}
-                        onFocus={() => {
                           setActiveAudioMenuIdx(tIdx);
                           activeAudioMenuIdxRef.current = tIdx;
                         }}
@@ -1505,17 +1443,18 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
                           borderColor: track.index === selectedAudio ? "rgba(255,255,255,0.3)" : "transparent",
                           gap: 8,
                           textAlign: "left",
+                          cursor: "pointer",
                         }}
                       >
                         <FaCheck style={{ fontSize: 10, opacity: track.index === selectedAudio ? 1 : 0, flexShrink: 0 }} />
                         <span style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {track.title || (track.lang ? `Аудио (${track.lang.toUpperCase()})` : `Дорожка #${track.index}`)}
                         </span>
-                      </Focusable>
+                      </div>
                     );
                   })
                 )}
-              </Focusable>
+              </div>
             )}
 
           </div>
