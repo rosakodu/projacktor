@@ -1191,6 +1191,29 @@ export const PROJACKTOR_STYLES = `
   transform: none !important;
 }
 
+.projacktor-dl-btn-icon.download:focus,
+.projacktor-dl-btn-icon.download.gpfocus,
+.projacktor-dl-btn-icon.download:hover {
+  background: #0284c7 !important;
+  border-color: #38bdf8 !important;
+  color: #fff !important;
+  outline: none !important;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.45) !important;
+  transform: none !important;
+}
+
+.projacktor-history-card-btns > * {
+  flex: 1 1 0% !important;
+  min-width: 0 !important;
+  width: auto !important;
+  max-width: none !important;
+  height: 24px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+}
+
 /* ───── Episodes Dialog Modal (Native Steam UI Spec) ───── */
 .projacktor-episodes-modal-overlay {
   position: fixed !important;

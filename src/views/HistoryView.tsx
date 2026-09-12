@@ -552,7 +552,7 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo }) => {
                 </div>
 
                 {/* Нижняя панель действий */}
-                <div className="projacktor-dl-card-btns">
+                <div className="projacktor-dl-card-btns projacktor-history-card-btns">
                   {/* Кнопка Продолжить просмотр */}
                   <Focusable
                     className="projacktor-dl-btn-play success"
@@ -568,7 +568,7 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo }) => {
                   {/* Кнопка Загрузить на устройство (если ещё не скачано и не качается) */}
                   {canDownload && (
                     <Focusable
-                      className="projacktor-dl-btn-icon"
+                      className="projacktor-dl-btn-icon download"
                       noFocusRing
                       tabIndex={0}
                       onClick={(e: any) => handleDownload(item, e)}
@@ -576,9 +576,9 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo }) => {
                       title="Загрузить на устройство"
                     >
                       {isStartingDownload ? (
-                        <FaSpinner style={{ animation: "projacktor-spin 0.9s linear infinite", fontSize: 9.5 }} />
+                        <FaSpinner style={{ animation: "projacktor-spin 0.9s linear infinite", fontSize: 10 }} />
                       ) : (
-                        <FaDownload style={{ fontSize: 9.5 }} />
+                        <FaDownload style={{ fontSize: 10 }} />
                       )}
                     </Focusable>
                   )}
@@ -586,7 +586,7 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo }) => {
                   {/* Индикатор текущей загрузки */}
                   {isDownloadingOrQueued && (
                     <div
-                      className="projacktor-dl-btn-icon"
+                      className="projacktor-dl-btn-icon downloading"
                       style={{
                         display: "flex",
                         alignItems: "center",
@@ -615,7 +615,7 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo }) => {
                     onActivate={(e: any) => handleDelete(item.id, e)}
                     title="Удалить из истории"
                   >
-                    <FaTrash style={{ fontSize: 9.5 }} />
+                    <FaTrash style={{ fontSize: 10 }} />
                   </Focusable>
                 </div>
               </div>
