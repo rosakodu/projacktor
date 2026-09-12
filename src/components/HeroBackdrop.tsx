@@ -71,19 +71,7 @@ export const HeroBackdrop: FC = memo(() => {
   }, []);
 
   if (!activeUrl && !prevUrl) {
-    return (
-      <div
-        className="projacktor-hero-backdrop-root"
-        style={{
-          position: "absolute",
-          inset: 0,
-          pointerEvents: "none",
-          zIndex: 0,
-          background: "#0b1016",
-        }}
-        aria-hidden="true"
-      />
-    );
+    return null;
   }
 
   return (
@@ -100,7 +88,6 @@ export const HeroBackdrop: FC = memo(() => {
         overflow: "hidden",
         pointerEvents: "none",
         zIndex: 0,
-        background: "#0b1016",
       }}
       aria-hidden="true"
     >

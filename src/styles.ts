@@ -66,6 +66,8 @@ export const PROJACKTOR_STYLES = `
 
 /* ───── Projacktor Top Header ───── */
 .projacktor-top-header {
+  position: relative !important;
+  z-index: 2 !important;
   display: flex !important;
   align-items: center !important;
   padding: calc(env(safe-area-inset-top, 0px) + 54px) 52px 14px 52px !important;
@@ -84,6 +86,8 @@ export const PROJACKTOR_STYLES = `
 
 /* ───── Projacktor Nav Bar (L1 / Tabs / R1) ───── */
 .projacktor-nav-bar {
+  position: relative !important;
+  z-index: 2 !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -99,6 +103,8 @@ export const PROJACKTOR_STYLES = `
 }
 
 .projacktor-bumper-pill {
+  position: relative !important;
+  z-index: 2 !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -363,7 +369,20 @@ export const PROJACKTOR_STYLES = `
 }
 
 /* ───── Page Body ───── */
+.projacktor-view-container {
+  position: relative !important;
+  z-index: 1 !important;
+  width: 100% !important;
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
 .projacktor-content {
+  position: relative !important;
+  z-index: 1 !important;
   width: 100% !important;
   flex: 1 1 0 !important;
   min-height: 0 !important;
@@ -374,6 +393,8 @@ export const PROJACKTOR_STYLES = `
 }
 
 .projacktor-library-content {
+  position: relative !important;
+  z-index: 1 !important;
   width: 100% !important;
   flex: 1 1 0 !important;
   min-height: 0 !important;
@@ -385,6 +406,20 @@ export const PROJACKTOR_STYLES = `
   padding: 16px 0 32px 0 !important;
   margin: 0 !important;
   box-sizing: border-box !important;
+}
+
+.projacktor-settings-card {
+  background: rgba(255, 255, 255, 0.035) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 8px !important;
+  padding: 14px 18px !important;
+  box-sizing: border-box !important;
+}
+
+.projacktor-settings-card [class*="PanelSection"],
+.projacktor-settings-card > div {
+  margin: 0 !important;
+  padding: 0 !important;
 }
 
 /* ───── Посекторная навигация (Sector Architecture) ───── */

@@ -272,7 +272,15 @@ export const ProjacktorApp: FC = () => {
         flow-children="vertical"
         noFocusRing
         className="projacktor-view-container"
-        style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}
+        style={{
+          position: "relative",
+          zIndex: 1,
+          flex: 1,
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        }}
       >
         {activeTab === "movies" && (
           <CatalogView key="movies" category="movie" onSelectMovie={handleOpenMovie} />
