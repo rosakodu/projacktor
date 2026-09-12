@@ -6,7 +6,7 @@ const SettingsPage = {
                 <h2>Настройки</h2>
                 <div style="background: var(--bg-card); padding: 20px; border-radius: var(--radius); border: 1px solid var(--border);">
                     <div style="margin-bottom: 20px;">
-                        <label style="display: block; margin-bottom: 5px;">URL JacRed</label>
+                        <label style="display: block; margin-bottom: 5px;">Ссылка Jackett</label>
                         <input type="text" id="settingJacredUrl" class="btn" style="width: 100%; text-align: left; background: var(--bg-primary); cursor: text;">
                     </div>
                     

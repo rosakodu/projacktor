@@ -209,7 +209,7 @@ export const SettingsView: FC = memo(() => {
         <PanelSection>
           <PanelSectionRow>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", marginBottom: 4 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>Парсер JacRed</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>Ссылка Jackett</span>
               <div>
                 {jacredOk === null ? (
                   <span style={{ color: "rgba(255, 255, 255, 0.5)", fontSize: 11, display: "inline-flex", alignItems: "center", gap: 5 }}>
