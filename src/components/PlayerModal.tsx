@@ -109,6 +109,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
   const [showControls, setShowControls] = useState<boolean>(true);
   const controlsTimeoutRef = useRef<number | null>(null);
 
+  const playBtnRef = useRef<HTMLDivElement>(null);
   const subtitleBtnRef = useRef<HTMLDivElement>(null);
   const audioBtnRef = useRef<HTMLDivElement>(null);
   const subtitleMenuRef = useRef<HTMLDivElement>(null);
@@ -303,6 +304,53 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
     };
   }, [resetControlsTimer]);
 
+  // Фокус по умолчанию на кнопке Play/Pause при открытии плеера
+  useEffect(() => {
+    let cancelled = false;
+    const focusPlayBtn = () => {
+      if (cancelled) return;
+      if (playBtnRef.current) {
+        try {
+          const doc = getActiveDocument(playBtnRef.current) || document;
+          doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+          playBtnRef.current.focus();
+          playBtnRef.current.classList.add("gpfocus");
+        } catch {}
+      }
+    };
+
+    const t1 = setTimeout(focusPlayBtn, 50);
+    const t2 = setTimeout(focusPlayBtn, 150);
+    const t3 = setTimeout(focusPlayBtn, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
+  }, []);
+
+  // Восстановление фокуса на кнопке Play/Pause, если контролы снова показались, а активного фокуса нет
+  useEffect(() => {
+    if (showControls && !showSubtitleMenu && !showAudioMenu) {
+      const t = setTimeout(() => {
+        if (playBtnRef.current) {
+          try {
+            const doc = getActiveDocument(playBtnRef.current) || document;
+            const currentGpfocus = doc.querySelector(".projacktor-player-fullscreen .gpfocus");
+            if (!currentGpfocus) {
+              playBtnRef.current.focus();
+              playBtnRef.current.classList.add("gpfocus");
+            }
+          } catch {}
+        }
+      }, 60);
+      return () => clearTimeout(t);
+    }
+    return undefined;
+  }, [showControls, showSubtitleMenu, showAudioMenu]);
+
   const touchStartXRef = useRef<number | null>(null);
   const touchStartYRef = useRef<number | null>(null);
   const touchMovedRef = useRef<boolean>(false);
@@ -360,7 +408,11 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
     [actualFilePath, filePath, title]
   );
 
+  const lastToggleAtRef = useRef<number>(0);
   const togglePlay = useCallback(() => {
+    const now = Date.now();
+    if (now - lastToggleAtRef.current < 250) return;
+    lastToggleAtRef.current = now;
     if (!videoRef.current) return;
     if (videoRef.current.paused) {
       videoRef.current.play().catch(() => {});
@@ -1190,6 +1242,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({ filePath, title, isOnline = 
             </Focusable>
 
             <Focusable
+              ref={playBtnRef}
               className="ds-btn ds-btn--primary ds-btn--compact ds-btn--icon"
               onActivate={togglePlay}
               onClick={togglePlay}
