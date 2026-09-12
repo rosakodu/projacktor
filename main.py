@@ -195,12 +195,29 @@ def init_db():
     conn.commit()
     conn.close()
 
+class SafeRow(dict):
+    """
+    Универсальный класс строки SQLite, совмещающий доступ по ключам d['col'],
+    безопасный метод d.get('col', default), доступ по числовому индексу d[0],
+    а также методы keys(), values() и сериализацию.
+    """
+    def __init__(self, cursor, row):
+        super().__init__()
+        self._values = row
+        for idx, col in enumerate(cursor.description):
+            self[col[0]] = row[idx]
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._values[key]
+        return super().__getitem__(key)
+
 def get_db():
     conn = sqlite3.connect(DB_PATH, timeout=20.0)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.row_factory = sqlite3.Row
+    conn.row_factory = lambda c, r: SafeRow(c, r)
     return conn
 
 # --- Settings ---
@@ -916,14 +933,16 @@ class TorrServerManager:
             logger.error("TorrServer is not running and could not be started for add_torrent.")
             return None
         try:
-            if magnet_or_link and magnet_or_link.startswith("magnet:?") and "&tr=" not in magnet_or_link:
+            if magnet_or_link and magnet_or_link.startswith("magnet:?"):
                 trackers = [
                     "udp://tracker.opentrackr.org:1337/announce",
                     "udp://open.stealth.si:80/announce",
                     "udp://tracker.torrent.eu.org:451/announce",
                     "udp://explodie.org:6969/announce"
                 ]
-                magnet_or_link = magnet_or_link + "".join(f"&tr={urllib.parse.quote(tr, safe='')}" for tr in trackers)
+                for tr in trackers:
+                    if tr not in magnet_or_link:
+                        magnet_or_link += f"&tr={urllib.parse.quote(tr, safe='')}"
 
             url = f"{self.base_url}/torrents"
             payload = {
@@ -931,7 +950,7 @@ class TorrServerManager:
                 "link": magnet_or_link,
                 "title": title,
                 "poster": poster,
-                "save_to_db": False
+                "save_to_db": True
             }
             req = urllib.request.Request(
                 url,
@@ -2453,15 +2472,19 @@ class Plugin:
                 
                 if t_info and t_info.get('file_stats'):
                     episodes = []
+                    extra_re = re.compile(r'(?i)\b(sample|trailer|bonus|featurette|preview)\b')
                     for f in t_info['file_stats']:
                         f_path = f.get('path', '')
                         ext = os.path.splitext(f_path)[1].lower()
-                        if ext in video_exts:
+                        length = int(f.get('length', 0))
+                        if ext in video_exts and not extra_re.search(f_path):
+                            if length < 25 * 1024 * 1024 and len(t_info['file_stats']) > 1:
+                                continue
                             episodes.append({
                                 "index": int(f.get('id', 0)),
                                 "name": os.path.basename(f_path),
                                 "path": f_path,
-                                "size": int(f.get('length', 0)),
+                                "size": length,
                                 "completed": 0,
                                 "selected": True,
                                 "downloaded": False
