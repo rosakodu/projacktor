@@ -21,7 +21,7 @@ import {
 interface MovieModalProps {
   movie: MediaItem;
   closeModal?: () => void;
-  onWatchOnline?: (filePath: string, title: string, torrentHash?: string) => void;
+  onWatchOnline?: (filePath: string, title: string, torrentHash?: string, isOnline?: boolean) => void;
   onStartMagicBlack?: () => void;
 }
 
@@ -200,10 +200,12 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
       if (streamRes && streamRes.success && (streamRes.stream_url || streamRes.file_path)) {
         if (closeModal) closeModal();
         if (onWatchOnline) {
+          const isOnline = streamRes.online !== false && (streamRes.stream_url ? !streamRes.stream_url.includes("file=") : false);
           onWatchOnline(
             streamRes.stream_url || streamRes.file_path!,
             streamRes.title || title,
-            streamRes.torrent_hash
+            streamRes.torrent_hash,
+            isOnline
           );
         }
       } else {
@@ -271,10 +273,12 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
       if (res && res.success && (res.stream_url || res.file_path)) {
         if (closeModal) closeModal();
         if (onWatchOnline) {
+          const isOnline = res.online !== false && (res.stream_url ? !res.stream_url.includes("file=") : false);
           onWatchOnline(
             res.stream_url || res.file_path!,
             res.title || `${title} - ${ep.name}`,
-            res.torrent_hash
+            res.torrent_hash,
+            isOnline
           );
         }
       } else {

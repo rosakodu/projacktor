@@ -1517,7 +1517,10 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
         
         target = f"{url}/api/v2.0/indexers/all/results?apikey=1&Query={urllib.parse.quote(q)}"
         if c:
-            target += f"&Category[]={c}"
+            for cat_id in c.split(','):
+                cat_clean = cat_id.strip()
+                if cat_clean:
+                    target += f"&Category[]={cat_clean}"
             
         try:
             req = urllib.request.Request(
@@ -2325,7 +2328,12 @@ class Plugin:
 
     @classmethod
     def _episode_sort_key(cls, ep):
-        name = ep.get('name', '') or ep.get('path', '') or ''
+        if isinstance(ep, str):
+            name = ep
+        elif isinstance(ep, dict):
+            name = ep.get('name', '') or ep.get('path', '') or ep.get('file_name', '') or ''
+        else:
+            name = str(ep or '')
         # 1. Match S01E02, s1e2, s01.e02, etc.
         m = re.search(r'[sS](\d+)[\.\s_-]*[eE](\d+)', name)
         if m:
@@ -2520,6 +2528,7 @@ class Plugin:
                             if not os.path.exists(fp + ".aria2") and is_header_ready(fp):
                                 disk_files.append((f, fp))
                 if disk_files:
+                    disk_files.sort(key=lambda x: self._episode_sort_key(x[0]))
                     target_file = None
                     if file_idx > 0:
                         if 1 <= file_idx <= len(disk_files):
@@ -2533,11 +2542,12 @@ class Plugin:
                     if not target_file:
                         target_file = disk_files[0][1]
                     stream_url = f"http://127.0.0.1:8400/api/stream?file={urllib.parse.quote(target_file)}"
+                    stream_title = f"{m['title']} - {os.path.basename(target_file)}" if (m['media_type'] == 'tv' or file_idx > 0) else m['title']
                     return {
                         "success": True,
                         "stream_url": stream_url,
                         "file_path": target_file,
-                        "title": m['title'],
+                        "title": stream_title,
                         "transcode": True,
                         "online": False
                     }
@@ -2757,12 +2767,28 @@ class Plugin:
                                         sz = 0
                                     files_list.append({"file_path": fp, "file_name": fn, "file_size": sz})
                 d['files'] = files_list
+                if not m_files and files_list:
+                    try:
+                        files_list.sort(key=lambda x: self._episode_sort_key(x['file_name']))
+                        for fl in files_list:
+                            db.execute(
+                                "INSERT OR IGNORE INTO media_files (media_id, file_path, file_name, file_size) VALUES (?, ?, ?, ?)",
+                                (d['id'], fl['file_path'], fl['file_name'], fl['file_size'])
+                            )
+                        db.execute("UPDATE media SET in_library=1, status='downloaded' WHERE id=?", (d['id'],))
+                        db.commit()
+                        d['status'] = 'downloaded'
+                        d['in_library'] = 1
+                    except Exception as e:
+                        logger.error(f"Reconcile media_files error: {e}")
                 if files_list and d.get('download_status') not in ('completed',):
                     has_active_aria2 = any(os.path.exists(f['file_path'] + '.aria2') for f in files_list)
                     if not has_active_aria2:
                         d['download_status'] = 'completed'
                         d['download_progress'] = 100.0
                         d['download_speed'] = 0
+                        d['status'] = 'downloaded'
+                        d['in_library'] = 1
                 result.append(d)
             return result
         finally:

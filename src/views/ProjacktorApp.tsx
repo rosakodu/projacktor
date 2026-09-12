@@ -81,9 +81,9 @@ export const ProjacktorApp: FC = () => {
           modalInstance.Close();
         }
       };
-      const onWatchOnline = (filePath: string, streamTitle: string, torrentHash?: string) => {
+      const onWatchOnline = (filePath: string, streamTitle: string, torrentHash?: string, isOnline: boolean = true) => {
         close();
-        handlePlayVideo(filePath, streamTitle, true, torrentHash);
+        handlePlayVideo(filePath, streamTitle, isOnline, torrentHash);
       };
       const onStartMagicBlack = () => {
         close();

@@ -2,8 +2,6 @@ import { FC, useState, useEffect, useCallback, useRef, memo } from "react";
 import {
   PanelSection,
   PanelSectionRow,
-  Field,
-  ButtonItem,
   TextField,
   Focusable,
 } from "@decky/ui";
@@ -200,189 +198,139 @@ export const SettingsView: FC = memo(() => {
       className="projacktor-content"
       style={{
         width: "100%",
-        padding: "16px 52px 32px 52px",
+        padding: "12px 36px 24px 36px",
         boxSizing: "border-box",
         overflowY: "auto",
       }}
     >
-      <div style={{ maxWidth: 840, width: "100%", margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 }}>
-        {/* Секция 1: Парсер Jackett */}
+      <div style={{ maxWidth: 720, width: "100%", margin: "0 auto", display: "flex", flexDirection: "column", gap: 12 }}>
+        
+        {/* Карточка 1: Сеть и TorrServer */}
         <PanelSection>
           <PanelSectionRow>
-            <Field
-              label="Парсер Jackett / JacRed"
-              description={
-                jacredOk === null
-                  ? "Проверка соединения..."
-                  : jacredOk
-                  ? "Связь с парсером установлена"
-                  : "Парсер недоступен или не настроен"
-              }
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  fontWeight: 600,
-                  fontSize: 13,
-                }}
-              >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", marginBottom: 4 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>Парсер JacRed</span>
+              <div>
                 {jacredOk === null ? (
-                  <span
-                    style={{
-                      color: "rgba(255, 255, 255, 0.5)",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 5,
-                    }}
-                  >
-                    <FaSpinner
-                      style={{
-                        fontSize: 11,
-                        animation: "projacktor-spin 1s linear infinite",
-                      }}
-                    />
-                    Проверка...
+                  <span style={{ color: "rgba(255, 255, 255, 0.5)", fontSize: 11, display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    <FaSpinner style={{ fontSize: 10, animation: "projacktor-spin 1s linear infinite" }} /> Проверка...
                   </span>
                 ) : jacredOk ? (
-                  <span
-                    style={{
-                      color: "#10b981",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 5,
-                    }}
-                  >
-                    <FaCheck style={{ fontSize: 11 }} /> Подключено
+                  <span style={{ color: "#10b981", fontSize: 11, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    <FaCheck style={{ fontSize: 10 }} /> Подключено
                   </span>
                 ) : (
-                  <span
-                    style={{
-                      color: "#ef4444",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 5,
-                    }}
-                  >
-                    <FaTimes style={{ fontSize: 11 }} /> Не подключено
+                  <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    <FaTimes style={{ fontSize: 10 }} /> Не подключено
                   </span>
                 )}
               </div>
-            </Field>
-          </PanelSectionRow>
-
-          <PanelSectionRow>
-            <div style={{ width: "100%", marginTop: 2, marginBottom: 6 }}>
-              <TextField
-                value={jacredUrl}
-                onChange={(e) => setJacredUrl(e.target.value)}
-                {...({ placeholder: "https://jac.red" } as any)}
-              />
             </div>
           </PanelSectionRow>
 
           <PanelSectionRow>
-            <ButtonItem
-              layout="below"
-              onClick={handleSaveSettings}
-              disabled={settingsSaving}
-            >
-              {settingsSaving ? "Сохранение..." : "Сохранить и проверить парсер"}
-            </ButtonItem>
-          </PanelSectionRow>
-        </PanelSection>
-
-        {/* Секция 2: Встроенный TorrServer */}
-        <PanelSection>
-          <PanelSectionRow>
-            <Field
-              label="Встроенный TorrServer"
-              description={`Порт: ${torrServerPort} • Кэш в RAM: 256 МБ • Запись на диск: отключена`}
-            >
-              <div
+            <div style={{ display: "flex", gap: 8, alignItems: "center", width: "100%", marginBottom: 8 }}>
+              <div style={{ flex: 1 }}>
+                <TextField
+                  value={jacredUrl}
+                  onChange={(e) => setJacredUrl(e.target.value)}
+                  {...({ placeholder: "https://jac.red" } as any)}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleSaveSettings}
+                disabled={settingsSaving}
                 style={{
-                  display: "flex",
+                  padding: "6px 14px",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  whiteSpace: "nowrap",
+                  height: 36,
+                  cursor: "pointer",
+                  display: "inline-flex",
                   alignItems: "center",
                   gap: 6,
-                  fontWeight: 600,
-                  fontSize: 13,
+                  flexShrink: 0
                 }}
               >
-                {torrServerOk === null ? (
-                  <span
-                    style={{
-                      color: "rgba(255, 255, 255, 0.5)",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 5,
-                    }}
-                  >
-                    <FaSpinner
-                      style={{
-                        fontSize: 11,
-                        animation: "projacktor-spin 1s linear infinite",
-                      }}
-                    />
-                    Проверка...
-                  </span>
-                ) : torrServerOk ? (
-                  <span
-                    style={{
-                      color: "#10b981",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 5,
-                    }}
-                  >
-                    <FaCheck style={{ fontSize: 11 }} /> Работает
+                {settingsSaving ? <FaSpinner style={{ fontSize: 10, animation: "projacktor-spin 1s linear infinite" }} /> : null}
+                {settingsSaving ? "Проверка..." : "Проверить"}
+              </button>
+            </div>
+          </PanelSectionRow>
+
+          <PanelSectionRow>
+            <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 8, marginTop: 2, width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#fff" }}>Встроенный TorrServer</div>
+                <div style={{ fontSize: 10.5, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>
+                  Порт: {torrServerPort} • ОЗУ: 256 МБ • Zero Disk Wear
+                </div>
+              </div>
+              <div>
+                {torrServerOk ? (
+                  <span style={{ color: "#10b981", fontSize: 11, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    <FaCheck style={{ fontSize: 10 }} /> Работает
                   </span>
                 ) : (
-                  <span
-                    style={{
-                      color: "#ef4444",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 5,
-                    }}
-                  >
-                    <FaTimes style={{ fontSize: 11 }} /> Остановлен
+                  <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    <FaTimes style={{ fontSize: 10 }} /> Остановлен
                   </span>
                 )}
               </div>
-            </Field>
+            </div>
           </PanelSectionRow>
         </PanelSection>
 
-        {/* Секция 3: Путь для загрузок и накопители */}
+        {/* Карточка 2: Путь сохранения и Накопители */}
         <PanelSection>
           <PanelSectionRow>
-            <Field
-              label="Путь для сохранения загрузок"
-              description="Папка на диске, куда сохраняются фильмы и сериалы при оффлайн-загрузке"
-            >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", marginBottom: 4 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>Папка для загрузок</span>
               {pathSavedSuccess && (
-                <span style={{ color: "#10b981", fontSize: 12, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <span style={{ color: "#10b981", fontSize: 11, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
                   <FaCheck style={{ fontSize: 10 }} /> Сохранено
                 </span>
               )}
-            </Field>
-          </PanelSectionRow>
-
-          <PanelSectionRow>
-            <div style={{ width: "100%", marginTop: 2, marginBottom: 8 }}>
-              <TextField
-                value={downloadPath}
-                onChange={(e) => setDownloadPath(e.target.value)}
-                {...({ placeholder: "/home/deck/Movies/Projacktor" } as any)}
-              />
             </div>
           </PanelSectionRow>
 
-          {/* Быстрый выбор накопителей */}
+          <PanelSectionRow>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", width: "100%", marginBottom: 6 }}>
+              <div style={{ flex: 1 }}>
+                <TextField
+                  value={downloadPath}
+                  onChange={(e) => setDownloadPath(e.target.value)}
+                  {...({ placeholder: "/home/deck/Movies/Projacktor" } as any)}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => handleSaveDownloadPath()}
+                disabled={pathSaving}
+                style={{
+                  padding: "6px 14px",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  whiteSpace: "nowrap",
+                  height: 36,
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  flexShrink: 0
+                }}
+              >
+                {pathSaving ? "..." : "Сохранить"}
+              </button>
+            </div>
+          </PanelSectionRow>
+
+          {/* Быстрые пресеты накопителей */}
           {drives.length > 0 && (
             <PanelSectionRow>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, width: "100%", marginBottom: 8 }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, width: "100%", marginBottom: 8 }}>
                 {drives.map((d) => {
                   const isCurrent =
                     downloadPath === d.path ||
@@ -396,24 +344,24 @@ export const SettingsView: FC = memo(() => {
                       style={{
                         display: "inline-flex",
                         alignItems: "center",
-                        gap: 8,
-                        padding: "8px 14px",
-                        fontSize: 12,
+                        gap: 6,
+                        padding: "5px 10px",
+                        fontSize: 11,
                         fontWeight: 600,
                         cursor: "pointer",
-                        backgroundColor: isCurrent ? "rgba(16, 185, 129, 0.2)" : "rgba(255, 255, 255, 0.06)",
-                        border: isCurrent ? "1px solid #10b981" : "1px solid rgba(255, 255, 255, 0.12)",
-                        borderRadius: 6,
+                        backgroundColor: isCurrent ? "rgba(16, 185, 129, 0.2)" : "rgba(255, 255, 255, 0.05)",
+                        border: isCurrent ? "1px solid #10b981" : "1px solid rgba(255, 255, 255, 0.1)",
+                        borderRadius: 5,
                         color: isCurrent ? "#34d399" : "#ffffff",
                       }}
                     >
                       {d.is_removable ? (
-                        <FaSdCard style={{ fontSize: 13, color: isCurrent ? "#34d399" : "#60a5fa" }} />
+                        <FaSdCard style={{ fontSize: 11, color: isCurrent ? "#34d399" : "#60a5fa" }} />
                       ) : (
-                        <FaHdd style={{ fontSize: 13, color: isCurrent ? "#34d399" : "#94a3b8" }} />
+                        <FaHdd style={{ fontSize: 11, color: isCurrent ? "#34d399" : "#94a3b8" }} />
                       )}
                       <span>{d.name}</span>
-                      <span style={{ fontSize: 11, opacity: 0.65 }}>({formatBytes(d.free)} своб.)</span>
+                      <span style={{ fontSize: 10, opacity: 0.65 }}>({formatBytes(d.free)} своб.)</span>
                     </button>
                   );
                 })}
@@ -421,30 +369,32 @@ export const SettingsView: FC = memo(() => {
             </PanelSectionRow>
           )}
 
+          {/* Сброс кэша */}
           <PanelSectionRow>
-            <ButtonItem
-              layout="below"
-              onClick={() => handleSaveDownloadPath()}
-              disabled={pathSaving}
-            >
-              {pathSaving ? "Сохранение..." : "Сохранить путь"}
-            </ButtonItem>
+            <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 8, marginTop: 2, width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Кэш постеров и метаданных</span>
+              <button
+                type="button"
+                onClick={handleClearCache}
+                disabled={clearingCache}
+                style={{
+                  padding: "5px 12px",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  opacity: 0.85
+                }}
+              >
+                <FaTrash style={{ fontSize: 10 }} />
+                {clearingCache ? "Очистка..." : cacheClearedSuccess ? "✓ Кэш очищен" : "Очистить кэш"}
+              </button>
+            </div>
           </PanelSectionRow>
         </PanelSection>
 
-        {/* Секция 4: Сброс кэша */}
-        <PanelSection>
-          <PanelSectionRow>
-            <ButtonItem
-              layout="below"
-              onClick={handleClearCache}
-              disabled={clearingCache}
-            >
-              <FaTrash style={{ marginRight: 8, fontSize: 12 }} />
-              {clearingCache ? "Очистка..." : cacheClearedSuccess ? "Кэш успешно очищен!" : "Сбросить кэш"}
-            </ButtonItem>
-          </PanelSectionRow>
-        </PanelSection>
       </div>
     </Focusable>
   );

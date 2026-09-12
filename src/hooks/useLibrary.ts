@@ -136,7 +136,8 @@ export function useLibrary(onPlayVideo?: (filePath: string, title: string, isOnl
         const res = await rpcPrepareStream(item.id, fileIndex);
         if (res && res.success && (res.stream_url || res.file_path)) {
           if (onPlayVideo) {
-            onPlayVideo(res.stream_url || res.file_path!, res.title || item.title, true, res.torrent_hash);
+            const isOnlineStream = res.online !== false && (res.stream_url ? !res.stream_url.includes("file=") : false);
+            onPlayVideo(res.stream_url || res.file_path!, res.title || item.title, isOnlineStream, res.torrent_hash);
           }
         } else if (res && !res.success && res.error) {
           console.error("Ошибка подготовки онлайн потока:", res.error);

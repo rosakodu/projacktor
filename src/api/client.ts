@@ -77,25 +77,26 @@ export async function fetchCatalog(
 ): Promise<MediaItem[]> {
   try {
     let url = "";
+    const today = new Date().toISOString().split("T")[0];
     if (mediaType === "cartoon") {
-      if (endpoint === "watching_today") {
-        url = `${API_BASE}/tmdb/discover/movie?with_genres=16&sort_by=popularity.desc&page=${page}`;
-      } else if (endpoint === "trending_today") {
-        url = `${API_BASE}/tmdb/discover/movie?with_genres=16&sort_by=popularity.desc&page=${page}`;
+      if (endpoint === "watching_today" || endpoint === "trending_today") {
+        url = `${API_BASE}/tmdb/discover/movie?with_genres=16&primary_release_date.lte=${today}&vote_count.gte=10&sort_by=popularity.desc&page=${page}`;
       } else if (endpoint === "trending_week" || endpoint === "trending") {
-        url = `${API_BASE}/tmdb/discover/movie?with_genres=16&sort_by=revenue.desc&page=${page}`;
+        url = `${API_BASE}/tmdb/discover/movie?with_genres=16&primary_release_date.lte=${today}&vote_count.gte=50&sort_by=vote_count.desc&page=${page}`;
       } else if (endpoint === "top_rated") {
         url = `${API_BASE}/tmdb/discover/movie?with_genres=16&vote_count.gte=200&sort_by=vote_average.desc&page=${page}`;
+      } else {
+        url = `${API_BASE}/tmdb/discover/movie?with_genres=16&primary_release_date.lte=${today}&vote_count.gte=10&sort_by=popularity.desc&page=${page}`;
       }
     } else if (mediaType === "anime") {
-      if (endpoint === "watching_today") {
-        url = `${API_BASE}/tmdb/discover/tv?with_genres=16&with_original_language=ja&sort_by=popularity.desc&page=${page}`;
-      } else if (endpoint === "trending_today") {
-        url = `${API_BASE}/tmdb/discover/tv?with_genres=16&with_original_language=ja&sort_by=popularity.desc&page=${page}`;
+      if (endpoint === "watching_today" || endpoint === "trending_today") {
+        url = `${API_BASE}/tmdb/discover/tv?with_genres=16&with_original_language=ja&first_air_date.lte=${today}&vote_count.gte=10&sort_by=popularity.desc&page=${page}`;
       } else if (endpoint === "trending_week" || endpoint === "trending") {
-        url = `${API_BASE}/tmdb/discover/tv?with_genres=16&with_original_language=ja&sort_by=vote_count.desc&page=${page}`;
+        url = `${API_BASE}/tmdb/discover/tv?with_genres=16&with_original_language=ja&first_air_date.lte=${today}&vote_count.gte=50&sort_by=vote_count.desc&page=${page}`;
       } else if (endpoint === "top_rated") {
         url = `${API_BASE}/tmdb/discover/tv?with_genres=16&with_original_language=ja&vote_count.gte=100&sort_by=vote_average.desc&page=${page}`;
+      } else {
+        url = `${API_BASE}/tmdb/discover/tv?with_genres=16&with_original_language=ja&first_air_date.lte=${today}&vote_count.gte=10&sort_by=popularity.desc&page=${page}`;
       }
     } else if (mediaType === "tv") {
       if (endpoint === "watching_today") {
@@ -176,8 +177,13 @@ function extractYears(title: string): number[] {
 function isTvRelease(title: string): boolean {
   const tvPatterns = [
     /\b[sS]\d+/i,
+    /\b\d+\s*[xX]\s*\d+\b/i,
     /(?:^|[^\p{L}\p{N}])(сезон|сезона|сезоны|сезонов|сери[яий]|серия|серии|серий|эпизод|эпизоды|мини[- ]?сериал|сериал)(?:$|[^\p{L}\p{N}])/iu,
     /\b\d+\s*из\s*\d+\b/i,
+    /\[\s*\d+[\s_-]+\d+\s*\]/,
+    /\(\s*\d+[\s_-]+\d+\s*\)/,
+    /\[\s*(?:TV|ТВ|OVA|OAD|Special|Спешл)\b/i,
+    /\b(?:s\d+|season\s*\d+)\b/i,
   ];
   return tvPatterns.some((p) => p.test(title));
 }
@@ -216,15 +222,21 @@ function filterTorrents(
     if (isTargetMovie && isTvRelease(title)) {
       return false;
     }
-    if (isTargetTv && !isTvRelease(title) && !isCollection(title)) {
-      return false;
-    }
     if (isTargetMovie && isCollection(title) && !isCollection(targetTitle)) {
       return false;
     }
-    if (isUnwantedSequel(title, targetTitle) || (originalTitle && isUnwantedSequel(title, originalTitle))) {
-      return false;
+    if (isTargetMovie) {
+      if (isUnwantedSequel(title, targetTitle) || (originalTitle && isUnwantedSequel(title, originalTitle))) {
+        return false;
+      }
     }
+    if (isTargetTv) {
+      const isExplicitSingleMovie = /\b(полнометражный\s*фильм|фильм\b|movie\b)\b/i.test(title) && !isTvRelease(title) && !isCollection(title);
+      if (isExplicitSingleMovie) {
+        return false;
+      }
+    }
+
     if (!isNaN(targetY)) {
       const years = extractYears(title);
       if (years.length > 0) {
@@ -235,14 +247,14 @@ function filterTorrents(
           const hasValidTvYear = years.some((y) => y >= targetY - 1);
           if (!hasValidTvYear) return false;
         }
-      } else {
-        if (targetY >= 2025) return false;
       }
     }
 
     return true;
   });
 }
+
+const hasCJK = (str: string) => /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f\uac00-\ud7af]/.test(str);
 
 export async function searchTorrents(
   title: string,
@@ -251,11 +263,12 @@ export async function searchTorrents(
   originalTitle?: string
 ): Promise<TorrentItem[]> {
   try {
-    const cat = mediaType === "movie" ? "2000" : "5000";
+    const cat = mediaType === "movie" ? "2000,5070" : "5000,5070";
 
-    const fetchQ = async (q: string): Promise<any[]> => {
+    const fetchQ = async (q: string, category: string = cat): Promise<any[]> => {
       try {
-        const res = await fetch(`${API_BASE}/jacred/search?query=${encodeURIComponent(q)}&category=${cat}`);
+        const catParam = category ? `&category=${category}` : "";
+        const res = await fetch(`${API_BASE}/jacred/search?query=${encodeURIComponent(q)}${catParam}`);
         if (!res.ok) return [];
         return (await res.json()) || [];
       } catch {
@@ -263,21 +276,35 @@ export async function searchTorrents(
       }
     };
 
+    const cleanTitle = title.replace(/[№#]/g, " ").replace(/\s+/g, " ").trim();
+
     const queries = new Set<string>();
+    queries.add(cleanTitle);
     if (year) {
-      queries.add(`${title} ${year}`);
+      queries.add(`${cleanTitle} ${year}`);
     }
-    queries.add(title);
 
-    if (originalTitle && originalTitle.trim() && originalTitle.toLowerCase() !== title.toLowerCase()) {
-      if (year) {
-        queries.add(`${originalTitle} ${year}`);
+    const colonIdx = cleanTitle.indexOf(":");
+    if (colonIdx > 2) {
+      const shortTitle = cleanTitle.substring(0, colonIdx).trim();
+      if (shortTitle.length >= 3) {
+        queries.add(shortTitle);
       }
-      queries.add(originalTitle);
     }
 
+    if (originalTitle && originalTitle.trim() && originalTitle.toLowerCase() !== cleanTitle.toLowerCase()) {
+      if (!hasCJK(originalTitle)) {
+        const cleanOrig = originalTitle.replace(/[№#]/g, " ").replace(/\s+/g, " ").trim();
+        queries.add(cleanOrig);
+        if (year) {
+          queries.add(`${cleanOrig} ${year}`);
+        }
+      }
+    }
+
+    const queryList = Array.from(queries).slice(0, 3);
     const results = await Promise.allSettled(
-      Array.from(queries).map((q) => fetchQ(q))
+      queryList.map((q) => fetchQ(q))
     );
 
     let rawCandidates: any[] = [];
@@ -287,7 +314,18 @@ export async function searchTorrents(
       }
     }
 
-    const filtered = filterTorrents(rawCandidates, title, year, mediaType, originalTitle);
+    if (rawCandidates.length === 0) {
+      const fallbackResults = await Promise.allSettled(
+        queryList.slice(0, 2).map((q) => fetchQ(q, ""))
+      );
+      for (const r of fallbackResults) {
+        if (r.status === "fulfilled" && Array.isArray(r.value)) {
+          rawCandidates.push(...r.value);
+        }
+      }
+    }
+
+    const filtered = filterTorrents(rawCandidates, cleanTitle, year, mediaType, originalTitle);
 
     const seen = new Set<string>();
     const deduplicated: TorrentItem[] = [];
