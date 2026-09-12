@@ -656,6 +656,14 @@ class DownloadManager:
 
     def get_global_stats(self):
         return self._rpc_call("aria2.getGlobalStat")
+
+    def sync_once(self):
+        if not self.is_running():
+            return
+        try:
+            self._update_db()
+        except Exception as e:
+            logger.error(f"sync_once error: {e}")
         
     def _sync_loop(self):
         while self._running:
@@ -675,11 +683,11 @@ class DownloadManager:
         
         db = get_db()
         try:
-            self._update_db_inner(db, task_map)
+            self._update_db_inner(db, task_map, all_tasks)
         finally:
             db.close()
 
-    def _update_db_inner(self, db, task_map):
+    def _update_db_inner(self, db, task_map, all_tasks):
         cursor = db.cursor()
         cursor.execute("SELECT id, aria2_gid, status, download_dir, media_id, magnet_uri FROM downloads WHERE status NOT IN ('completed')")
         for row in cursor.fetchall():
@@ -723,6 +731,14 @@ class DownloadManager:
 
             # 2. Поиск активной задачи в aria2c
             t = task_map.get(gid)
+
+            # Если задача завершилась ошибкой дубликата 12 (InfoHash is already registered) — ищем реальную рабочую задачу
+            if t and t.get('status') == 'error':
+                err_code = str(t.get('errorCode', ''))
+                err_msg = str(t.get('errorMessage', '')).lower()
+                if err_code == '12' or 'already registered' in err_msg:
+                    t = None
+
             if t:
                 followed = t.get('followedBy')
                 if followed and len(followed) > 0:
@@ -735,6 +751,8 @@ class DownloadManager:
             if not t:
                 for cand in all_tasks:
                     if cand.get('following') == gid:
+                        if cand.get('status') == 'error' and str(cand.get('errorCode', '')) == '12':
+                            continue
                         new_gid = cand['gid']
                         cursor.execute("UPDATE downloads SET aria2_gid=? WHERE id=?", (new_gid, row_id))
                         gid = new_gid
@@ -755,12 +773,14 @@ class DownloadManager:
                     cand_hash = cand.get('infoHash', '').lower()
                     cand_dir = os.path.normpath(cand.get('dir', '')) if cand.get('dir') else ""
                     if (target_hash and cand_hash == target_hash) or (norm_dir and cand_dir == norm_dir):
+                        if cand.get('status') == 'error' and str(cand.get('errorCode', '')) == '12':
+                            continue
                         # Если это метаданные со ссылкой на контент — берем сразу задачу контента
                         cand_followed = cand.get('followedBy')
                         if cand_followed and len(cand_followed) > 0:
                             f_gid = cand_followed[0]
                             f_task = task_map.get(f_gid)
-                            if f_task:
+                            if f_task and not (f_task.get('status') == 'error' and str(f_task.get('errorCode', '')) == '12'):
                                 cand = f_task
                         new_gid = cand['gid']
                         cursor.execute("UPDATE downloads SET aria2_gid=? WHERE id=?", (new_gid, row_id))
@@ -2619,6 +2639,20 @@ class Plugin:
                 return {"success": False, "error": "Медиа-проект не найден в базе"}
 
             mid = m['id']
+
+            # Гарантируем наличие magnet_uri
+            if not m.get('magnet_uri') and h.get('torrent_hash'):
+                hash_val = h['torrent_hash']
+                trackers = "&".join(f"tr={urllib.parse.quote(t)}" for t in POPULAR_TRACKERS[:5])
+                m_magnet = f"magnet:?xt=urn:btih:{hash_val}&{trackers}"
+                db.execute("UPDATE media SET magnet_uri=? WHERE id=?", (m_magnet, mid))
+
+            # Гарантируем наличие download_dir
+            if not m.get('download_dir'):
+                m_type = m.get('media_type') or 'movie'
+                m_dir = os.path.join(VIDEO_DIR, "Фильмы" if m_type == 'movie' else "Сериалы", m['title'])
+                db.execute("UPDATE media SET download_dir=? WHERE id=?", (m_dir, mid))
+
             # Включаем проект в библиотеку
             db.execute("UPDATE media SET in_library=1 WHERE id=?", (mid,))
             db.commit()
@@ -2627,6 +2661,8 @@ class Plugin:
             # Запускаем загрузку
             ep_idx = str(h.get('episode_number') or '') if h.get('episode_number') is not None else ''
             res = await self.start_download(mid, ep_idx)
+            if self.dm:
+                self.dm.sync_once()
             return {"success": True, "media_id": mid, "result": res}
         except Exception as e:
             logger.error(f"Plugin start_history_download error: {e}")
@@ -2782,25 +2818,60 @@ class Plugin:
                 if file_indices:
                     options["select-file"] = str(file_indices)
                     
+                target_hash = ""
+                if "xt=urn:btih:" in (magnet or "").lower():
+                    try:
+                        target_hash = magnet.lower().split("xt=urn:btih:")[1].split("&")[0].strip()
+                    except: pass
+
+                st = None
                 if gid and self.dm:
-                    st = self.dm.get_status(gid)
-                    if st:
-                        followed = st.get('followedBy')
-                        if followed and len(followed) > 0:
-                            gid = followed[0]
-                            st = self.dm.get_status(gid) or st
-                            cursor.execute("UPDATE downloads SET aria2_gid=? WHERE id=?", (gid, dl['id']))
-                        if file_indices:
-                            self.dm.select_files(gid, str(file_indices))
-                        self.dm.resume(gid)
-                        cursor.execute("UPDATE downloads SET status='downloading' WHERE id=?", (dl['id'],))
-                        cursor.execute("UPDATE media SET in_library=1, status='downloading' WHERE id=?", (mid,))
-                        db.commit()
-                        return {"success": True, "gid": gid}
-                        
+                    cand_st = self.dm.get_status(gid)
+                    if cand_st and not (cand_st.get('status') == 'error' and str(cand_st.get('errorCode', '')) == '12'):
+                        st = cand_st
+
+                # Если нет валидного st по gid, проверяем существующие задачи в aria2 по infoHash
+                if not st and target_hash and self.dm:
+                    active = self.dm._rpc_call("aria2.tellActive") or []
+                    waiting = self.dm._rpc_call("aria2.tellWaiting", [0, 100]) or []
+                    stopped = self.dm._rpc_call("aria2.tellStopped", [0, 100]) or []
+                    for cand in active + waiting + stopped:
+                        if cand.get('infoHash', '').lower() == target_hash:
+                            if cand.get('status') == 'error' and str(cand.get('errorCode', '')) == '12':
+                                continue
+                            followed = cand.get('followedBy')
+                            if followed and len(followed) > 0:
+                                f_cand = self.dm.get_status(followed[0])
+                                if f_cand and not (f_cand.get('status') == 'error' and str(f_cand.get('errorCode', '')) == '12'):
+                                    st = f_cand
+                                    gid = st.get('gid')
+                                    break
+                            st = cand
+                            gid = st.get('gid')
+                            break
+
+                if st and self.dm:
+                    followed = st.get('followedBy')
+                    if followed and len(followed) > 0:
+                        gid = followed[0]
+                        st = self.dm.get_status(gid) or st
+                    if file_indices:
+                        self.dm.select_files(gid, str(file_indices))
+                    self.dm.resume(gid)
+                    if dl:
+                        cursor.execute("UPDATE downloads SET aria2_gid=?, status='downloading', error_message=NULL WHERE id=?", (gid, dl['id']))
+                    else:
+                        cursor.execute("""
+                            INSERT INTO downloads (media_id, magnet_uri, torrent_title, download_dir, aria2_gid, status, quality)
+                            VALUES (?, ?, ?, ?, ?, 'downloading', ?)
+                        """, (mid, magnet, m['torrent_title'], ddir, gid, m['quality']))
+                    cursor.execute("UPDATE media SET in_library=1, status='downloading' WHERE id=?", (mid,))
+                    db.commit()
+                    return {"success": True, "gid": gid}
+
                 new_gid = self.dm.add_download(magnet, ddir, options) if self.dm else ""
                 if dl:
-                    cursor.execute("UPDATE downloads SET aria2_gid=?, status='downloading' WHERE id=?", (new_gid, dl['id']))
+                    cursor.execute("UPDATE downloads SET aria2_gid=?, status='downloading', error_message=NULL WHERE id=?", (new_gid, dl['id']))
                 else:
                     cursor.execute("""
                         INSERT INTO downloads (media_id, magnet_uri, torrent_title, download_dir, aria2_gid, status, quality)
