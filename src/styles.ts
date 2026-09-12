@@ -344,7 +344,8 @@ export const PROJACKTOR_STYLES = `
 }
 
 .projacktor-player-dropdown-menu .ds-btn:focus,
-.projacktor-player-dropdown-menu .ds-btn.gpfocus {
+.projacktor-player-dropdown-menu .ds-btn.gpfocus,
+.projacktor-player-dropdown-menu .ds-btn.active-nav {
   background: #1a9fff !important;
   border-color: #ffffff !important;
   color: #ffffff !important;
@@ -355,7 +356,8 @@ export const PROJACKTOR_STYLES = `
 }
 
 .projacktor-player-dropdown-menu .ds-btn:focus svg,
-.projacktor-player-dropdown-menu .ds-btn.gpfocus svg {
+.projacktor-player-dropdown-menu .ds-btn.gpfocus svg,
+.projacktor-player-dropdown-menu .ds-btn.active-nav svg {
   fill: #ffffff !important;
   color: #ffffff !important;
 }
