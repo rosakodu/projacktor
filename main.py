@@ -580,6 +580,7 @@ class DownloadManager:
                     """, (total_sz, total_sz, row_id))
                     if row['media_id']:
                         self._scan_and_add_files(cursor, row['media_id'], row_dir)
+                    db.commit()
                     continue
 
             # 2. Поиск активной задачи в aria2c
@@ -717,7 +718,14 @@ def extract_hash_from_magnet(magnet):
         return ""
     m = re.search(r'xt=urn:btih:([a-fA-F0-9]{40}|[a-zA-Z2-7]{32})', magnet)
     if m:
-        return m.group(1).lower()
+        h = m.group(1).lower()
+        if len(h) == 32:
+            try:
+                import base64
+                return base64.b32decode(h.upper()).hex().lower()
+            except Exception:
+                pass
+        return h
     return ""
 
 # --- TorrServer Manager ---
@@ -908,6 +916,15 @@ class TorrServerManager:
             logger.error("TorrServer is not running and could not be started for add_torrent.")
             return None
         try:
+            if magnet_or_link and magnet_or_link.startswith("magnet:?") and "&tr=" not in magnet_or_link:
+                trackers = [
+                    "udp://tracker.opentrackr.org:1337/announce",
+                    "udp://open.stealth.si:80/announce",
+                    "udp://tracker.torrent.eu.org:451/announce",
+                    "udp://explodie.org:6969/announce"
+                ]
+                magnet_or_link = magnet_or_link + "".join(f"&tr={urllib.parse.quote(tr, safe='')}" for tr in trackers)
+
             url = f"{self.base_url}/torrents"
             payload = {
                 "action": "add",
@@ -2419,14 +2436,20 @@ class Plugin:
                 self.ts = TorrServerManager(port=sett.get('torrserver_port', 8095))
             if self.ts and magnet:
                 self.ts.ensure_running()
-                self.ts.add_torrent(magnet, title=m['title'], poster=m.get('poster_path', ''))
+                add_res = self.ts.add_torrent(magnet, title=m['title'], poster=m.get('poster_path', ''))
+                if add_res and isinstance(add_res, dict) and add_res.get('hash'):
+                    thash = add_res['hash'].lower()
+
                 t_info = None
-                for _ in range(24): # wait up to 12s
-                    if thash:
-                        t_info = self.ts.get_torrent(thash)
-                        if t_info and t_info.get('file_stats'):
-                            break
-                    await asyncio.sleep(0.5)
+                if add_res and isinstance(add_res, dict) and add_res.get('file_stats'):
+                    t_info = add_res
+                else:
+                    for _ in range(30): # wait up to 15s
+                        if thash:
+                            t_info = self.ts.get_torrent(thash)
+                            if t_info and t_info.get('file_stats'):
+                                break
+                        await asyncio.sleep(0.5)
                 
                 if t_info and t_info.get('file_stats'):
                     episodes = []

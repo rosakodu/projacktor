@@ -36,6 +36,8 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
   // Series inline episodes state
   const isTv = movie.media_type === "tv";
   const [expandedTorrentId, setExpandedTorrentId] = useState<string | null>(null);
+  const expandedTorrentIdRef = useRef<string | null>(null);
+  expandedTorrentIdRef.current = expandedTorrentId;
   const [torrentMediaIds, setTorrentMediaIds] = useState<Record<string, number>>({});
   const [episodesMap, setEpisodesMap] = useState<Record<string, EpisodeItem[]>>({});
   const [loadingEpisodesMap, setLoadingEpisodesMap] = useState<Record<string, boolean>>({});
@@ -236,6 +238,37 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
   };
 
   // 3. Toggle episodes inline for TV series (Requirement 1a)
+  const fetchEpisodesForTorrent = useCallback(
+    async (torrent: TorrentItem) => {
+      const tId = torrent.id || torrent.magnet;
+      setLoadingEpisodesMap((prev) => ({ ...prev, [tId]: true }));
+      try {
+        const mid = await getOrCreateMediaId(torrent, false);
+        const eps = await rpcGetEpisodes(mid);
+        if (Array.isArray(eps) && eps.length > 0) {
+          setEpisodesMap((prev) => ({ ...prev, [tId]: sortEpisodes(eps) }));
+        } else {
+          // Фоновый авто-повтор через 3.5 сек, если раздача ещё открыта
+          setTimeout(async () => {
+            if (expandedTorrentIdRef.current === tId) {
+              try {
+                const retryEps = await rpcGetEpisodes(mid);
+                if (Array.isArray(retryEps) && retryEps.length > 0) {
+                  setEpisodesMap((prev) => ({ ...prev, [tId]: sortEpisodes(retryEps) }));
+                }
+              } catch {}
+            }
+          }, 3500);
+        }
+      } catch (err: any) {
+        console.error("Ошибка получения серий:", err);
+      } finally {
+        setLoadingEpisodesMap((prev) => ({ ...prev, [tId]: false }));
+      }
+    },
+    [getOrCreateMediaId]
+  );
+
   const handleToggleEpisodes = async (torrent: TorrentItem) => {
     const tId = torrent.id || torrent.magnet;
     const isCurrentlyOpen = expandedTorrentId === tId;
@@ -248,18 +281,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
     setExpandedTorrentId(tId);
 
     if (!episodesMap[tId] || episodesMap[tId].length === 0) {
-      setLoadingEpisodesMap((prev) => ({ ...prev, [tId]: true }));
-      try {
-        const mid = await getOrCreateMediaId(torrent, false);
-        const eps = await rpcGetEpisodes(mid);
-        if (Array.isArray(eps)) {
-          setEpisodesMap((prev) => ({ ...prev, [tId]: sortEpisodes(eps) }));
-        }
-      } catch (err: any) {
-        console.error("Ошибка получения серий:", err);
-      } finally {
-        setLoadingEpisodesMap((prev) => ({ ...prev, [tId]: false }));
-      }
+      fetchEpisodesForTorrent(torrent);
     }
   };
 
@@ -609,12 +631,22 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                       {isTv && isExpanded && (
                         <div className="projacktor-torrent-episodes">
                           {isEpLoading ? (
-                            <div style={{ padding: "8px 4px", fontSize: 11, color: "var(--ds-text-dim)" }}>
-                              Получение списка серий из раздачи...
+                            <div style={{ padding: "8px 4px", fontSize: 11, color: "var(--ds-text-dim)", display: "flex", alignItems: "center", gap: 8 }}>
+                              <FaSpinner style={{ animation: "projacktor-spin 0.9s linear infinite" }} />
+                              <span>Получение списка серий из раздачи...</span>
                             </div>
                           ) : episodes.length === 0 ? (
-                            <div style={{ padding: "8px 4px", fontSize: 11, color: "var(--ds-text-dim)" }}>
-                              Серии загружаются. Подождите пару секунд и нажмите снова.
+                            <div style={{ padding: "8px 4px", fontSize: 11, color: "var(--ds-text-dim)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                              <span>Серии загружаются из сети. Подождите пару секунд...</span>
+                              <Focusable
+                                className="ds-btn ds-btn--compact ds-btn--primary"
+                                noFocusRing
+                                onActivate={() => fetchEpisodesForTorrent(tor)}
+                                onClick={() => fetchEpisodesForTorrent(tor)}
+                                style={{ padding: "3px 12px", fontSize: 10, flexShrink: 0 }}
+                              >
+                                Обновить
+                              </Focusable>
                             </div>
                           ) : (
                             episodes.map((ep) => {

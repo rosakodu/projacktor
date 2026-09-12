@@ -1807,7 +1807,17 @@ body.projacktor-magicblack-active [class*="_3FIjYetykQsFYR08l1v7Ls"] {
   outline-offset: 1px !important;
 }
 
-/* ───── Search View Input (Убираем обводку и свечение у поиска) ───── */
+/* ───── Search View Input (Убираем обводку по углам, рамки и свечение у поиска) ───── */
+.projacktor-search-bar-row,
+.projacktor-search-bar-row:focus,
+.projacktor-search-bar-row.gpfocus,
+.projacktor-search-bar-row:focus-within {
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
 .projacktor-search-view input,
 .projacktor-search-view input:focus,
 .projacktor-search-view input.gpfocus,
@@ -1818,9 +1828,6 @@ body.projacktor-magicblack-active [class*="_3FIjYetykQsFYR08l1v7Ls"] {
 .projacktor-search-view .DialogTextInputBase:focus,
 .projacktor-search-view .DialogTextInputBase:focus-within,
 .projacktor-search-view .DialogTextInputBase.gpfocus,
-.projacktor-search-bar-row,
-.projacktor-search-bar-row:focus,
-.projacktor-search-bar-row.gpfocus,
 .projacktor-search-bar-row input,
 .projacktor-search-bar-row input:focus,
 .projacktor-search-bar-row input.gpfocus,
@@ -1834,6 +1841,7 @@ body.projacktor-magicblack-active [class*="_3FIjYetykQsFYR08l1v7Ls"] {
   border: none !important;
   outline: none !important;
   box-shadow: none !important;
+  border-radius: 0px !important;
   background: rgba(255, 255, 255, 0.08) !important;
 }
 
@@ -1854,6 +1862,7 @@ body.projacktor-magicblack-active [class*="_3FIjYetykQsFYR08l1v7Ls"] {
   border: none !important;
   outline: none !important;
   box-shadow: none !important;
+  border-radius: 0px !important;
   background: rgba(255, 255, 255, 0.12) !important;
 }
 `;
