@@ -2720,23 +2720,90 @@ class Plugin:
         finally:
             db.close()
 
-    async def add_to_library(self, data: str):
+    def _cleanup_old_torrent_download(self, mid: int, ddir: str, old_gid: str = "", old_hash: str = ""):
+        """Останавливает и удаляет старую раздачу из aria2 и очищает недокачанные файлы."""
+        logger.info(f"Replacing torrent: cleaning old task mid={mid}, gid={old_gid}, hash={old_hash}")
+        if self.dm:
+            if old_gid:
+                try:
+                    self.dm._rpc_call("aria2.forceRemove", [old_gid])
+                except Exception:
+                    try:
+                        self.dm.remove(old_gid)
+                    except Exception: pass
+                try:
+                    self.dm._rpc_call("aria2.removeDownloadResult", [old_gid])
+                except Exception: pass
+
+            if old_hash:
+                try:
+                    active = self.dm._rpc_call("aria2.tellActive") or []
+                    waiting = self.dm._rpc_call("aria2.tellWaiting", [0, 100]) or []
+                    stopped = self.dm._rpc_call("aria2.tellStopped", [0, 100]) or []
+                    for t in active + waiting + stopped:
+                        h = (t.get('infoHash') or '').lower()
+                        if h == old_hash.lower():
+                            t_gid = t.get('gid')
+                            try:
+                                self.dm._rpc_call("aria2.forceRemove", [t_gid])
+                            except Exception:
+                                try:
+                                    self.dm.remove(t_gid)
+                                except Exception: pass
+                            try:
+                                self.dm._rpc_call("aria2.removeDownloadResult", [t_gid])
+                            except Exception: pass
+                except Exception as e:
+                    logger.warning(f"Error removing old hash {old_hash} from aria2: {e}")
+
+        # Очищаем записи media_files и удаляем старые файлы
+        db = get_db()
         try:
-            body = json.loads(data) if isinstance(data, str) else data
-            sett = load_settings()
-            magnet = body.get('magnet', '')
-            tmdb_id = body.get('tmdb_id')
-            title = body.get('title', 'Медиа')
-            year = body.get('year', '')
-            mtype = body.get('media_type', 'movie')
-            quality = body.get('quality', '')
-            torrent_title = body.get('torrent_title', '') or f"{title} ({quality})".strip()
-            poster_path = body.get('poster_path', '')
-            backdrop_path = body.get('backdrop_path', '')
-            overview = body.get('overview', '')
-            in_lib = 1 if body.get('in_library', False) else 0
-            
-            base_dir = os.path.expanduser(sett['download_path'])
+            cur = db.cursor()
+            old_files = cur.execute("SELECT file_path FROM media_files WHERE media_id=?", (mid,)).fetchall()
+            for f in old_files:
+                fp = f['file_path']
+                try:
+                    if os.path.exists(fp):
+                        os.remove(fp)
+                    if os.path.exists(fp + ".aria2"):
+                        os.remove(fp + ".aria2")
+                except Exception as fe:
+                    logger.warning(f"Error removing old file {fp}: {fe}")
+            cur.execute("DELETE FROM media_files WHERE media_id=?", (mid,))
+            db.commit()
+        except Exception as e:
+            logger.warning(f"Error clearing media_files for media {mid}: {e}")
+        finally:
+            db.close()
+
+        # Удаляем оставшиеся .aria2 файлы в папке загрузки
+        try:
+            if ddir and os.path.isdir(ddir):
+                for fn in os.listdir(ddir):
+                    if fn.endswith(".aria2"):
+                        try:
+                            os.remove(os.path.join(ddir, fn))
+                        except Exception: pass
+        except Exception as e:
+            logger.warning(f"Error cleaning .aria2 in {ddir}: {e}")
+
+    async def add_to_library(self, payload_json: str):
+        try:
+            data = json.loads(payload_json)
+            magnet = data.get('magnet', '')
+            tmdb_id = data.get('tmdb_id')
+            title = data.get('title', '')
+            year = data.get('year', '')
+            mtype = data.get('media_type', 'movie')
+            quality = data.get('quality', '')
+            torrent_title = data.get('torrent_title', '')
+            poster_path = data.get('poster_path', '')
+            backdrop_path = data.get('backdrop_path', '')
+            overview = data.get('overview', '')
+            in_lib = 1 if data.get('in_library', True) else 0
+
+            base_dir = VIDEO_DIR
             folder = "Фильмы" if mtype == 'movie' else "Сериалы"
             safe_title = re.sub(r'[/\\?%*:|"<>!]', '', title).strip() or "Media"
             ddir = os.path.join(base_dir, folder, f"{safe_title} ({year})".strip())
@@ -2745,7 +2812,7 @@ class Plugin:
             db = get_db()
             try:
                 cursor = db.cursor()
-                cursor.execute("SELECT id, in_library FROM media WHERE tmdb_id=?", (tmdb_id,))
+                cursor.execute("SELECT id, in_library, magnet_uri FROM media WHERE tmdb_id=?", (tmdb_id,))
                 row = cursor.fetchone()
                 if not row:
                     cursor.execute("""
@@ -2770,7 +2837,7 @@ class Plugin:
                           magnet, torrent_title, quality, ddir, final_in_lib, mid))
                 
                 if in_lib:
-                    cursor.execute("SELECT id FROM downloads WHERE media_id=?", (mid,))
+                    cursor.execute("SELECT id, magnet_uri, aria2_gid FROM downloads WHERE media_id=?", (mid,))
                     dl_row = cursor.fetchone()
                     if not dl_row:
                         cursor.execute("""
@@ -2778,11 +2845,34 @@ class Plugin:
                             VALUES (?, ?, ?, ?, 'queued', ?)
                         """, (mid, magnet, torrent_title, ddir, quality))
                     else:
-                        cursor.execute("""
-                            UPDATE downloads 
-                            SET magnet_uri=?, torrent_title=?, download_dir=?, quality=?
-                            WHERE id=?
-                        """, (magnet, torrent_title, ddir, quality, dl_row['id']))
+                        old_mag = dl_row['magnet_uri'] or ''
+                        old_hash = ""
+                        if "xt=urn:btih:" in old_mag.lower():
+                            try:
+                                old_hash = old_mag.lower().split("xt=urn:btih:")[1].split("&")[0].strip()
+                            except: pass
+                        new_hash = ""
+                        if "xt=urn:btih:" in (magnet or "").lower():
+                            try:
+                                new_hash = magnet.lower().split("xt=urn:btih:")[1].split("&")[0].strip()
+                            except: pass
+
+                        if old_hash and new_hash and old_hash != new_hash:
+                            logger.info(f"add_to_library: Replacing torrent {old_hash} -> {new_hash} for media {mid}")
+                            self._cleanup_old_torrent_download(mid, ddir, dl_row.get('aria2_gid') or '', old_hash)
+                            cursor.execute("""
+                                UPDATE downloads 
+                                SET magnet_uri=?, torrent_title=?, download_dir=?, quality=?,
+                                    aria2_gid=NULL, status='queued', progress=0, download_speed=0,
+                                    downloaded_size=0, total_size=0, error_message=NULL
+                                WHERE id=?
+                            """, (magnet, torrent_title, ddir, quality, dl_row['id']))
+                        else:
+                            cursor.execute("""
+                                UPDATE downloads 
+                                SET magnet_uri=?, torrent_title=?, download_dir=?, quality=?
+                                WHERE id=?
+                            """, (magnet, torrent_title, ddir, quality, dl_row['id']))
                     
                 db.commit()
                 return {"success": True, "id": mid}
@@ -2827,22 +2917,48 @@ class Plugin:
                 st = None
                 if gid and self.dm:
                     cand_st = self.dm.get_status(gid)
-                    if cand_st and not (cand_st.get('status') == 'error' and str(cand_st.get('errorCode', '')) == '12'):
-                        st = cand_st
+                    if cand_st and not (cand_st.get('status') == 'error' and str(cand_st.get('errorCode', '')) in ('12', '13')):
+                        cand_hash = (cand_st.get('infoHash') or '').lower()
+                        if cand_hash and target_hash and cand_hash != target_hash:
+                            logger.info(f"start_download: Detected different torrent {cand_hash} != {target_hash}, cleaning old task")
+                            self._cleanup_old_torrent_download(mid, ddir, gid, cand_hash)
+                            gid = None
+                            cursor.execute("""
+                                UPDATE downloads
+                                SET aria2_gid=NULL, status='queued', progress=0, download_speed=0,
+                                    downloaded_size=0, total_size=0, error_message=NULL
+                                WHERE media_id=?
+                            """, (mid,))
+                            db.commit()
+                        else:
+                            st = cand_st
 
-                # Если нет валидного st по gid, проверяем существующие задачи в aria2 по infoHash
+                # Проверяем также по хешу в dl_row
+                if dl and not st:
+                    dl_mag = dl.get('magnet_uri') or ''
+                    dl_hash = ""
+                    if "xt=urn:btih:" in dl_mag.lower():
+                        try:
+                            dl_hash = dl_mag.lower().split("xt=urn:btih:")[1].split("&")[0].strip()
+                        except: pass
+                    if dl_hash and target_hash and dl_hash != target_hash:
+                        logger.info(f"start_download: dl_hash {dl_hash} != {target_hash}, cleaning old task")
+                        self._cleanup_old_torrent_download(mid, ddir, gid or '', dl_hash)
+                        gid = None
+
+                # Если нет валидного st по gid, проверяем существующие задачи в aria2 по target_hash
                 if not st and target_hash and self.dm:
                     active = self.dm._rpc_call("aria2.tellActive") or []
                     waiting = self.dm._rpc_call("aria2.tellWaiting", [0, 100]) or []
                     stopped = self.dm._rpc_call("aria2.tellStopped", [0, 100]) or []
                     for cand in active + waiting + stopped:
                         if cand.get('infoHash', '').lower() == target_hash:
-                            if cand.get('status') == 'error' and str(cand.get('errorCode', '')) == '12':
+                            if cand.get('status') == 'error' and str(cand.get('errorCode', '')) in ('12', '13'):
                                 continue
                             followed = cand.get('followedBy')
                             if followed and len(followed) > 0:
                                 f_cand = self.dm.get_status(followed[0])
-                                if f_cand and not (f_cand.get('status') == 'error' and str(f_cand.get('errorCode', '')) == '12'):
+                                if f_cand and not (f_cand.get('status') == 'error' and str(f_cand.get('errorCode', '')) in ('12', '13')):
                                     st = f_cand
                                     gid = st.get('gid')
                                     break
@@ -2859,19 +2975,30 @@ class Plugin:
                         self.dm.select_files(gid, str(file_indices))
                     self.dm.resume(gid)
                     if dl:
-                        cursor.execute("UPDATE downloads SET aria2_gid=?, status='downloading', error_message=NULL WHERE id=?", (gid, dl['id']))
+                        cursor.execute("UPDATE downloads SET aria2_gid=?, status='downloading', error_message=NULL, magnet_uri=?, torrent_title=?, quality=? WHERE id=?", 
+                                       (gid, magnet, m['torrent_title'], m['quality'], dl['id']))
                     else:
                         cursor.execute("""
                             INSERT INTO downloads (media_id, magnet_uri, torrent_title, download_dir, aria2_gid, status, quality)
                             VALUES (?, ?, ?, ?, ?, 'downloading', ?)
                         """, (mid, magnet, m['torrent_title'], ddir, gid, m['quality']))
                     cursor.execute("UPDATE media SET in_library=1, status='downloading' WHERE id=?", (mid,))
+                    
+                    if target_hash:
+                        try:
+                            cursor.execute("UPDATE watch_history SET torrent_hash=?, is_downloaded=0 WHERE media_id=? OR tmdb_id=?", 
+                                           (target_hash, mid, m['tmdb_id']))
+                        except: pass
+                        
                     db.commit()
+                    if self.dm:
+                        self.dm.sync_once()
                     return {"success": True, "gid": gid}
 
                 new_gid = self.dm.add_download(magnet, ddir, options) if self.dm else ""
                 if dl:
-                    cursor.execute("UPDATE downloads SET aria2_gid=?, status='downloading', error_message=NULL WHERE id=?", (new_gid, dl['id']))
+                    cursor.execute("UPDATE downloads SET aria2_gid=?, status='downloading', error_message=NULL, magnet_uri=?, torrent_title=?, quality=? WHERE id=?", 
+                                   (new_gid, magnet, m['torrent_title'], m['quality'], dl['id']))
                 else:
                     cursor.execute("""
                         INSERT INTO downloads (media_id, magnet_uri, torrent_title, download_dir, aria2_gid, status, quality)
@@ -2879,7 +3006,16 @@ class Plugin:
                     """, (mid, magnet, m['torrent_title'], ddir, new_gid, m['quality']))
                     
                 cursor.execute("UPDATE media SET in_library=1, status='downloading' WHERE id=?", (mid,))
+                
+                if target_hash:
+                    try:
+                        cursor.execute("UPDATE watch_history SET torrent_hash=?, is_downloaded=0 WHERE media_id=? OR tmdb_id=?", 
+                                       (target_hash, mid, m['tmdb_id']))
+                    except: pass
+                    
                 db.commit()
+                if self.dm:
+                    self.dm.sync_once()
                 return {"success": True, "gid": new_gid}
             finally:
                 db.close()
