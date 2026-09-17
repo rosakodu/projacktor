@@ -94,14 +94,52 @@ export function dispatchHomeKey(ev: KeyEvent): void {
   }
 }
 
+let _playerActive = false;
+let _movieModalActive = false;
+
+export function setPlayerActive(active: boolean): void {
+  _playerActive = active;
+  try {
+    (globalThis as any).__projacktor_player_active = active;
+  } catch {}
+}
+
+export function isPlayerActive(): boolean {
+  return _playerActive || !!(globalThis as any).__projacktor_player_active;
+}
+
+export function setMovieModalActive(active: boolean): void {
+  _movieModalActive = active;
+  try {
+    (globalThis as any).__projacktor_movie_modal_active = active;
+  } catch {}
+}
+
+export function isMovieModalActive(): boolean {
+  return _movieModalActive || !!(globalThis as any).__projacktor_movie_modal_active;
+}
+
 import { getActiveDocument } from "./activeDoc";
 
 export function isModalOpen(): boolean {
+  if (isPlayerActive()) return true;
+  if (isMovieModalActive()) return true;
   if (isMagicBlack()) return true;
   const doc = getActiveDocument();
   if (!doc) return false;
   return !!doc.querySelector(
-    ".projacktor-modal-root, .projacktor-player-fullscreen"
+    ".projacktor-modal-root, .projacktor-player-fullscreen, .projacktor-movie-modal, [class*='projacktor-player'], [class*='projacktor-modal']"
+  );
+}
+
+export function isUserInTabs(): boolean {
+  const doc = getActiveDocument();
+  if (!doc) return false;
+  const active = doc.activeElement;
+  if (!active) return false;
+  return !!(
+    active.classList?.contains("projacktor-tab-item") ||
+    doc.querySelector(".projacktor-nav-bar")?.contains(active as Node)
   );
 }
 

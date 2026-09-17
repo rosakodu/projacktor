@@ -4,7 +4,7 @@
 
 A Decky Loader plugin for Steam Deck that transforms the console into a full-featured media center and cinema styled natively for Steam Big Picture (Gaming Mode). Features a movie & TV show catalog, JacRed torrent search, background downloading via built-in Aria2c, online streaming, and an OLED power-saving Magic Black mode.
 
-![Screenshot](assets/screenshot.png)
+![Screenshot](assets/preview.png)
 
 ## 📋 Features
 

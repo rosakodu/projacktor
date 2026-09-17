@@ -5,6 +5,7 @@ import { PROJACKTOR_STYLES } from "../styles";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
 import { getActiveDocument } from "../runtime/activeDoc";
 import { playNavSound } from "../runtime/navSound";
+import { setMovieModalActive, isPlayerActive } from "../runtime/homeInputBus";
 import {
   MediaItem,
   TorrentItem,
@@ -22,6 +23,7 @@ import {
   formatBytes,
   sortEpisodes,
 } from "../api";
+import { useI18n } from "../i18n";
 
 interface MovieModalProps {
   movie: MediaItem;
@@ -37,6 +39,7 @@ interface MovieModalProps {
 }
 
 export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnline, onStartMagicBlack }) => {
+  const { t } = useI18n();
   const [torrents, setTorrents] = useState<TorrentItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -59,6 +62,13 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
   const closeModalRef = useRef(closeModal);
   closeModalRef.current = closeModal;
 
+  useEffect(() => {
+    setMovieModalActive(true);
+    return () => {
+      setMovieModalActive(false);
+    };
+  }, []);
+
   // Обработка кнопки B геймпада и клавиш Escape/Backspace для выхода из модалки
   useEffect(() => {
     let lastCloseAt = 0;
@@ -73,6 +83,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
 
     const un = subscribeControllerInput((e) => {
       if (!e.pressed) return;
+      if (isPlayerActive()) return;
       if (e.button === RawButton.B || e.button === 1) {
         triggerClose();
       }
@@ -80,6 +91,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
 
     const doc = getActiveDocument(torrentsRef.current);
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isPlayerActive()) return;
       if (e.key === "Escape" || e.key === "Backspace") {
         e.preventDefault();
         e.stopPropagation();
@@ -189,68 +201,130 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
     };
   }, [title, year, movie.media_type, origTitle]);
 
-  // Автоматический фокус на первом доступном действии при завершении загрузки раздач
+  // Автоматический фокус на кнопке «В избранное» при открытии модального окна
+  useEffect(() => {
+    const focusWatchlistBtn = () => {
+      const doc = getActiveDocument(torrentsRef.current) || document;
+      const btn = doc.querySelector<HTMLElement>(".projacktor-watchlist-btn");
+      if (btn) {
+        doc.querySelectorAll(".gpfocus").forEach((el) => {
+          if (el !== btn) el.classList.remove("gpfocus");
+        });
+        btn.focus();
+        btn.classList.add("gpfocus");
+        btn.classList.add("gpfocuswithin");
+        try {
+          (btn as any).TakeFocus?.(0);
+        } catch {}
+        return true;
+      }
+      return false;
+    };
+
+    let cancelled = false;
+    let timerId: any = null;
+    const delays = [40, 120];
+    let idx = 0;
+
+    const scheduleNext = () => {
+      if (cancelled || idx >= delays.length) return;
+      const delay = delays[idx++];
+      timerId = setTimeout(() => {
+        if (cancelled) return;
+        const focused = focusWatchlistBtn();
+        if (!focused) scheduleNext();
+      }, delay);
+    };
+
+    if (!focusWatchlistBtn()) {
+      scheduleNext();
+    }
+
+    return () => {
+      cancelled = true;
+      if (timerId) clearTimeout(timerId as any);
+    };
+  }, []);
+
+  // Фокус на первом доступном действии раздач только если фокус был потерян
   useEffect(() => {
     if (loading) return;
     const timer = setTimeout(() => {
       const root = torrentsRef.current;
-      const firstInteractive = root?.querySelector<HTMLElement>(
-        "button, .ds-btn, [tabindex='0'], .projacktor-torrent-card, .projacktor-torrent-item"
+      if (!root) return;
+      const doc = getActiveDocument(root) || document;
+      const active = doc.activeElement;
+      // Если фокус уже на кнопке «В избранное» или внутри модального окна — не перебиваем его
+      if (active && (active.classList.contains("projacktor-watchlist-btn") || active.closest(".projacktor-watchlist-btn") || root.contains(active))) {
+        return;
+      }
+      const firstAction = root.querySelector<HTMLElement>(
+        ".projacktor-torrent-actions .projacktor-icon-btn, .projacktor-icon-btn, .projacktor-torrent-ep-row, .ds-btn--primary, .ds-btn, button, [tabindex='0']"
       );
-      if (firstInteractive) {
-        firstInteractive.focus();
-        firstInteractive.classList.add("gpfocus");
+      if (firstAction) {
+        doc.querySelectorAll(".gpfocus").forEach((el) => {
+          if (el !== firstAction) el.classList.remove("gpfocus");
+        });
+        firstAction.focus();
+        firstAction.classList.add("gpfocus");
+        firstAction.classList.add("gpfocuswithin");
+        try {
+          (firstAction as any).TakeFocus?.(0);
+        } catch {}
       }
     }, 50);
     return () => clearTimeout(timer);
   }, [loading, torrents.length]);
 
   // Helper: Prepare media entry in SQLite without adding to library
-  const getOrCreateMediaId = async (torrent: TorrentItem, inLibrary: boolean): Promise<number> => {
-    const tId = torrent.id || torrent.magnet;
-    if (torrentMediaIds[tId]) {
-      if (inLibrary) {
-        // Upgrade to in_library = true
-        await rpcAddToLibrary(
-          JSON.stringify({
-            magnet: torrent.magnet,
-            tmdb_id: movie.id,
-            title,
-            year,
-            media_type: movie.media_type || "movie",
-            quality: torrent.quality || "",
-            torrent_title: torrent.title || `${title} (${torrent.quality || ""})`.trim(),
-            poster_path: movie.poster_path || "",
-            backdrop_path: movie.backdrop_path || "",
-            overview: movie.overview || "",
-            in_library: true,
-          })
-        );
+  const getOrCreateMediaId = useCallback(
+    async (torrent: TorrentItem, inLibrary: boolean): Promise<number> => {
+      const tId = torrent.id || torrent.magnet;
+      if (torrentMediaIds[tId]) {
+        if (inLibrary) {
+          // Upgrade to in_library = true
+          await rpcAddToLibrary(
+            JSON.stringify({
+              magnet: torrent.magnet,
+              tmdb_id: movie.id,
+              title,
+              year,
+              media_type: movie.media_type || "movie",
+              quality: torrent.quality || "",
+              torrent_title: torrent.title || `${title} (${torrent.quality || ""})`.trim(),
+              poster_path: movie.poster_path || "",
+              backdrop_path: movie.backdrop_path || "",
+              overview: movie.overview || "",
+              in_library: true,
+            })
+          );
+        }
+        return torrentMediaIds[tId];
       }
-      return torrentMediaIds[tId];
-    }
 
-    const payload = {
-      magnet: torrent.magnet,
-      tmdb_id: movie.id,
-      title,
-      year,
-      media_type: movie.media_type || "movie",
-      quality: torrent.quality || "",
-      torrent_title: torrent.title || `${title} (${torrent.quality || ""})`.trim(),
-      poster_path: movie.poster_path || "",
-      backdrop_path: movie.backdrop_path || "",
-      overview: movie.overview || "",
-      in_library: inLibrary,
-    };
+      const payload = {
+        magnet: torrent.magnet,
+        tmdb_id: movie.id,
+        title,
+        year,
+        media_type: movie.media_type || "movie",
+        quality: torrent.quality || "",
+        torrent_title: torrent.title || `${title} (${torrent.quality || ""})`.trim(),
+        poster_path: movie.poster_path || "",
+        backdrop_path: movie.backdrop_path || "",
+        overview: movie.overview || "",
+        in_library: inLibrary,
+      };
 
-    const res = await rpcAddToLibrary(JSON.stringify(payload));
-    if (!res || !res.success || !res.id) {
-      throw new Error(res?.error || "Не удалось инициализировать медиа");
-    }
-    setTorrentMediaIds((prev) => ({ ...prev, [tId]: res.id! }));
-    return res.id!;
-  };
+      const res = await rpcAddToLibrary(JSON.stringify(payload));
+      if (!res || !res.success || !res.id) {
+        throw new Error(res?.error || "Не удалось инициализировать медиа");
+      }
+      setTorrentMediaIds((prev) => ({ ...prev, [tId]: res.id! }));
+      return res.id!;
+    },
+    [torrentMediaIds, movie, title, year]
+  );
 
   // 1. Online stream for movies (does not add to library or write to disk)
   const handleWatchOnlineMovie = async (torrent: TorrentItem) => {
@@ -260,7 +334,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
 
     try {
       const mid = await getOrCreateMediaId(torrent, false);
-      const streamRes = await rpcPrepareStream(mid);
+      const streamRes = await rpcPrepareStream(mid, 0, true, torrent.magnet);
       if (streamRes && streamRes.success && (streamRes.stream_url || streamRes.file_path)) {
         if (closeModal) closeModal();
         if (onWatchOnline) {
@@ -270,7 +344,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
             streamRes.title || title,
             streamRes.torrent_hash,
             isOnline,
-            { ...currentMediaInfo, mediaId: mid }
+            { ...currentMediaInfo, mediaId: mid, duration: streamRes.duration && streamRes.duration > 0 ? streamRes.duration : undefined }
           );
         }
       } else {
@@ -354,7 +428,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
     setStreamingEpIdx(ep.index);
     try {
       const mid = await getOrCreateMediaId(torrent, false);
-      const res = await rpcPrepareStream(mid, ep.index);
+      const res = await rpcPrepareStream(mid, ep.index, true, torrent.magnet);
       if (res && res.success && (res.stream_url || res.file_path)) {
         if (closeModal) closeModal();
         if (onWatchOnline) {
@@ -369,6 +443,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
               mediaId: mid,
               episodeName: ep.name,
               episodeNumber: ep.index,
+              duration: res.duration && res.duration > 0 ? res.duration : undefined,
             }
           );
         }
@@ -514,14 +589,36 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
             )}
           </div>
 
-          {/* Кнопка добавления в фильмотеку */}
+          {/* Кнопка добавления в избранное */}
           <Focusable
             className={`ds-btn projacktor-watchlist-btn ${inWatchlist ? "active" : ""}`}
             noFocusRing
             tabIndex={0}
             onClick={handleToggleWatchlist}
             onActivate={handleToggleWatchlist}
-            title={inWatchlist ? "Удалить из фильмотеки" : "Добавить в фильмотеку"}
+            onGamepadDirection={(evt: any) => {
+              const btn = evt?.detail?.button;
+              if (btn === 10 || evt?.detail?.dir === "down") {
+                const root = torrentsRef.current;
+                const firstAction = root?.querySelector<HTMLElement>(
+                  ".projacktor-torrent-actions .projacktor-icon-btn, .projacktor-icon-btn, .projacktor-torrent-ep-row, .ds-btn--primary, .ds-btn, button, [tabindex='0']"
+                );
+                if (firstAction) {
+                  try {
+                    evt?.preventDefault?.();
+                    evt?.stopPropagation?.();
+                  } catch {}
+                  const doc = getActiveDocument(firstAction) || document;
+                  doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+                  firstAction.focus();
+                  firstAction.classList.add("gpfocus");
+                  firstAction.classList.add("gpfocuswithin");
+                  return false;
+                }
+              }
+              return undefined;
+            }}
+            title={inWatchlist ? t("removeFromWatchlist") : t("addToWatchlist")}
             style={{
               display: "flex",
               alignItems: "center",
@@ -540,7 +637,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
             }}
           >
             {inWatchlist ? <FaCheck size={10} /> : <FaBookmark size={10} />}
-            <span>{inWatchlist ? "В фильмотеке" : "В фильмотеку"}</span>
+            <span>{inWatchlist ? t("inWatchlist") : t("addToWatchlist")}</span>
           </Focusable>
         </div>
 
@@ -574,7 +671,10 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
 
           <div ref={torrentsRef} onFocusCapture={handleTorrentFocus as any} style={{ flex: 1, overflowY: "auto", overflowX: "hidden", minHeight: 0, padding: "2px 6px" }}>
             {loading ? (
-              <div
+              <Focusable
+                noFocusRing
+                className="projacktor-torrents-loading-box"
+                tabIndex={0}
                 style={{
                   display: "flex",
                   flexDirection: "column",
@@ -582,11 +682,12 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                   justifyContent: "center",
                   padding: 28,
                   gap: 8,
+                  outline: "none",
                 }}
               >
                 <Spinner />
                 <span style={{ fontSize: 12, opacity: 0.6 }}>Поиск лучших раздач...</span>
-              </div>
+              </Focusable>
             ) : torrents.length === 0 ? (
               <div
                 style={{
@@ -696,7 +797,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                               noFocusRing
                               onActivate={() => handleWatchOnlineMovie(tor)}
                               onClick={() => handleWatchOnlineMovie(tor)}
-                              title="Смотреть онлайн"
+                              title={t("watchOnline")}
                             >
                               {isCurrentStream ? (
                                 <FaSpinner style={{ animation: "projacktor-spin 0.9s linear infinite" }} />
@@ -712,7 +813,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                             noFocusRing
                             onActivate={() => handleDownloadTorrent(tor)}
                             onClick={() => handleDownloadTorrent(tor)}
-                            title="Загрузить в библиотеку"
+                            title={t("download")}
                           >
                             {isCurrentDl ? (
                               <FaSpinner style={{ animation: "projacktor-spin 0.9s linear infinite" }} />

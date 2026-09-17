@@ -4,6 +4,7 @@ import { FaPlay, FaDownload, FaSpinner } from "react-icons/fa";
 import { EpisodeItem, LibraryItem } from "../types";
 import { formatBytes, rpcGetEpisodes, sortEpisodes } from "../api";
 import { PROJACKTOR_STYLES } from "../styles";
+import { getActiveDocument } from "../runtime/activeDoc";
 
 interface EpisodesModalProps {
   item: LibraryItem;
@@ -66,11 +67,19 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
     if (loading || episodes.length === 0) return;
     const t = setTimeout(() => {
       const first = listRef.current?.querySelector<HTMLElement>(
-        ".ds-btn, [tabindex='0'], button"
+        ".projacktor-episode-actions .projacktor-icon-btn, .projacktor-icon-btn, .ds-btn, [tabindex='0'], button"
       );
       if (first) {
+        const doc = getActiveDocument(first) || document;
+        doc.querySelectorAll(".gpfocus").forEach((el) => {
+          if (el !== first) el.classList.remove("gpfocus");
+        });
         first.focus();
         first.classList.add("gpfocus");
+        first.classList.add("gpfocuswithin");
+        try {
+          (first as any).TakeFocus?.(0);
+        } catch {}
       }
     }, 60);
     return () => clearTimeout(t);
@@ -337,18 +346,20 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                       style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}
                       onCancelButton={closeModal}
                     >
-                      <Focusable
-                        className={`ds-btn ds-btn--compact ${isEpCompleted ? "ds-btn--success" : "ds-btn--primary"}`}
-                        noFocusRing
-                        onActivate={() => onWatchOnline(item, ep.index)}
-                        onClick={() => onWatchOnline(item, ep.index)}
-                        onCancelButton={closeModal}
-                        title={isEpCompleted ? "Смотреть файл" : "Смотреть онлайн"}
-                        style={{ padding: "4px 10px", fontSize: 11 }}
-                      >
-                        <FaPlay style={{ fontSize: 9, marginRight: 4 }} />
-                        {isEpCompleted ? "Смотреть" : "Онлайн"}
-                      </Focusable>
+                      {isEpCompleted && (
+                        <Focusable
+                          className="ds-btn ds-btn--compact ds-btn--success"
+                          noFocusRing
+                          onActivate={() => onWatchOnline(item, ep.index)}
+                          onClick={() => onWatchOnline(item, ep.index)}
+                          onCancelButton={closeModal}
+                          title="Смотреть файл"
+                          style={{ padding: "4px 10px", fontSize: 11 }}
+                        >
+                          <FaPlay style={{ fontSize: 9, marginRight: 4 }} />
+                          Смотреть
+                        </Focusable>
+                      )}
 
                       {!isEpCompleted && (
                         <Focusable

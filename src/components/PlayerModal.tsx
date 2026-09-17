@@ -1,37 +1,22 @@
 import { FC, useState, useRef, useEffect, useCallback } from "react";
-import { ModalRoot, Focusable } from "@decky/ui";
+import { ModalRoot, Focusable, GamepadButton } from "@decky/ui";
 import {
-  FaPlay,
-  FaPause,
-  FaBackward,
-  FaForward,
-  FaCheck,
-  FaHeadphones,
-  FaClosedCaptioning,
-  FaVolumeUp,
-  FaVolumeMute,
-  FaUndo,
-} from "react-icons/fa";
-import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
-import { rpcResumeAllDownloads, rpcDropStream, rpcSaveWatchProgress } from "../api";
+  rpcResumeAllDownloads,
+  rpcDropStream,
+  rpcSaveWatchProgress,
+  fetchMovieLogo,
+} from "../api";
 import { PlayerMediaInfo } from "../types";
 import { getActiveDocument } from "../runtime/activeDoc";
 import { playNavSound } from "../runtime/navSound";
+import { AudioTrack, SubtitleTrack } from "./player/types";
+import { PlayerHUD } from "./player/PlayerHUD";
+import { PlayerControls } from "./player/PlayerControls";
+import { usePlayerGamepad } from "../hooks/usePlayerGamepad";
+import { triggerHaptic } from "../runtime/haptics";
+import { setPlayerActive } from "../runtime/homeInputBus";
 
-interface AudioTrack {
-  index: number;
-  codec: string;
-  channels: number;
-  lang: string;
-  title: string;
-}
-
-interface SubtitleTrack {
-  index: number;
-  codec: string;
-  lang: string;
-  title: string;
-}
+export type { AudioTrack, SubtitleTrack };
 
 interface PlayerModalProps {
   filePath: string;
@@ -43,17 +28,69 @@ interface PlayerModalProps {
   closeModal?: () => void;
 }
 
-function formatTime(seconds: number): string {
-  if (isNaN(seconds) || seconds < 0 || !isFinite(seconds)) return "00:00";
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  if (h > 0) {
-    return `${pad(h)}:${pad(m)}:${pad(s)}`;
-  }
-  return `${pad(m)}:${pad(s)}`;
+interface SubtitleCue {
+  start: number;
+  end: number;
+  text: string;
 }
+
+const parseVttTimestamp = (timeStr: string): number => {
+  const parts = timeStr.trim().split(":");
+  let hours = 0;
+  let minutes = 0;
+  let seconds = 0;
+  if (parts.length === 3) {
+    hours = parseFloat(parts[0]) || 0;
+    minutes = parseFloat(parts[1]) || 0;
+    seconds = parseFloat(parts[2]) || 0;
+  } else if (parts.length === 2) {
+    minutes = parseFloat(parts[0]) || 0;
+    seconds = parseFloat(parts[1]) || 0;
+  } else {
+    seconds = parseFloat(parts[0]) || 0;
+  }
+  return hours * 3600 + minutes * 60 + seconds;
+};
+
+const parseWebVTT = (vtt: string): SubtitleCue[] => {
+  const cues: SubtitleCue[] = [];
+  if (!vtt) return cues;
+  const lines = vtt.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i].trim();
+    if (line.includes("-->")) {
+      const parts = line.split("-->");
+      if (parts.length === 2) {
+        const startRaw = parts[0].trim();
+        const endRaw = parts[1].trim().split(/\s+/)[0];
+        const start = parseVttTimestamp(startRaw);
+        const end = parseVttTimestamp(endRaw);
+        i++;
+        const textLines: string[] = [];
+        while (i < lines.length && lines[i].trim() !== "") {
+          const clean = lines[i]
+            .replace(/<[^>]+>/g, "")
+            .replace(/\{[^}]+\}/g, "")
+            .replace(/&amp;/g, "&")
+            .replace(/&lt;/g, "<")
+            .replace(/&gt;/g, ">")
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .trim();
+          if (clean) textLines.push(clean);
+          i++;
+        }
+        if (textLines.length > 0 && end > start) {
+          cues.push({ start, end, text: textLines.join("\n") });
+        }
+        continue;
+      }
+    }
+    i++;
+  }
+  return cues;
+};
 
 export const PlayerModal: FC<PlayerModalProps> = ({
   filePath,
@@ -85,7 +122,8 @@ export const PlayerModal: FC<PlayerModalProps> = ({
         return Math.floor(initialTime);
       }
       const fileTarget = actualFilePath || filePath;
-      const fileName = fileTarget.split(/[\/\\]/).pop() || fileTarget;
+      const rawFileName = fileTarget.split(/[\/\\]/).pop() || fileTarget;
+      const fileName = rawFileName.split("?")[0];
       const raw = localStorage.getItem(`projacktor_progress_${fileName}`);
       if (raw) {
         const val = parseFloat(raw);
@@ -103,25 +141,75 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     return 0;
   }, [actualFilePath, filePath, title, initialTime]);
 
+  const isOnlineOrProxied = isOnline || filePath.startsWith("http://") || filePath.startsWith("https://") || filePath.includes("/api/stream?url=");
   const savedStartTimeRef = useRef<number>(getSavedProgress());
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
   const [isDirectStream, setIsDirectStream] = useState<boolean>(false);
   const [baseTime, setBaseTime] = useState<number>(() => savedStartTimeRef.current);
   const [videoTime, setVideoTime] = useState<number>(0);
-  const [duration, setDuration] = useState<number>(0);
+  const [duration, setDuration] = useState<number>(mediaInfo?.duration || 0);
   const [volume, setVolume] = useState<number>(1);
   const [audioTracks, setAudioTracks] = useState<AudioTrack[]>([]);
   const [selectedAudio, setSelectedAudio] = useState<number | undefined>(undefined);
   const [subtitleTracks, setSubtitleTracks] = useState<SubtitleTrack[]>([]);
-  const [selectedSubtitle, setSelectedSubtitle] = useState<number | null>(null);
+  const [selectedSubtitle, setSelectedSubtitle] = useState<number | string | null>(null);
+  const userInteractedWithSubtitlesRef = useRef<boolean>(false);
+  const [parsedCues, setParsedCues] = useState<SubtitleCue[]>([]);
+  const parsedCuesRef = useRef<SubtitleCue[]>([]);
+  parsedCuesRef.current = parsedCues;
+  const [currentSubtitleText, setCurrentSubtitleText] = useState<string>("");
+  const currentSubtitleTextRef = useRef<string>("");
   const [showSubtitleMenu, setShowSubtitleMenu] = useState<boolean>(false);
   const [volumeHudVisible, setVolumeHudVisible] = useState<boolean>(false);
   const volumeHudTimerRef = useRef<number | null>(null);
+  const seekCommitTimerRef = useRef<number | null>(null);
+  const targetSeekTimeRef = useRef<number | null>(null);
+  const [zoom, setZoom] = useState<number>(1);
+  const zoomRef = useRef<number>(1);
+  const [zoomHudVisible, setZoomHudVisible] = useState<boolean>(false);
+  const zoomHudTimerRef = useRef<number | null>(null);
+  const zoomHudTextRef = useRef<HTMLSpanElement>(null);
+  const zoomHudBarRef = useRef<HTMLDivElement>(null);
+  const l2HeldRef = useRef<boolean>(false);
+  const r2HeldRef = useRef<boolean>(false);
+  const l2PressStartRef = useRef<number>(0);
+  const r2PressStartRef = useRef<number>(0);
+  const zoomAnimFrameRef = useRef<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isBuffering, setIsBuffering] = useState<boolean>(true);
+  const [logoPath, setLogoPath] = useState<string | null>(null);
+  const [hasStartedPlayback, setHasStartedPlayback] = useState<boolean>(false);
+  const hasInitialSeekedRef = useRef<boolean>(false);
+
+  // Фоновая загрузка официального логотипа с TMDB для заставки буферизации
+  useEffect(() => {
+    let active = true;
+    if (mediaInfo?.tmdbId) {
+      fetchMovieLogo(mediaInfo.tmdbId, mediaInfo.mediaType || "movie")
+        .then((path) => {
+          if (active && path) {
+            setLogoPath(path);
+          }
+        })
+        .catch(() => {});
+    }
+    return () => {
+      active = false;
+    };
+  }, [mediaInfo?.tmdbId, mediaInfo?.mediaType]);
+
   const [showAudioMenu, setShowAudioMenu] = useState<boolean>(false);
   const [showControls, setShowControls] = useState<boolean>(true);
+  const showControlsRef = useRef<boolean>(showControls);
+  showControlsRef.current = showControls;
   const controlsTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setPlayerActive(true);
+    return () => {
+      setPlayerActive(false);
+    };
+  }, []);
 
   const playBtnRef = useRef<HTMLDivElement>(null);
   const subtitleBtnRef = useRef<HTMLDivElement>(null);
@@ -212,24 +300,30 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     []
   );
 
-  // Авто-фокус при открытии меню субтитров
+  // Focus preservation for subtitle and audio menus
   useEffect(() => {
     if (showSubtitleMenu) {
-      const selIdx = selectedSubtitle !== null
-        ? subtitleTracks.findIndex((s) => s.index === selectedSubtitle)
-        : -1;
-      const initialIdx = selIdx !== -1 ? selIdx + 1 : 0;
+      let initialIdx = 0;
+      if (selectedSubtitle !== null) {
+        const found = subtitleTracks.findIndex((s) => s.index === selectedSubtitle);
+        if (found !== -1) initialIdx = found + 1;
+      }
       setActiveSubMenuIdx(initialIdx);
       activeSubMenuIdxRef.current = initialIdx;
-      setShowControls(true);
+
       const t = setTimeout(() => {
         const menuEl = subtitleMenuRef.current;
-        if (!menuEl) return;
-        const items = Array.from(menuEl.querySelectorAll<HTMLElement>(".ds-btn"));
-        const target = items[initialIdx];
-        if (target) {
+        if (menuEl) {
           try {
-            target.scrollIntoView({ block: "nearest", behavior: "smooth" });
+            const doc = getActiveDocument(menuEl) || document;
+            doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+            const items = Array.from(menuEl.querySelectorAll<HTMLElement>(".ds-btn"));
+            const target = items[initialIdx] || items[0];
+            if (target) {
+              target.focus();
+              target.classList.add("gpfocus");
+              target.scrollIntoView({ block: "nearest", behavior: "smooth" });
+            }
           } catch {}
         }
       }, 40);
@@ -238,24 +332,29 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     return undefined;
   }, [showSubtitleMenu, selectedSubtitle, subtitleTracks]);
 
-  // Авто-фокус при открытии меню аудиодорожек
   useEffect(() => {
     if (showAudioMenu) {
-      const selIdx = selectedAudio !== undefined
-        ? audioTracks.findIndex((a) => a.index === selectedAudio)
-        : 0;
-      const initialIdx = selIdx !== -1 ? selIdx : 0;
+      let initialIdx = 0;
+      if (selectedAudio !== undefined) {
+        const found = audioTracks.findIndex((a) => a.index === selectedAudio);
+        if (found !== -1) initialIdx = found;
+      }
       setActiveAudioMenuIdx(initialIdx);
       activeAudioMenuIdxRef.current = initialIdx;
-      setShowControls(true);
+
       const t = setTimeout(() => {
         const menuEl = audioMenuRef.current;
-        if (!menuEl) return;
-        const items = Array.from(menuEl.querySelectorAll<HTMLElement>(".ds-btn"));
-        const target = items[initialIdx];
-        if (target) {
+        if (menuEl) {
           try {
-            target.scrollIntoView({ block: "nearest", behavior: "smooth" });
+            const doc = getActiveDocument(menuEl) || document;
+            doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+            const items = Array.from(menuEl.querySelectorAll<HTMLElement>(".ds-btn"));
+            const target = items[initialIdx] || items[0];
+            if (target) {
+              target.focus();
+              target.classList.add("gpfocus");
+              target.scrollIntoView({ block: "nearest", behavior: "smooth" });
+            }
           } catch {}
         }
       }, 40);
@@ -284,6 +383,11 @@ export const PlayerModal: FC<PlayerModalProps> = ({
       if (videoRef.current) {
         videoRef.current.volume = next;
       }
+      if (next === 0 || next === 1) {
+        triggerHaptic("medium", "both");
+      } else {
+        triggerHaptic("light", "both");
+      }
       return next;
     });
     setVolumeHudVisible(true);
@@ -295,7 +399,155 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     }, 1200);
   }, []);
 
-  const selectSubtitleTrack = useCallback((trackIndex: number | null) => {
+  const showZoomHud = useCallback(() => {
+    setZoomHudVisible(true);
+    if (zoomHudTimerRef.current !== null) {
+      window.clearTimeout(zoomHudTimerRef.current);
+    }
+    zoomHudTimerRef.current = window.setTimeout(() => {
+      setZoomHudVisible(false);
+    }, 1200);
+  }, []);
+
+  const resetZoom = useCallback(() => {
+    zoomRef.current = 1.0;
+    setZoom(1.0);
+    triggerHaptic("click", "both", true);
+    if (videoRef.current) {
+      videoRef.current.style.transform = "scale(1)";
+    }
+    if (zoomHudTextRef.current) {
+      zoomHudTextRef.current.textContent = "100%";
+    }
+    if (zoomHudBarRef.current) {
+      zoomHudBarRef.current.style.width = "20%";
+      zoomHudBarRef.current.style.background = "var(--ds-accent)";
+    }
+    showZoomHud();
+  }, [showZoomHud]);
+
+  // Одиночный дискретный шаг масштаба (ровно 1% за нажатие)
+  const applyZoomStep = useCallback(
+    (step: number) => {
+      const nextZoom = Math.max(0.5, Math.min(3.0, Math.round((zoomRef.current + step) * 100) / 100));
+      if (nextZoom === 1.0) {
+        triggerHaptic("click", "both", true);
+      } else {
+        triggerHaptic("light", "both");
+      }
+
+      zoomRef.current = nextZoom;
+      setZoom(nextZoom);
+
+      if (videoRef.current) {
+        videoRef.current.style.transform = `scale(${nextZoom.toFixed(3)})`;
+      }
+
+      if (zoomHudTextRef.current) {
+        zoomHudTextRef.current.textContent = `${Math.round(nextZoom * 100)}%`;
+      }
+      if (zoomHudBarRef.current) {
+        const pct = Math.round(((nextZoom - 0.5) / 2.5) * 100);
+        zoomHudBarRef.current.style.width = `${pct}%`;
+        zoomHudBarRef.current.style.background =
+          nextZoom === 1.0 ? "var(--ds-accent)" : nextZoom > 1.0 ? "#38bdf8" : "#a855f7";
+      }
+
+      showZoomHud();
+    },
+    [showZoomHud]
+  );
+
+  const stopZoomLoop = useCallback(() => {
+    l2HeldRef.current = false;
+    r2HeldRef.current = false;
+    if (zoomAnimFrameRef.current !== null) {
+      cancelAnimationFrame(zoomAnimFrameRef.current);
+      zoomAnimFrameRef.current = null;
+    }
+    setZoom(zoomRef.current);
+    if (zoomHudTimerRef.current !== null) {
+      window.clearTimeout(zoomHudTimerRef.current);
+    }
+    zoomHudTimerRef.current = window.setTimeout(() => {
+      setZoomHudVisible(false);
+      zoomHudTimerRef.current = null;
+    }, 1200);
+  }, []);
+
+  const startZoomLoop = useCallback(() => {
+    setZoomHudVisible(true);
+    if (zoomHudTimerRef.current !== null) {
+      window.clearTimeout(zoomHudTimerRef.current);
+      zoomHudTimerRef.current = null;
+    }
+
+    if (zoomAnimFrameRef.current !== null) return;
+
+    const HOLD_DELAY_MS = 250;
+    let lastTime = performance.now();
+
+    const loop = (currentTime: number) => {
+      if (!l2HeldRef.current && !r2HeldRef.current) {
+        stopZoomLoop();
+        return;
+      }
+
+      const dt = Math.min((currentTime - lastTime) / 1000, 0.08);
+      lastTime = currentTime;
+
+      const l2Duration = l2HeldRef.current ? (currentTime - l2PressStartRef.current) : 0;
+      const r2Duration = r2HeldRef.current ? (currentTime - r2PressStartRef.current) : 0;
+
+      const l2Active = l2HeldRef.current && l2Duration >= HOLD_DELAY_MS;
+      const r2Active = r2HeldRef.current && r2Duration >= HOLD_DELAY_MS;
+
+      if (l2Active || r2Active) {
+        const heldTimeSec = Math.max(
+          l2Active ? (l2Duration - HOLD_DELAY_MS) / 1000 : 0,
+          r2Active ? (r2Duration - HOLD_DELAY_MS) / 1000 : 0
+        );
+        const speed = Math.min(1.60, 0.85 + heldTimeSec * 1.00);
+
+        const effR2 = r2Active ? 1 : 0;
+        const effL2 = l2Active ? 1 : 0;
+        const delta = (effR2 - effL2) * speed * dt;
+
+        let nextZoom = zoomRef.current + delta;
+        nextZoom = Math.max(0.5, Math.min(3.0, nextZoom));
+
+        if (Math.abs(nextZoom - 1.0) < 0.02) {
+          if (Math.abs(zoomRef.current - 1.0) >= 0.02) {
+            nextZoom = 1.0;
+            triggerHaptic("click", "both", true);
+          }
+        }
+
+        zoomRef.current = nextZoom;
+
+        if (videoRef.current) {
+          videoRef.current.style.transform = `scale(${nextZoom.toFixed(3)})`;
+        }
+
+        if (zoomHudTextRef.current) {
+          zoomHudTextRef.current.textContent = `${Math.round(nextZoom * 100)}%`;
+        }
+        if (zoomHudBarRef.current) {
+          const pct = Math.round(((nextZoom - 0.5) / 2.5) * 100);
+          zoomHudBarRef.current.style.width = `${pct}%`;
+          zoomHudBarRef.current.style.background =
+            nextZoom === 1.0 ? "var(--ds-accent)" : nextZoom > 1.0 ? "#38bdf8" : "#a855f7";
+        }
+      }
+
+      zoomAnimFrameRef.current = requestAnimationFrame(loop);
+    };
+
+    zoomAnimFrameRef.current = requestAnimationFrame(loop);
+  }, [stopZoomLoop]);
+
+  const selectSubtitleTrack = useCallback((trackIndex: number | string | null) => {
+    userInteractedWithSubtitlesRef.current = true;
     setSelectedSubtitle(trackIndex);
     setShowSubtitleMenu(false);
     resetControlsTimer();
@@ -318,34 +570,46 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     };
   }, [resetControlsTimer]);
 
-  // Фокус по умолчанию на кнопке Play/Pause при открытии плеера
   useEffect(() => {
     let cancelled = false;
-    const focusPlayBtn = () => {
-      if (cancelled) return;
+    let timerId: any = null;
+    const delays = [50, 150, 300];
+    let idx = 0;
+
+    const focusPlayBtn = (): boolean => {
+      if (cancelled) return false;
       if (playBtnRef.current) {
         try {
           const doc = getActiveDocument(playBtnRef.current) || document;
           doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
           playBtnRef.current.focus();
           playBtnRef.current.classList.add("gpfocus");
+          return true;
         } catch {}
       }
+      return false;
     };
 
-    const t1 = setTimeout(focusPlayBtn, 50);
-    const t2 = setTimeout(focusPlayBtn, 150);
-    const t3 = setTimeout(focusPlayBtn, 300);
+    const scheduleNext = () => {
+      if (cancelled || idx >= delays.length) return;
+      const delay = delays[idx++];
+      timerId = setTimeout(() => {
+        if (cancelled) return;
+        const ok = focusPlayBtn();
+        if (!ok) scheduleNext();
+      }, delay);
+    };
+
+    if (!focusPlayBtn()) {
+      scheduleNext();
+    }
 
     return () => {
       cancelled = true;
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
+      if (timerId) clearTimeout(timerId as any);
     };
   }, []);
 
-  // Восстановление фокуса на кнопке Play/Pause, если контролы снова показались, а активного фокуса нет
   useEffect(() => {
     if (showControls && !showSubtitleMenu && !showAudioMenu) {
       const t = setTimeout(() => {
@@ -373,6 +637,8 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     (startTime: number = 0, track?: number) => {
       const isHttp = filePath.startsWith("http://") || filePath.startsWith("https://");
       let base = isHttp ? filePath : `http://127.0.0.1:8400/api/stream?file=${encodeURIComponent(filePath)}`;
+      // Strip any existing start= or audio= params to avoid duplicates
+      base = base.replace(/([?&])start=\d+(&|$)/g, "$1").replace(/([?&])audio=\d+(&|$)/g, "$1").replace(/[?&]$/, "");
       const separator = base.includes("?") ? "&" : "?";
       const params: string[] = [];
 
@@ -394,7 +660,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   const [streamUrl, setStreamUrl] = useState<string>(() => getStreamUrl(savedStartTimeRef.current));
 
   const currentPlayheadRef = useRef<number>(savedStartTimeRef.current);
-  currentPlayheadRef.current = baseTime + videoTime;
+  currentPlayheadRef.current = isDirectStream ? videoTime : (baseTime + videoTime);
 
   const durationRef = useRef<number>(duration);
   durationRef.current = duration;
@@ -403,7 +669,8 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     (sec: number, totalDur?: number) => {
       try {
         const fileTarget = actualFilePath || filePath;
-        const fileName = fileTarget.split(/[\/\\]/).pop() || fileTarget;
+        const rawFileName = fileTarget.split(/[\/\\]/).pop() || fileTarget;
+        const fileName = rawFileName.split("?")[0];
         const cleanTitle = title.replace(/\s*\(Онлайн\)\s*/i, "").trim();
         const dur = totalDur ?? durationRef.current;
         if (dur && dur > 0 && sec >= dur - 60) {
@@ -418,7 +685,6 @@ export const PlayerModal: FC<PlayerModalProps> = ({
           }
         }
 
-        // Сохранение в базу данных для вкладки «Просмотрено»
         if (sec >= 0) {
           rpcSaveWatchProgress(
             JSON.stringify({
@@ -448,10 +714,10 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     [actualFilePath, filePath, title, mediaInfo, isOnline, torrentHash]
   );
 
-  // Сразу при монтировании плеера фиксируем проект в «Просмотрено»
-  useEffect(() => {
-    saveProgress(initialTime || 0, 0);
-  }, [saveProgress, initialTime]);
+  const saveProgressRef = useRef(saveProgress);
+  saveProgressRef.current = saveProgress;
+  const torrentHashRef = useRef(torrentHash);
+  torrentHashRef.current = torrentHash;
 
   const lastToggleAtRef = useRef<number>(0);
   const togglePlay = useCallback(() => {
@@ -469,23 +735,59 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     resetControlsTimer();
   }, [resetControlsTimer]);
 
-  const seekRelative = useCallback((delta: number) => {
-    const cur = (isDirectStream && videoRef.current) ? videoRef.current.currentTime : (baseTime + (videoRef.current ? videoRef.current.currentTime : 0));
-    const newTime = Math.max(0, Math.min(duration || 999999, cur + delta));
-    if (isDirectStream && videoRef.current) {
-      videoRef.current.currentTime = newTime;
-      setVideoTime(newTime);
-    } else {
-      setBaseTime(newTime);
-      setVideoTime(0);
-      setStreamUrl(getStreamUrl(newTime, selectedAudio));
+  const commitPendingSeek = useCallback(() => {
+    if (seekCommitTimerRef.current !== null) {
+      window.clearTimeout(seekCommitTimerRef.current);
+      seekCommitTimerRef.current = null;
     }
-    resetControlsTimer();
-  }, [baseTime, duration, getStreamUrl, isDirectStream, resetControlsTimer, selectedAudio]);
+    if (targetSeekTimeRef.current !== null) {
+      const target = targetSeekTimeRef.current;
+      targetSeekTimeRef.current = null;
+      if (isDirectStream && videoRef.current) {
+        videoRef.current.currentTime = target;
+        setVideoTime(target);
+      } else {
+        setBaseTime(target);
+        setVideoTime(0);
+        setStreamUrl(getStreamUrl(target, selectedAudio));
+      }
+    }
+  }, [getStreamUrl, isDirectStream, selectedAudio]);
+
+  const seekRelative = useCallback(
+    (delta: number) => {
+      const currentBase =
+        targetSeekTimeRef.current !== null
+          ? targetSeekTimeRef.current
+          : isDirectStream && videoRef.current
+          ? videoRef.current.currentTime
+          : baseTime + (videoRef.current ? videoRef.current.currentTime : 0);
+
+      const newTime = Math.max(0, Math.min(duration || 999999, currentBase + delta));
+      targetSeekTimeRef.current = newTime;
+
+      if (isDirectStream && videoRef.current) {
+        videoRef.current.currentTime = newTime;
+        setVideoTime(newTime);
+        targetSeekTimeRef.current = null;
+      } else {
+        setVideoTime(Math.max(0, newTime - baseTime));
+        if (seekCommitTimerRef.current !== null) {
+          window.clearTimeout(seekCommitTimerRef.current);
+        }
+        seekCommitTimerRef.current = window.setTimeout(() => {
+          commitPendingSeek();
+        }, 320);
+      }
+      resetControlsTimer();
+    },
+    [baseTime, commitPendingSeek, duration, isDirectStream, resetControlsTimer]
+  );
 
   const selectAudioTrack = useCallback((trackIndex: number) => {
     setSelectedAudio(trackIndex);
     setShowAudioMenu(false);
+    setErrorMsg(null);
     const cur = (isDirectStream && videoRef.current) ? videoRef.current.currentTime : (baseTime + (videoRef.current ? videoRef.current.currentTime : 0));
     setBaseTime(cur);
     setVideoTime(0);
@@ -501,7 +803,30 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     }, 50);
   }, [baseTime, getStreamUrl, isDirectStream, resetControlsTimer]);
 
+  const lastSubToggleRef = useRef<number>(0);
+  const toggleSubtitleMenu = useCallback(() => {
+    const now = Date.now();
+    if (now - lastSubToggleRef.current < 250) return;
+    lastSubToggleRef.current = now;
+    setShowSubtitleMenu((prev) => !prev);
+    setShowAudioMenu(false);
+    setShowControls(true);
+    resetControlsTimer();
+  }, [resetControlsTimer]);
+
+  const lastAudioToggleRef = useRef<number>(0);
+  const toggleAudioMenu = useCallback(() => {
+    const now = Date.now();
+    if (now - lastAudioToggleRef.current < 250) return;
+    lastAudioToggleRef.current = now;
+    setShowAudioMenu((prev) => !prev);
+    setShowSubtitleMenu(false);
+    setShowControls(true);
+    resetControlsTimer();
+  }, [resetControlsTimer]);
+
   const seekTo = (targetSec: number) => {
+    setErrorMsg(null);
     const newTime = Math.max(0, Math.min(duration || 999999, targetSec));
     if (isDirectStream && videoRef.current) {
       videoRef.current.currentTime = newTime;
@@ -547,19 +872,15 @@ export const PlayerModal: FC<PlayerModalProps> = ({
       const deltaY = changedTouch.clientY - touchStartYRef.current;
 
       if (!touchMovedRef.current) {
-        // Simple tap: toggle play/pause and show controls
         togglePlay();
       } else {
-        // Horizontal swipe: seek
         if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 40) {
           if (deltaX > 0) {
             seekRelative(15);
           } else {
             seekRelative(-15);
           }
-        }
-        // Vertical swipe on right half: volume
-        else if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 40) {
+        } else if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 40) {
           const isRightHalf = touchStartXRef.current > window.innerWidth / 2;
           if (isRightHalf) {
             if (deltaY < 0) {
@@ -577,311 +898,43 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     resetControlsTimer();
   };
 
-  useEffect(() => {
-    const handleActivity = () => {
-      resetControlsTimer();
-    };
-
-    let lastSeekAt = 0;
-    let lastVolumeAt = 0;
-    let lastToggleAt = 0;
-
-    // Прямая подписка на события геймпада Steam Deck
-    const unController = subscribeControllerInput((e) => {
-      if (!e.pressed) return;
-      const now = Date.now();
-
-      // Кнопка A (0): Воспроизведение / Пауза или выбор в меню
-      if (e.button === RawButton.A || e.button === 0) {
-        if (showAudioMenuRef.current) {
-          const idx = activeAudioMenuIdxRef.current;
-          const track = audioTracksRef.current[idx];
-          if (track) {
-            selectAudioTrack(track.index);
-          } else {
-            setShowAudioMenu(false);
-          }
-          return;
-        }
-        if (showSubtitleMenuRef.current) {
-          const idx = activeSubMenuIdxRef.current;
-          if (idx === 0) {
-            selectSubtitleTrack(null);
-          } else {
-            const sub = subtitleTracksRef.current[idx - 1];
-            if (sub) {
-              selectSubtitleTrack(sub.index);
-            } else {
-              setShowSubtitleMenu(false);
-            }
-          }
-          return;
-        }
-        if (now - lastToggleAt < 250) return;
-        lastToggleAt = now;
-        togglePlay();
-        setShowControls(true);
-        resetControlsTimer();
-        return;
-      }
-
-      // Кнопка B (1): Закрыть меню аудио/субтитров или выйти из плеера
-      if (e.button === RawButton.B || e.button === 1) {
-        if (showAudioMenuRef.current) {
-          setShowAudioMenu(false);
-          setShowControls(true);
-          resetControlsTimer();
-          setTimeout(() => {
-            if (audioBtnRef.current) {
-              const doc = getActiveDocument(audioBtnRef.current) || document;
-              doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-              audioBtnRef.current.focus();
-              audioBtnRef.current.classList.add("gpfocus");
-            }
-          }, 50);
-        } else if (showSubtitleMenuRef.current) {
-          setShowSubtitleMenu(false);
-          setShowControls(true);
-          resetControlsTimer();
-          setTimeout(() => {
-            if (subtitleBtnRef.current) {
-              const doc = getActiveDocument(subtitleBtnRef.current) || document;
-              doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-              subtitleBtnRef.current.focus();
-              subtitleBtnRef.current.classList.add("gpfocus");
-            }
-          }, 50);
-        } else if (closeModalRef.current) {
-          closeModalRef.current();
-        }
-        return;
-      }
-
-      // Кнопка Y (3): Переключение меню аудиодорожек
-      if (e.button === RawButton.Y || e.button === 3) {
-        setShowAudioMenu((prev) => !prev);
-        setShowSubtitleMenu(false);
-        setShowControls(true);
-        resetControlsTimer();
-        return;
-      }
-
-      // Кнопка X (2): Переключение меню субтитров
-      if (e.button === RawButton.X || e.button === 2) {
-        setShowSubtitleMenu((prev) => !prev);
-        setShowAudioMenu(false);
-        setShowControls(true);
-        resetControlsTimer();
-        return;
-      }
-
-      // Перемотка назад (-15с): только бампер L1 (30) и триггер L2 (28) (D-Pad и стики отключены)
-      if (
-        e.button === RawButton.L1 ||
-        e.button === RawButton.L2 ||
-        e.button === 30 ||
-        e.button === 28
-      ) {
-        if (now - lastSeekAt < 180) return;
-        lastSeekAt = now;
-        seekRelative(-15);
-        setShowControls(true);
-        resetControlsTimer();
-        return;
-      }
-
-      // Перемотка вперёд (+15с): только бампер R1 (31) и триггер R2 (29) (D-Pad и стики отключены)
-      if (
-        e.button === RawButton.R1 ||
-        e.button === RawButton.R2 ||
-        e.button === 31 ||
-        e.button === 29
-      ) {
-        if (now - lastSeekAt < 180) return;
-        lastSeekAt = now;
-        seekRelative(15);
-        setShowControls(true);
-        resetControlsTimer();
-        return;
-      }
-
-      // D-pad Вверх (4), Стик Вверх (20): Навигация по меню или Громкость +5%
-      if (
-        e.button === RawButton.DPAD_UP ||
-        e.button === RawButton.LEFTSTICK_UP ||
-        e.button === 4 ||
-        e.button === 20
-      ) {
-        if (showAudioMenuRef.current) {
-          handleMenuDirection("up", "audio");
-          setShowControls(true);
-          resetControlsTimer();
-          return;
-        }
-        if (showSubtitleMenuRef.current) {
-          handleMenuDirection("up", "sub");
-          setShowControls(true);
-          resetControlsTimer();
-          return;
-        }
-        if (now - lastVolumeAt < 120) return;
-        lastVolumeAt = now;
-        changeVolume(0.05);
-        setShowControls(true);
-        resetControlsTimer();
-        return;
-      }
-
-      // D-pad Вниз (6), Стик Вниз (21): Навигация по меню или Громкость -5%
-      if (
-        e.button === RawButton.DPAD_DOWN ||
-        e.button === RawButton.LEFTSTICK_DOWN ||
-        e.button === 6 ||
-        e.button === 21
-      ) {
-        if (showAudioMenuRef.current) {
-          handleMenuDirection("down", "audio");
-          setShowControls(true);
-          resetControlsTimer();
-          return;
-        }
-        if (showSubtitleMenuRef.current) {
-          handleMenuDirection("down", "sub");
-          setShowControls(true);
-          resetControlsTimer();
-          return;
-        }
-        if (now - lastVolumeAt < 120) return;
-        lastVolumeAt = now;
-        changeVolume(-0.05);
-        setShowControls(true);
-        resetControlsTimer();
-        return;
-      }
-
-      setShowControls(true);
-      resetControlsTimer();
-    });
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      setShowControls(true);
-      resetControlsTimer();
-
-      if (e.key === "Escape" || e.key === "Backspace") {
-        e.preventDefault();
-        if (showAudioMenuRef.current) {
-          setShowAudioMenu(false);
-          setShowControls(true);
-          resetControlsTimer();
-          setTimeout(() => {
-            if (audioBtnRef.current) {
-              const doc = getActiveDocument(audioBtnRef.current) || document;
-              doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-              audioBtnRef.current.focus();
-              audioBtnRef.current.classList.add("gpfocus");
-            }
-          }, 50);
-        } else if (showSubtitleMenuRef.current) {
-          setShowSubtitleMenu(false);
-          setShowControls(true);
-          resetControlsTimer();
-          setTimeout(() => {
-            if (subtitleBtnRef.current) {
-              const doc = getActiveDocument(subtitleBtnRef.current) || document;
-              doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-              subtitleBtnRef.current.focus();
-              subtitleBtnRef.current.classList.add("gpfocus");
-            }
-          }, 50);
-        } else if (closeModalRef.current) {
-          closeModalRef.current();
-        }
-        return;
-      }
-
-      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-        e.preventDefault();
-        return;
-      }
-
-      if (e.key === " " || e.key === "Enter" || e.key === "k" || e.key === "K") {
-        e.preventDefault();
-        if (showAudioMenuRef.current) {
-          const idx = activeAudioMenuIdxRef.current;
-          const track = audioTracksRef.current[idx];
-          if (track) selectAudioTrack(track.index);
-          else setShowAudioMenu(false);
-          return;
-        }
-        if (showSubtitleMenuRef.current) {
-          const idx = activeSubMenuIdxRef.current;
-          if (idx === 0) selectSubtitleTrack(null);
-          else {
-            const sub = subtitleTracksRef.current[idx - 1];
-            if (sub) selectSubtitleTrack(sub.index);
-            else setShowSubtitleMenu(false);
-          }
-          return;
-        }
-        togglePlay();
-      } else if (e.key === "j" || e.key === "J") {
-        e.preventDefault();
-        seekRelative(-15);
-      } else if (e.key === "l" || e.key === "L") {
-        e.preventDefault();
-        seekRelative(15);
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        if (showAudioMenuRef.current) {
-          handleMenuDirection("up", "audio");
-          return;
-        }
-        if (showSubtitleMenuRef.current) {
-          handleMenuDirection("up", "sub");
-          return;
-        }
-        changeVolume(0.05);
-      } else if (e.key === "ArrowDown") {
-        e.preventDefault();
-        if (showAudioMenuRef.current) {
-          handleMenuDirection("down", "audio");
-          return;
-        }
-        if (showSubtitleMenuRef.current) {
-          handleMenuDirection("down", "sub");
-          return;
-        }
-        changeVolume(-0.05);
-      } else if (e.key === "y" || e.key === "Y") {
-        setShowAudioMenu((prev) => !prev);
-        setShowSubtitleMenu(false);
-      } else if (e.key === "c" || e.key === "C" || e.key === "x" || e.key === "X") {
-        setShowSubtitleMenu((prev) => !prev);
-        setShowAudioMenu(false);
-      }
-    };
-
-    window.addEventListener("mousemove", handleActivity);
-    window.addEventListener("pointermove", handleActivity);
-    window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("click", handleActivity);
-    window.addEventListener("touchstart", handleActivity);
-
-    return () => {
-      unController();
-      window.removeEventListener("mousemove", handleActivity);
-      window.removeEventListener("pointermove", handleActivity);
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("click", handleActivity);
-      window.removeEventListener("touchstart", handleActivity);
-    };
-  }, [
-    audioTracks.length,
-    changeVolume,
-    resetControlsTimer,
-    seekRelative,
+  usePlayerGamepad({
+    containerRef,
+    playBtnRef,
+    subtitleBtnRef,
+    audioBtnRef,
+    showControlsRef,
+    showAudioMenuRef,
+    showSubtitleMenuRef,
+    setShowAudioMenu,
+    setShowSubtitleMenu,
+    setShowControls,
+    closeModalRef,
+    audioTracksRef,
+    subtitleTracksRef,
+    activeAudioMenuIdxRef,
+    activeSubMenuIdxRef,
     togglePlay,
-  ]);
+    toggleAudioMenu,
+    toggleSubtitleMenu,
+    selectAudioTrack,
+    selectSubtitleTrack,
+    seekRelative,
+    commitPendingSeek,
+    changeVolume,
+    applyZoomStep,
+    resetZoom,
+    startZoomLoop,
+    stopZoomLoop,
+    resetControlsTimer,
+    handleMenuDirection,
+    l2HeldRef,
+    r2HeldRef,
+    l2PressStartRef,
+    r2PressStartRef,
+    zoomAnimFrameRef,
+    zoomHudTimerRef,
+  });
 
   // Request fullscreen on mount to overlay all Steam UI
   useEffect(() => {
@@ -899,54 +952,169 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   // Сохраняем прогресс, возобновляем загрузки и сбрасываем стрим TorrServer при закрытии плеера
   useEffect(() => {
     return () => {
-      saveProgress(currentPlayheadRef.current, durationRef.current);
+      saveProgressRef.current(currentPlayheadRef.current, durationRef.current);
       rpcResumeAllDownloads().catch(() => {});
-      if (torrentHash) {
-        rpcDropStream(torrentHash).catch(() => {});
+      if (torrentHashRef.current) {
+        rpcDropStream(torrentHashRef.current).catch(() => {});
       }
     };
-  }, [saveProgress, torrentHash]);
+  }, []);
 
-  // Probe file metadata on mount: duration and audio tracks
+  // Сброс дорожек и субтитров при смене источника / серии
+  useEffect(() => {
+    userInteractedWithSubtitlesRef.current = false;
+    setSelectedSubtitle(null);
+    setSubtitleTracks([]);
+    setAudioTracks([]);
+    setParsedCues([]);
+    setCurrentSubtitleText("");
+    currentSubtitleTextRef.current = "";
+  }, [filePath]);
+
+  // Probe file metadata on mount: duration, audio tracks, and subtitle tracks
   useEffect(() => {
     let cancelled = false;
-    const isHttp = !actualFilePath && (filePath.startsWith("http://") || filePath.startsWith("https://"));
-    const probeQuery = actualFilePath 
-      ? `file=${encodeURIComponent(actualFilePath)}` 
-      : (isHttp ? `url=${encodeURIComponent(filePath)}` : `file=${encodeURIComponent(filePath)}`);
-    fetch(`http://127.0.0.1:8400/api/stream/probe?${probeQuery}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (cancelled) return;
-        if (data.duration && data.duration > 0) {
-          setDuration(data.duration);
-        }
-        if (data.direct !== undefined) {
-          setIsDirectStream(!!data.direct);
-        }
-        if (Array.isArray(data.audio_tracks) && data.audio_tracks.length > 0) {
-          setAudioTracks(data.audio_tracks);
-          if (selectedAudio === undefined) {
-            setSelectedAudio(data.audio_tracks[0].index);
+    let retryTimer: any = null;
+    let retryCount = 0;
+
+    let target = actualFilePath || filePath;
+    if (target.includes("/api/stream?")) {
+      try {
+        const u = new URL(target, "http://127.0.0.1:8400");
+        const inner = u.searchParams.get("url") || u.searchParams.get("file");
+        if (inner) target = inner;
+      } catch {}
+    }
+    const isHttp = target.startsWith("http://") || target.startsWith("https://");
+    const probeQuery = isHttp ? `url=${encodeURIComponent(target)}` : `file=${encodeURIComponent(target)}`;
+
+    const runProbe = () => {
+      fetch(`http://127.0.0.1:8400/api/stream/probe?${probeQuery}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (cancelled) return;
+          if (data.duration && data.duration > 0) {
+            setDuration(data.duration);
           }
-        }
-        if (Array.isArray(data.subtitle_tracks) && data.subtitle_tracks.length > 0) {
-          setSubtitleTracks(data.subtitle_tracks);
-        }
-      })
-      .catch(() => {});
+          if (data.direct !== undefined) {
+            const canBeDirect = !isOnlineOrProxied && !actualFilePath?.startsWith("http");
+            setIsDirectStream(canBeDirect && Boolean(data.direct));
+          }
+          if (Array.isArray(data.audio_tracks) && data.audio_tracks.length > 0) {
+            setAudioTracks(data.audio_tracks);
+            if (selectedAudio === undefined) {
+              setSelectedAudio(data.audio_tracks[0].index);
+            }
+          }
+          const hasSubs = Array.isArray(data.subtitle_tracks) && data.subtitle_tracks.length > 0;
+          if (hasSubs) {
+            setSubtitleTracks(data.subtitle_tracks);
+            // Субтитры по умолчанию выключены (null).
+            // Отображаются только тогда, когда пользователь сам включает их через меню (кнопка X).
+            setSelectedSubtitle((prev) => {
+              if (prev !== null) {
+                const stillExists = data.subtitle_tracks.some((s: SubtitleTrack) => String(s.index) === String(prev));
+                if (stillExists) return prev;
+              }
+              return null;
+            });
+          }
+
+          const hasExtSubs = hasSubs && data.subtitle_tracks.some((s: SubtitleTrack) => String(s.index).startsWith("ext_"));
+          if ((!hasSubs || !hasExtSubs) && isHttp && retryCount < 2) {
+            retryCount++;
+            retryTimer = setTimeout(runProbe, 1500);
+          }
+        })
+        .catch(() => {
+          if (!cancelled && retryCount < 2) {
+            retryCount++;
+            retryTimer = setTimeout(runProbe, 1500);
+          }
+        });
+    };
+
+    runProbe();
+
     return () => {
       cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
     };
   }, [actualFilePath, filePath]);
 
-  // Управление активной дорожкой субтитров в <video>
+  // Загрузка и парсинг активной дорожки субтитров для надежного кастомного оверлея
+  useEffect(() => {
+    if (selectedSubtitle === null) {
+      setParsedCues([]);
+      setCurrentSubtitleText("");
+      currentSubtitleTextRef.current = "";
+      return;
+    }
+    const activeTrack = subtitleTracks.find((s) => String(s.index) === String(selectedSubtitle));
+    if (activeTrack && activeTrack.supported === false) {
+      setParsedCues([]);
+      setCurrentSubtitleText("");
+      currentSubtitleTextRef.current = "";
+      return;
+    }
+    if (String(selectedSubtitle).startsWith("ext_") && !activeTrack) {
+      return;
+    }
+    const subTarget = activeTrack?.url || actualFilePath || filePath;
+    const isHttpSub = subTarget.startsWith("http://") || subTarget.startsWith("https://");
+    const trackParam = activeTrack?.url ? "" : `&track=${selectedSubtitle}`;
+    const subUrl = `http://127.0.0.1:8400/api/stream/subtitles?${isHttpSub ? "url" : "file"}=${encodeURIComponent(subTarget)}${trackParam}`;
+
+    let cancelled = false;
+    fetch(subUrl)
+      .then((res) => {
+        if (!res.ok) throw new Error(`Subtitle fetch failed: ${res.status}`);
+        return res.text();
+      })
+      .then((vtt) => {
+        if (cancelled) return;
+        const cues = parseWebVTT(vtt);
+        setParsedCues(cues);
+      })
+      .catch(() => {
+        if (!cancelled) setParsedCues([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedSubtitle, subtitleTracks, actualFilePath, filePath]);
+
+  // Синхронизация реплики субтитров с текущим временем видео
+  useEffect(() => {
+    if (parsedCues.length === 0 || selectedSubtitle === null) {
+      if (currentSubtitleTextRef.current) {
+        currentSubtitleTextRef.current = "";
+        setCurrentSubtitleText("");
+      }
+      return;
+    }
+    const curTime = isDirectStream ? videoTime : (baseTime + videoTime);
+    const active = parsedCues.find((c) => curTime >= c.start && curTime <= c.end);
+    const newText = active ? active.text : "";
+    if (newText !== currentSubtitleTextRef.current) {
+      currentSubtitleTextRef.current = newText;
+      setCurrentSubtitleText(newText);
+    }
+  }, [videoTime, baseTime, isDirectStream, parsedCues, selectedSubtitle]);
+
+  // Отключаем нативный рендеринг субтитров в Chromium, чтобы не было дублирования с кастомным оверлеем
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    for (let i = 0; i < video.textTracks.length; i++) {
-      video.textTracks[i].mode = selectedSubtitle !== null ? "showing" : "disabled";
-    }
+    const disableNativeSubs = () => {
+      for (let i = 0; i < video.textTracks.length; i++) {
+        video.textTracks[i].mode = "disabled";
+      }
+    };
+    disableNativeSubs();
+    const t = setTimeout(disableNativeSubs, 200);
+    return () => clearTimeout(t);
   }, [selectedSubtitle]);
 
   const handleVideoError = () => {
@@ -954,6 +1122,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   };
 
   useEffect(() => {
+    setErrorMsg(null);
     const video = videoRef.current;
     if (!video) return;
 
@@ -962,15 +1131,40 @@ export const PlayerModal: FC<PlayerModalProps> = ({
       const vTime = video.currentTime;
       setVideoTime(vTime);
       setIsBuffering(false);
+      if (vTime > 0.05) {
+        setHasStartedPlayback(true);
+      }
       const totalCur = Math.floor(isDirectStream ? vTime : (baseTime + vTime));
       if (Math.abs(totalCur - lastSaveSec) >= 5) {
         lastSaveSec = totalCur;
-        saveProgress(totalCur, durationRef.current);
+        saveProgressRef.current(totalCur, durationRef.current);
+      }
+      const curExact = isDirectStream ? vTime : (baseTime + vTime);
+      const cues = parsedCuesRef.current;
+      if (cues.length > 0) {
+        const active = cues.find((c) => curExact >= c.start && curExact <= c.end);
+        const text = active ? active.text : "";
+        if (text !== currentSubtitleTextRef.current) {
+          currentSubtitleTextRef.current = text;
+          setCurrentSubtitleText(text);
+        }
+      } else if (currentSubtitleTextRef.current) {
+        currentSubtitleTextRef.current = "";
+        setCurrentSubtitleText("");
       }
     };
     const onLoadedMetadata = () => {
-      if ((!duration || duration <= 0) && video.duration && !isNaN(video.duration) && isFinite(video.duration) && video.duration > 0) {
-        setDuration(video.duration);
+      const vDur = video.duration;
+      const isLiveTranscode = isOnline || filePath.includes("/api/stream");
+      if ((!duration || duration <= 0) && vDur && !isNaN(vDur) && isFinite(vDur) && vDur > 0 && (!isLiveTranscode || vDur >= 180)) {
+        setDuration(vDur);
+      }
+      if (isDirectStream && savedStartTimeRef.current > 0 && !hasInitialSeekedRef.current) {
+        hasInitialSeekedRef.current = true;
+        try {
+          video.currentTime = savedStartTimeRef.current;
+          setVideoTime(savedStartTimeRef.current);
+        } catch {}
       }
       setIsBuffering(false);
       video.play().catch(() => {});
@@ -978,10 +1172,18 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     const onPlay = () => {
       setIsPlaying(true);
       setIsBuffering(false);
+      if (video.currentTime > 0.05) {
+        setHasStartedPlayback(true);
+      }
+    };
+    const onPlaying = () => {
+      setIsPlaying(true);
+      setIsBuffering(false);
+      setHasStartedPlayback(true);
     };
     const onPause = () => {
       setIsPlaying(false);
-      saveProgress(isDirectStream ? video.currentTime : (baseTime + video.currentTime), durationRef.current);
+      saveProgressRef.current(isDirectStream ? video.currentTime : (baseTime + video.currentTime), durationRef.current);
     };
     const onWaiting = () => setIsBuffering(true);
     const onCanPlay = () => setIsBuffering(false);
@@ -995,12 +1197,14 @@ export const PlayerModal: FC<PlayerModalProps> = ({
         if (cleanTitle) {
           localStorage.removeItem(`projacktor_progress_t_${cleanTitle}`);
         }
+        saveProgressRef.current(0, durationRef.current || duration);
       } catch {}
     };
 
     video.addEventListener("timeupdate", onTimeUpdate);
     video.addEventListener("loadedmetadata", onLoadedMetadata);
     video.addEventListener("play", onPlay);
+    video.addEventListener("playing", onPlaying);
     video.addEventListener("pause", onPause);
     video.addEventListener("waiting", onWaiting);
     video.addEventListener("canplay", onCanPlay);
@@ -1010,12 +1214,13 @@ export const PlayerModal: FC<PlayerModalProps> = ({
       video.removeEventListener("timeupdate", onTimeUpdate);
       video.removeEventListener("loadedmetadata", onLoadedMetadata);
       video.removeEventListener("play", onPlay);
+      video.removeEventListener("playing", onPlaying);
       video.removeEventListener("pause", onPause);
       video.removeEventListener("waiting", onWaiting);
       video.removeEventListener("canplay", onCanPlay);
       video.removeEventListener("ended", onEnded);
     };
-  }, [streamUrl, duration, baseTime, saveProgress]);
+  }, [streamUrl, duration, baseTime]);
 
   const currentPlayhead = isDirectStream ? videoTime : (baseTime + videoTime);
   const progressPercent = duration > 0 ? Math.min(100, Math.max(0, (currentPlayhead / duration) * 100)) : 0;
@@ -1043,7 +1248,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
             return false;
           }
           const btn = evt?.detail?.button;
-          if (btn === 9) {
+          if (btn === 9 || btn === 4 || btn === 20 || btn === GamepadButton.DIR_UP) {
             // DIR_UP - звук +
             try {
               evt?.preventDefault?.();
@@ -1051,7 +1256,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
             } catch {}
             changeVolume(0.05);
             return false;
-          } else if (btn === 10) {
+          } else if (btn === 10 || btn === 6 || btn === 21 || btn === GamepadButton.DIR_DOWN) {
             // DIR_DOWN - звук -
             try {
               evt?.preventDefault?.();
@@ -1060,20 +1265,24 @@ export const PlayerModal: FC<PlayerModalProps> = ({
             changeVolume(-0.05);
             return false;
           }
-          return undefined;
+          // Блокируем любые другие направления (влево/вправо на границах контролов),
+          // чтобы GamepadUI не пытался искать фокусируемые элементы в фоновом каталоге/библиотеке
+          try {
+            evt?.preventDefault?.();
+            evt?.stopPropagation?.();
+          } catch {}
+          return false;
         }}
         style={{
-          display: "flex",
-          flexDirection: "column",
+          position: "fixed",
+          top: 0,
+          left: 0,
           width: "100vw",
           height: "100vh",
           color: "#fff",
           background: "#000",
           overflow: "hidden",
           borderRadius: 0,
-          position: "fixed",
-          top: 0,
-          left: 0,
           zIndex: 2147483647,
           cursor: showControls ? "default" : "none",
         }}
@@ -1081,11 +1290,15 @@ export const PlayerModal: FC<PlayerModalProps> = ({
         {/* Top Header Bar: ТОЛЬКО НАЗВАНИЕ */}
         <div
           style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 10,
             display: "flex",
             alignItems: "center",
-            padding: "14px 24px",
-            background: "rgba(0, 0, 0, 0.85)",
-            flexShrink: 0,
+            padding: "16px 24px 28px",
+            background: "linear-gradient(to bottom, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.4) 60%, transparent 100%)",
             opacity: showControls ? 1 : 0,
             pointerEvents: showControls ? "auto" : "none",
             transition: "opacity 0.3s ease",
@@ -1113,450 +1326,116 @@ export const PlayerModal: FC<PlayerModalProps> = ({
           onTouchEnd={handleVideoTouchEnd}
           onClick={togglePlay}
           style={{
-            flex: 1,
-            position: "relative",
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: "100%",
+            height: "100%",
             background: "#000",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             overflow: "hidden",
             cursor: "pointer",
+            zIndex: 1,
           }}
         >
-          {/* Индикатор изменения громкости (HUD) */}
-          {volumeHudVisible && (
-            <div
-              style={{
-                position: "absolute",
-                top: 24,
-                right: 24,
-                background: "rgba(18, 23, 33, 0.92)",
-                border: "1px solid rgba(255, 255, 255, 0.2)",
-                borderRadius: 0,
-                padding: "8px 16px",
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                zIndex: 20,
-                pointerEvents: "none",
-                boxShadow: "0 4px 14px rgba(0, 0, 0, 0.6)",
-              }}
-            >
-              {volume > 0 ? (
-                <FaVolumeUp style={{ color: "var(--ds-accent)", fontSize: 15 }} />
-              ) : (
-                <FaVolumeMute style={{ color: "rgba(255,255,255,0.5)", fontSize: 15 }} />
-              )}
-              <div style={{ width: 80, height: 6, background: "rgba(255,255,255,0.15)", position: "relative" }}>
-                <div style={{ width: `${Math.round(volume * 100)}%`, height: "100%", background: "var(--ds-accent)" }} />
-              </div>
-              <span style={{ fontSize: 12, fontWeight: 700, color: "#fff", fontFamily: "monospace", minWidth: 36 }}>
-                {Math.round(volume * 100)}%
-              </span>
-            </div>
-          )}
-
-          {isBuffering && !errorMsg && (
-            <div
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                background: "rgba(0, 0, 0, 0.5)",
-                zIndex: 10,
-                pointerEvents: "none",
-              }}
-            >
-              <div
-                style={{
-                  width: 50,
-                  height: 50,
-                  border: "4px solid rgba(255, 255, 255, 0.2)",
-                  borderTop: "4px solid var(--ds-accent)",
-                  borderRadius: "50%",
-                  animation: "projacktor-spin 0.9s linear infinite",
-                  marginBottom: 16,
-                }}
-              />
-              <div style={{ color: "#fff", fontSize: 14, fontWeight: 500, letterSpacing: 0.5 }}>
-                {isOnline ? "Буферизация видеопотока..." : "Загрузка..."}
-              </div>
-            </div>
-          )}
+          <PlayerHUD
+            volumeHudVisible={volumeHudVisible}
+            volume={volume}
+            zoomHudVisible={zoomHudVisible}
+            zoom={zoom}
+            zoomHudBarRef={zoomHudBarRef}
+            zoomHudTextRef={zoomHudTextRef}
+            hasStartedPlayback={hasStartedPlayback}
+            isBuffering={isBuffering}
+            errorMsg={errorMsg}
+            mediaInfo={mediaInfo}
+            logoPath={logoPath}
+            title={title}
+            isOnline={isOnline}
+          />
 
           {errorMsg ? (
             <div style={{ textAlign: "center", color: "var(--ds-danger)", fontSize: 14, padding: 20 }}>
               {errorMsg}
             </div>
           ) : (
-            <video
-              ref={videoRef}
-              src={streamUrl}
-              autoPlay
-              onError={handleVideoError}
-              crossOrigin="anonymous"
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "contain",
-                outline: "none",
-                pointerEvents: "none",
-              }}
-            >
-              {selectedSubtitle !== null && (
-                <track
-                  key={selectedSubtitle}
-                  kind="subtitles"
-                  label={subtitleTracks.find((s) => s.index === selectedSubtitle)?.title || "Субтитры"}
-                  srcLang={subtitleTracks.find((s) => s.index === selectedSubtitle)?.lang || "ru"}
-                  src={`http://127.0.0.1:8400/api/stream/subtitles?${(filePath.startsWith("http://") || filePath.startsWith("https://")) ? "url" : "file"}=${encodeURIComponent(filePath)}&track=${selectedSubtitle}`}
-                  default
-                />
+            <>
+              <video
+                ref={videoRef}
+                src={streamUrl}
+                autoPlay
+                onError={handleVideoError}
+                crossOrigin="anonymous"
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "contain",
+                  outline: "none",
+                  pointerEvents: "none",
+                  transform: `scale(${zoom.toFixed(3)})`,
+                  transformOrigin: "center center",
+                  willChange: "transform",
+                }}
+              />
+
+              {/* Custom Subtitle Overlay (Zoom-independent, hidden during buffering) */}
+              {selectedSubtitle !== null && currentSubtitleText && !isBuffering && hasStartedPlayback && (
+                <div
+                  className="projacktor-subtitle-overlay"
+                  style={{
+                    bottom: showControls ? "clamp(90px, 12vh, 160px)" : "clamp(36px, 5vh, 75px)",
+                  }}
+                >
+                  <span className="projacktor-subtitle-text">
+                    {currentSubtitleText}
+                  </span>
+                </div>
               )}
-            </video>
+            </>
           )}
         </div>
 
-        {/* Timeline Progress Bar */}
-        <div
-          onClick={handleProgressBarTouch}
-          onTouchStart={handleProgressBarTouch}
-          style={{
-            padding: "8px 24px",
-            background: "rgba(0, 0, 0, 0.85)",
-            opacity: showControls ? 1 : 0,
-            pointerEvents: showControls ? "auto" : "none",
-            transition: "opacity 0.3s ease",
-            cursor: "pointer",
+        {/* Bottom Controls Overlay */}
+        <PlayerControls
+          showControls={showControls}
+          isPlaying={isPlaying}
+          currentPlayhead={currentPlayhead}
+          duration={duration}
+          progressPercent={progressPercent}
+          isOnline={isOnline}
+          playBtnRef={playBtnRef}
+          subtitleBtnRef={subtitleBtnRef}
+          audioBtnRef={audioBtnRef}
+          subtitleMenuRef={subtitleMenuRef}
+          audioMenuRef={audioMenuRef}
+          onTogglePlay={togglePlay}
+          onSeekRelative={seekRelative}
+          onSeekTo={seekTo}
+          onProgressBarTouch={handleProgressBarTouch}
+          showSubtitleMenu={showSubtitleMenu}
+          subtitleTracks={subtitleTracks}
+          selectedSubtitle={selectedSubtitle}
+          activeSubMenuIdx={activeSubMenuIdx}
+          onToggleSubtitleMenu={toggleSubtitleMenu}
+          onSelectSubtitle={selectSubtitleTrack}
+          onHoverSubItem={(idx) => {
+            setActiveSubMenuIdx(idx);
+            activeSubMenuIdxRef.current = idx;
           }}
-        >
-          <div
-            style={{
-              height: 8,
-              background: "rgba(255,255,255,0.12)",
-              cursor: "pointer",
-              position: "relative",
-              borderRadius: 0,
-            }}
-          >
-            <div
-              style={{
-                height: "100%",
-                width: `${progressPercent}%`,
-                background: "var(--ds-accent)",
-                borderRadius: 0,
-                transition: "width 0.2s ease",
-              }}
-            />
-          </div>
-        </div>
-
-        {/* Bottom Controls Bar */}
-        <Focusable
-          flow-children="row"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "10px 24px 16px",
-            background: "rgba(0, 0, 0, 0.85)",
-            flexShrink: 0,
-            gap: 16,
-            opacity: showControls ? 1 : 0,
-            pointerEvents: showControls ? "auto" : "none",
-            transition: "opacity 0.3s ease",
-            position: "relative",
+          showAudioMenu={showAudioMenu}
+          audioTracks={audioTracks}
+          selectedAudio={selectedAudio}
+          activeAudioMenuIdx={activeAudioMenuIdx}
+          onToggleAudioMenu={toggleAudioMenu}
+          onSelectAudio={selectAudioTrack}
+          onHoverAudioItem={(idx) => {
+            setActiveAudioMenuIdx(idx);
+            activeAudioMenuIdxRef.current = idx;
           }}
-        >
-          {/* Слева: Перемотка назад (-15с), Пауза / Плей, Перемотка вперед (+15с) */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, zIndex: 2 }}>
-            <Focusable
-              className="ds-btn ds-btn--compact ds-btn--icon"
-              onActivate={() => seekRelative(-15)}
-              onClick={() => seekRelative(-15)}
-              style={{ width: 36, height: 32 }}
-              title="Перемотка назад (-15с)"
-            >
-              <FaBackward />
-            </Focusable>
-
-            <Focusable
-              ref={playBtnRef}
-              className="ds-btn ds-btn--primary ds-btn--compact ds-btn--icon"
-              onActivate={togglePlay}
-              onClick={togglePlay}
-              style={{ width: 36, height: 32 }}
-              title={isPlaying ? "Пауза" : "Воспроизведение"}
-            >
-              {isPlaying ? <FaPause /> : <FaPlay />}
-            </Focusable>
-
-            <Focusable
-              className="ds-btn ds-btn--compact ds-btn--icon"
-              onActivate={() => seekRelative(15)}
-              onClick={() => seekRelative(15)}
-              style={{ width: 36, height: 32 }}
-              title="Перемотка вперед (+15с)"
-            >
-              <FaForward />
-            </Focusable>
-
-            {currentPlayhead > 30 && (
-              <Focusable
-                className="ds-btn ds-btn--compact ds-btn--icon"
-                onActivate={() => {
-                  seekTo(0);
-                }}
-                onClick={() => {
-                  seekTo(0);
-                }}
-                style={{ width: 36, height: 32 }}
-                title="Начать сначала"
-              >
-                <FaUndo style={{ fontSize: 11 }} />
-              </Focusable>
-            )}
-          </div>
-
-          {/* По центру: Время */}
-          <div
-            style={{
-              position: "absolute",
-              left: "50%",
-              transform: "translateX(-50%)",
-              fontSize: 14,
-              fontWeight: 500,
-              color: "rgba(255, 255, 255, 0.9)",
-              fontFamily: "monospace",
-              pointerEvents: "none",
-              whiteSpace: "nowrap",
-              zIndex: 1,
-            }}
-          >
-            {formatTime(currentPlayhead)} / {duration > 0 ? formatTime(duration) : (isOnline ? "Онлайн" : "--:--")}
-          </div>
-
-          {/* Справа: Выбор субтитров, Выбор аудиодорожки, Закрыть */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10, position: "relative", zIndex: 2 }}>
-            {/* Кнопка выбора субтитров */}
-            <Focusable
-              ref={subtitleBtnRef}
-              className="ds-btn ds-btn--compact ds-btn--icon"
-              onActivate={() => {
-                setShowSubtitleMenu((prev) => !prev);
-                setShowAudioMenu(false);
-              }}
-              onClick={() => {
-                setShowSubtitleMenu((prev) => !prev);
-                setShowAudioMenu(false);
-              }}
-              title="Выбор субтитров (X)"
-              style={{
-                borderRadius: 0,
-                background: showSubtitleMenu || selectedSubtitle !== null ? "var(--ds-surface-hi)" : "var(--ds-surface)",
-                borderColor: showSubtitleMenu || selectedSubtitle !== null ? "rgba(255,255,255,0.4)" : "var(--ds-border)",
-                color: selectedSubtitle !== null ? "var(--ds-accent)" : "#fff",
-                width: 34,
-                height: 32,
-              }}
-            >
-              <FaClosedCaptioning style={{ fontSize: 14 }} />
-            </Focusable>
-
-            {showSubtitleMenu && (
-              <div
-                ref={subtitleMenuRef}
-                className="projacktor-player-dropdown-menu"
-                style={{
-                  position: "absolute",
-                  bottom: "100%",
-                  right: 44,
-                  marginBottom: 8,
-                  background: "#121721",
-                  border: "1px solid rgba(255,255,255,0.2)",
-                  boxShadow: "0 8px 24px rgba(0,0,0,0.8)",
-                  minWidth: 220,
-                  maxWidth: 340,
-                  maxHeight: "65vh",
-                  overflowY: "auto",
-                  overflowX: "hidden",
-                  zIndex: 1000,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 4,
-                  padding: 6,
-                }}
-              >
-                <div style={{ padding: "4px 8px", fontSize: 11, fontWeight: 700, color: "var(--ds-text-dim)", textTransform: "uppercase" }}>
-                  Субтитры
-                </div>
-                <div
-                  role="button"
-                  tabIndex={0}
-                  className={`ds-btn ds-btn--compact ${activeSubMenuIdx === 0 ? "gpfocus active-nav" : ""}`}
-                  data-selected={selectedSubtitle === null ? "true" : undefined}
-                  onClick={() => selectSubtitleTrack(null)}
-                  onMouseEnter={() => {
-                    setActiveSubMenuIdx(0);
-                    activeSubMenuIdxRef.current = 0;
-                  }}
-                  style={{
-                    justifyContent: "flex-start",
-                    width: "100%",
-                    height: 32,
-                    background: selectedSubtitle === null ? "var(--ds-surface-hi)" : "transparent",
-                    borderColor: selectedSubtitle === null ? "rgba(255,255,255,0.3)" : "transparent",
-                    gap: 8,
-                    textAlign: "left",
-                    cursor: "pointer",
-                  }}
-                >
-                  <FaCheck style={{ fontSize: 10, opacity: selectedSubtitle === null ? 1 : 0, flexShrink: 0 }} />
-                  <span style={{ fontSize: 12 }}>Отключить субтитры</span>
-                </div>
-
-                {subtitleTracks.length === 0 ? (
-                  <div style={{ padding: "8px 10px", fontSize: 12, color: "rgba(255,255,255,0.4)" }}>
-                    Субтитры в раздаче не найдены
-                  </div>
-                ) : (
-                  subtitleTracks.map((sub, sIdx) => {
-                    const itemIdx = sIdx + 1;
-                    const isNavActive = activeSubMenuIdx === itemIdx;
-                    return (
-                      <div
-                        key={sub.index}
-                        role="button"
-                        tabIndex={0}
-                        className={`ds-btn ds-btn--compact ${isNavActive ? "gpfocus active-nav" : ""}`}
-                        data-selected={sub.index === selectedSubtitle ? "true" : undefined}
-                        onClick={() => selectSubtitleTrack(sub.index)}
-                        onMouseEnter={() => {
-                          setActiveSubMenuIdx(itemIdx);
-                          activeSubMenuIdxRef.current = itemIdx;
-                        }}
-                        style={{
-                          justifyContent: "flex-start",
-                          width: "100%",
-                          height: 32,
-                          background: sub.index === selectedSubtitle ? "var(--ds-surface-hi)" : "transparent",
-                          borderColor: sub.index === selectedSubtitle ? "rgba(255,255,255,0.3)" : "transparent",
-                          gap: 8,
-                          textAlign: "left",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <FaCheck style={{ fontSize: 10, opacity: sub.index === selectedSubtitle ? 1 : 0, flexShrink: 0 }} />
-                        <span style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {sub.title || (sub.lang ? `Субтитры (${sub.lang.toUpperCase()})` : `Субтитры #${sub.index}`)}
-                        </span>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            )}
-
-            {/* Кнопка выбора аудиодорожки */}
-            <Focusable
-              ref={audioBtnRef}
-              className="ds-btn ds-btn--compact ds-btn--icon"
-              onActivate={() => {
-                setShowAudioMenu((prev) => !prev);
-                setShowSubtitleMenu(false);
-              }}
-              onClick={() => {
-                setShowAudioMenu((prev) => !prev);
-                setShowSubtitleMenu(false);
-              }}
-              title="Выбор звуковой дорожки (Y)"
-              style={{
-                borderRadius: 0,
-                background: showAudioMenu ? "var(--ds-surface-hi)" : "var(--ds-surface)",
-                borderColor: showAudioMenu ? "rgba(255,255,255,0.4)" : "var(--ds-border)",
-                width: 34,
-                height: 32,
-              }}
-            >
-              <FaHeadphones style={{ fontSize: 13 }} />
-            </Focusable>
-
-            {showAudioMenu && (
-              <div
-                ref={audioMenuRef}
-                className="projacktor-player-dropdown-menu"
-                style={{
-                  position: "absolute",
-                  bottom: "100%",
-                  right: 44,
-                  marginBottom: 8,
-                  background: "#121721",
-                  border: "1px solid rgba(255,255,255,0.2)",
-                  boxShadow: "0 8px 24px rgba(0,0,0,0.8)",
-                  minWidth: 220,
-                  maxWidth: 340,
-                  maxHeight: "65vh",
-                  overflowY: "auto",
-                  overflowX: "hidden",
-                  zIndex: 1000,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 4,
-                  padding: 6,
-                }}
-              >
-                <div style={{ padding: "4px 8px", fontSize: 11, fontWeight: 700, color: "var(--ds-text-dim)", textTransform: "uppercase" }}>
-                  Аудиодорожка
-                </div>
-                {audioTracks.length === 0 ? (
-                  <div style={{ padding: "8px 10px", fontSize: 12, color: "rgba(255,255,255,0.4)" }}>
-                    Дорожка по умолчанию
-                  </div>
-                ) : (
-                  audioTracks.map((track, tIdx) => {
-                    const isNavActive = activeAudioMenuIdx === tIdx;
-                    return (
-                      <div
-                        key={track.index}
-                        role="button"
-                        tabIndex={0}
-                        className={`ds-btn ds-btn--compact ${isNavActive ? "gpfocus active-nav" : ""}`}
-                        data-selected={track.index === selectedAudio ? "true" : undefined}
-                        onClick={() => selectAudioTrack(track.index)}
-                        onMouseEnter={() => {
-                          setActiveAudioMenuIdx(tIdx);
-                          activeAudioMenuIdxRef.current = tIdx;
-                        }}
-                        style={{
-                          justifyContent: "flex-start",
-                          width: "100%",
-                          height: 32,
-                          background: track.index === selectedAudio ? "var(--ds-surface-hi)" : "transparent",
-                          borderColor: track.index === selectedAudio ? "rgba(255,255,255,0.3)" : "transparent",
-                          gap: 8,
-                          textAlign: "left",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <FaCheck style={{ fontSize: 10, opacity: track.index === selectedAudio ? 1 : 0, flexShrink: 0 }} />
-                        <span style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {track.title || (track.lang ? `Аудио (${track.lang.toUpperCase()})` : `Дорожка #${track.index}`)}
-                        </span>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            )}
-
-          </div>
-        </Focusable>
+          onChangeVolume={changeVolume}
+        />
       </Focusable>
     </ModalRoot>
   );

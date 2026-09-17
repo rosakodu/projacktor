@@ -5,8 +5,8 @@ import { searchCatalog } from "../api";
 import { Shelf } from "../components/Shelf";
 import { getActiveDocument } from "../runtime/activeDoc";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
-import { isModalOpen } from "../runtime/homeInputBus";
-import { playNavSound } from "../runtime/navSound";
+import { isModalOpen, isUserInTabs, isPlayerActive } from "../runtime/homeInputBus";
+import { playCardNavSound } from "../runtime/navSound";
 import { setBackdropMovie } from "../runtime/backdropBus";
 
 interface SearchViewProps {
@@ -44,7 +44,7 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
         doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
         input.focus();
         input.classList.add("gpfocus");
-        playNavSound();
+        playCardNavSound();
       } catch {}
     }
   }, []);
@@ -64,7 +64,7 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
         doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
         firstCard.focus();
         firstCard.classList.add("gpfocus");
-        playNavSound();
+        playCardNavSound();
         if (searchResults.length > 0) {
           setBackdropMovie(searchResults[0]);
         }
@@ -82,12 +82,16 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
     let cancelled = false;
     const focusSearch = () => {
       if (cancelled) return true;
+      if (isModalOpen() || isUserInTabs()) return true;
       const root = rootRef.current;
+      if (!root) return false;
       const doc = getActiveDocument(root);
+      const active = doc?.activeElement;
+      if (active && active !== doc?.body && root.contains(active)) {
+        return true;
+      }
 
-      const input = root
-        ? root.querySelector<HTMLElement>("input, button, .ds-btn")
-        : null;
+      const input = root.querySelector<HTMLElement>("input, button, .ds-btn");
       if (input) {
         try {
           doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
@@ -148,7 +152,7 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
   useEffect(() => {
     const un = subscribeControllerInput((e) => {
       if (!e.pressed) return;
-      if (isModalOpen()) return;
+      if (isModalOpen() || isPlayerActive()) return;
 
       const root = rootRef.current;
       if (!root) return;

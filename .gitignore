@@ -37,4 +37,11 @@ deploy_deck.sh
 # Local screenshots & dumps
 screenshot*.png
 deck_*.png
+current_*.png
+screenshot.jpg
 *.dump
+
+# Internal docs & scratch
+AGENT_TASK.md
+uninstall_deck.sh
+

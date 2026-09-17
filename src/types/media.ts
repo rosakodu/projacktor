@@ -68,6 +68,8 @@ export interface LibraryItem {
   effective_quality?: string;
   effective_torrent_title?: string;
   effective_download_dir?: string;
+  downloaded_episodes_count?: number;
+  total_episodes_count?: number;
   files?: Array<{
     id: number;
     file_path: string;
@@ -141,6 +143,7 @@ export interface PlayerMediaInfo {
   episodeName?: string;
   seasonNumber?: number;
   episodeNumber?: number;
+  duration?: number;
 }
 
 export type CatalogCategory = "movie" | "tv" | "cartoon" | "anime";

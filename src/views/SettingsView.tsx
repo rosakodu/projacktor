@@ -17,6 +17,7 @@ import {
   StorageDrive,
 } from "../api";
 import { getActiveDocument } from "../runtime/activeDoc";
+import { useI18n } from "../i18n";
 
 // Модульный кэш статуса и URL, чтобы при переключении между вкладками статус не сбрасывался и не мигал красным
 let cachedJacredUrl: string | null = null;
@@ -26,6 +27,7 @@ let cachedTorrServerPort: number = 8095;
 
 export const SettingsView: FC = memo(() => {
   const rootRef = useRef<HTMLDivElement>(null);
+  const { t } = useI18n();
   const [jacredUrl, setJacredUrl] = useState<string>(() => cachedJacredUrl ?? "");
   const [jacredOk, setJacredOk] = useState<boolean | null>(() => cachedJacredOk);
   const [torrServerOk, setTorrServerOk] = useState<boolean | null>(() => cachedTorrServerOk);
@@ -166,7 +168,7 @@ export const SettingsView: FC = memo(() => {
 
   const handleSelectDrivePreset = useCallback((drive: StorageDrive) => {
     const targetPath = drive.path
-      ? (drive.path.endsWith("/Projacktor") ? drive.path : `${drive.path}/Movies/Projacktor`)
+      ? (drive.path.endsWith("/Projacktor") ? drive.path : `${drive.path}/Videos/Projacktor`)
       : "";
     if (targetPath) {
       setDownloadPath(targetPath);
@@ -227,19 +229,19 @@ export const SettingsView: FC = memo(() => {
           <PanelSection>
             <PanelSectionRow>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", marginBottom: 4 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>Ссылка Jackett</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>{t("jackettParserUrl")}</span>
                 <div>
                   {jacredOk === null ? (
                     <span style={{ color: "rgba(255, 255, 255, 0.5)", fontSize: 11, display: "inline-flex", alignItems: "center", gap: 5 }}>
-                      <FaSpinner style={{ fontSize: 10, animation: "projacktor-spin 1s linear infinite" }} /> Проверка...
+                      <FaSpinner style={{ fontSize: 10, animation: "projacktor-spin 1s linear infinite" }} /> {t("checking")}
                     </span>
                   ) : jacredOk ? (
                     <span style={{ color: "#1a9fff", fontSize: 11, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
-                      <FaCheck style={{ fontSize: 10 }} /> Подключено
+                      <FaCheck style={{ fontSize: 10 }} /> {t("connected")}
                     </span>
                   ) : (
                     <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
-                      <FaTimes style={{ fontSize: 10 }} /> Не подключено
+                      <FaTimes style={{ fontSize: 10 }} /> {t("notConnected")}
                     </span>
                   )}
                 </div>
@@ -247,15 +249,21 @@ export const SettingsView: FC = memo(() => {
             </PanelSectionRow>
 
             <PanelSectionRow>
-              <Focusable flow-children="row" style={{ display: "flex", gap: 8, alignItems: "center", width: "100%", marginBottom: 8 }}>
+              <Focusable noFocusRing flow-children="row" style={{ display: "flex", gap: 8, alignItems: "center", width: "100%", marginBottom: 8 }}>
                 <div style={{ flex: 1 }}>
                   <TextField
                     value={jacredUrl}
                     onChange={(e) => setJacredUrl(e.target.value)}
-                    {...({ placeholder: "https://jac.red" } as any)}
+                    {...({
+                      placeholder: "Введите URL парсера",
+                      spellCheck: false,
+                      autoCorrect: "off",
+                      autoCapitalize: "off"
+                    } as any)}
                   />
                 </div>
                 <Focusable
+                  noFocusRing
                   onActivate={handleSaveSettings}
                   onClick={handleSaveSettings}
                   className="ds-btn ds-btn--compact ds-btn--primary"
@@ -273,7 +281,7 @@ export const SettingsView: FC = memo(() => {
                   }}
                 >
                   {settingsSaving ? <FaSpinner style={{ fontSize: 10, animation: "projacktor-spin 1s linear infinite" }} /> : null}
-                  {settingsSaving ? "Проверка..." : "Проверить"}
+                  {settingsSaving ? t("checking") : "Проверить"}
                 </Focusable>
               </Focusable>
             </PanelSectionRow>
@@ -281,23 +289,23 @@ export const SettingsView: FC = memo(() => {
             <PanelSectionRow>
               <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 8, marginTop: 2, width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: "#fff" }}>Статус TorrServer</div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "#fff" }}>{t("torrserverStatus")}</div>
                   <div style={{ fontSize: 10.5, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>
-                    Порт: {torrServerPort} • ОЗУ: 256 МБ • Zero Disk Wear
+                    Порт: {torrServerPort}
                   </div>
                 </div>
                 <div>
                   {torrServerOk === null ? (
                     <span style={{ color: "rgba(255, 255, 255, 0.5)", fontSize: 11, display: "inline-flex", alignItems: "center", gap: 5 }}>
-                      <FaSpinner style={{ fontSize: 10, animation: "projacktor-spin 1s linear infinite" }} /> Проверка...
+                      <FaSpinner style={{ fontSize: 10, animation: "projacktor-spin 1s linear infinite" }} /> {t("checking")}
                     </span>
                   ) : torrServerOk ? (
                     <span style={{ color: "#1a9fff", fontSize: 11, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
-                      <FaCheck style={{ fontSize: 10 }} /> Работает
+                      <FaCheck style={{ fontSize: 10 }} /> {t("running")}
                     </span>
                   ) : (
                     <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
-                      <FaTimes style={{ fontSize: 10 }} /> Остановлен
+                      <FaTimes style={{ fontSize: 10 }} /> {t("stopped")}
                     </span>
                   )}
                 </div>
@@ -311,25 +319,26 @@ export const SettingsView: FC = memo(() => {
           <PanelSection>
             <PanelSectionRow>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", marginBottom: 4 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>Папка для загрузок</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>{t("downloadDirectory")}</span>
                 {pathSavedSuccess && (
                   <span style={{ color: "#1a9fff", fontSize: 11, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
-                    <FaCheck style={{ fontSize: 10 }} /> Сохранено
+                    <FaCheck style={{ fontSize: 10 }} /> {t("saved")}
                   </span>
                 )}
               </div>
             </PanelSectionRow>
 
             <PanelSectionRow>
-              <Focusable flow-children="row" style={{ display: "flex", gap: 8, alignItems: "center", width: "100%", marginBottom: 6 }}>
+              <Focusable noFocusRing flow-children="row" style={{ display: "flex", gap: 8, alignItems: "center", width: "100%", marginBottom: 6 }}>
                 <div style={{ flex: 1 }}>
                   <TextField
                     value={downloadPath}
                     onChange={(e) => setDownloadPath(e.target.value)}
-                    {...({ placeholder: "/home/deck/Movies/Projacktor" } as any)}
+                    {...({ placeholder: "~/Videos/Projacktor" } as any)}
                   />
                 </div>
                 <Focusable
+                  noFocusRing
                   onActivate={() => handleSaveDownloadPath()}
                   onClick={() => handleSaveDownloadPath()}
                   className="ds-btn ds-btn--compact ds-btn--primary"
@@ -346,7 +355,7 @@ export const SettingsView: FC = memo(() => {
                     flexShrink: 0
                   }}
                 >
-                  {pathSaving ? "..." : "Сохранить"}
+                  {pathSaving ? "..." : t("save")}
                 </Focusable>
               </Focusable>
             </PanelSectionRow>
@@ -354,7 +363,7 @@ export const SettingsView: FC = memo(() => {
             {/* Быстрые пресеты накопителей */}
             {drives.length > 0 && (
               <PanelSectionRow>
-                <Focusable flow-children="row" style={{ display: "flex", flexWrap: "wrap", gap: 6, width: "100%", marginBottom: 8 }}>
+                <Focusable noFocusRing flow-children="row" style={{ display: "flex", flexWrap: "wrap", gap: 6, width: "100%", marginBottom: 8 }}>
                   {drives.map((d) => {
                     const isCurrent =
                       downloadPath === d.path ||
@@ -362,6 +371,7 @@ export const SettingsView: FC = memo(() => {
                       (d.id === "internal" && !downloadPath.includes("/run/media"));
                     return (
                       <Focusable
+                        noFocusRing
                         key={d.id}
                         onActivate={() => handleSelectDrivePreset(d)}
                         onClick={() => handleSelectDrivePreset(d)}
@@ -385,8 +395,8 @@ export const SettingsView: FC = memo(() => {
                         ) : (
                           <FaHdd style={{ fontSize: 11, color: isCurrent ? "#60baff" : "#94a3b8" }} />
                         )}
-                        <span>{d.name}</span>
-                        <span style={{ fontSize: 10, opacity: 0.65 }}>({formatBytes(d.free)} своб.)</span>
+                        <span>{d.id === "internal" ? t("internalStorage") : d.is_removable ? t("microSDCard") : d.name}</span>
+                        <span style={{ fontSize: 10, opacity: 0.65 }}>({formatBytes(d.free)} {t("freeSpace")})</span>
                       </Focusable>
                     );
                   })}
@@ -397,6 +407,7 @@ export const SettingsView: FC = memo(() => {
             {/* Сброс кэша */}
             <PanelSectionRow>
               <Focusable
+                noFocusRing
                 flow-children="row"
                 style={{
                   borderTop: "1px solid rgba(255,255,255,0.06)",
@@ -410,9 +421,10 @@ export const SettingsView: FC = memo(() => {
               >
                 <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Кэш постеров и метаданных</span>
                 <Focusable
+                  noFocusRing
                   onActivate={handleClearCache}
                   onClick={handleClearCache}
-                  className="ds-btn ds-btn--compact"
+                  className="ds-btn ds-btn--compact ds-btn--danger"
                   style={{
                     padding: "5px 12px",
                     fontSize: 11,
@@ -421,11 +433,10 @@ export const SettingsView: FC = memo(() => {
                     display: "inline-flex",
                     alignItems: "center",
                     gap: 5,
-                    opacity: 0.85
                   }}
                 >
                   <FaTrash style={{ fontSize: 10 }} />
-                  {clearingCache ? "Очистка..." : cacheClearedSuccess ? "✓ Кэш очищен" : "Очистить кэш"}
+                  {clearingCache ? t("clearing") : cacheClearedSuccess ? `✓ ${t("cleared")}` : t("clearCache")}
                 </Focusable>
               </Focusable>
             </PanelSectionRow>

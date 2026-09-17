@@ -3,9 +3,9 @@ import { Focusable } from "@decky/ui";
 import { MediaItem } from "../api";
 import { MovieCard } from "./MovieCard";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
-import { isModalOpen } from "../runtime/homeInputBus";
+import { isModalOpen, isPlayerActive } from "../runtime/homeInputBus";
 import { getActiveDocument } from "../runtime/activeDoc";
-import { playNavSound } from "../runtime/navSound";
+import { playCardNavSound } from "../runtime/navSound";
 import { setBackdropMovie } from "../runtime/backdropBus";
 
 interface ShelfProps {
@@ -67,7 +67,7 @@ export const Shelf: FC<ShelfProps> = memo(({ title, items, onSelectMovie, loadin
       );
       target.focus();
       target.classList.add("gpfocus");
-      playNavSound();
+      playCardNavSound();
 
       if (itemsRef.current[nextIdx]) {
         setBackdropMovie(itemsRef.current[nextIdx]);
@@ -119,7 +119,7 @@ export const Shelf: FC<ShelfProps> = memo(({ title, items, onSelectMovie, loadin
   useEffect(() => {
     const un = subscribeControllerInput((e) => {
       if (!e.pressed) return;
-      if (isModalOpen()) return;
+      if (isModalOpen() || isPlayerActive()) return;
 
       const doc = getActiveDocument(rowRef.current);
       const active = doc?.activeElement;
@@ -265,6 +265,23 @@ export const Shelf: FC<ShelfProps> = memo(({ title, items, onSelectMovie, loadin
             onGamepadDirection={handleGamepadDirection}
           />
         ))}
+        {items.length === 0 && loading && (
+          Array.from({ length: 6 }).map((_, idx) => (
+            <div
+              key={`shelf-skeleton-${idx}`}
+              tabIndex={0}
+              className="projacktor-card projacktor-card--skeleton"
+              style={{
+                width: 140,
+                height: 210,
+                flexShrink: 0,
+                background: "rgba(255, 255, 255, 0.05)",
+                borderRadius: 4,
+                opacity: 0.4,
+              }}
+            />
+          ))
+        )}
         {items.length === 0 && !loading && (
           <div style={{ padding: "20px 10px", fontSize: 13, color: "rgba(255,255,255,0.4)" }}>
             Нет данных

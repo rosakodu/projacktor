@@ -5,6 +5,7 @@
    Adapted from Deck-Shelves architecture. */
 
 import { dispatchHomeKey } from "./homeInputBus";
+import { isProjacktorActive } from "./activeDoc";
 
 export const RawButton = {
   A: 0,
@@ -45,7 +46,10 @@ export interface ControllerEvent {
 
 type Listener = (e: ControllerEvent) => void;
 
-const listeners = new Set<Listener>();
+// Ensure single shared listeners Set across possible multiple module evaluations / windows
+const g = globalThis as any;
+const listeners: Set<Listener> = g.__projacktor_controller_listeners || (g.__projacktor_controller_listeners = new Set<Listener>());
+
 let installed = false;
 let unregisterAll: Array<() => void> = [];
 let pollTimer: number | null = null;
@@ -63,10 +67,21 @@ function dispatch(ev: ControllerEvent): void {
   lastEvKey = key;
   lastEvAt = now;
 
+  // Forward to peer window (e.g. BP window or SharedJSContext) if present
   try {
-    const g = globalThis as any;
-    g.__projacktor_input_last = ev;
-    g.__projacktor_input_dispatch = dispatch;
+    const bp = (globalThis as any).__projacktor_input_bp_view;
+    if (bp && bp !== globalThis && typeof bp.__projacktor_input_dispatch === "function" && bp.__projacktor_input_dispatch !== dispatch) {
+      bp.__projacktor_input_dispatch(ev);
+    }
+  } catch {}
+
+  // Ignore events if Projacktor is not the active focused window (e.g. QuickAccess '...' or MainMenu is open)
+  if (!isProjacktorActive()) {
+    return;
+  }
+
+  try {
+    (globalThis as any).__projacktor_input_last = ev;
   } catch {}
 
   for (const l of listeners) {

@@ -3,9 +3,9 @@ import { Focusable } from "@decky/ui";
 import { MediaItem } from "../types";
 import { MovieCard } from "./MovieCard";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
-import { isModalOpen } from "../runtime/homeInputBus";
+import { isModalOpen, isPlayerActive } from "../runtime/homeInputBus";
 import { getActiveDocument } from "../runtime/activeDoc";
-import { playNavSound } from "../runtime/navSound";
+import { playCardNavSound } from "../runtime/navSound";
 import { setBackdropMovie } from "../runtime/backdropBus";
 
 interface SectorShelfProps {
@@ -60,7 +60,7 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
         return;
       }
       if (onPrevSection) {
-        playNavSound();
+        playCardNavSound();
         const doc = getActiveDocument(rowRef.current);
         doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
         onPrevSection();
@@ -73,7 +73,7 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
       const now = Date.now();
       if (now - lastSectionChangeAtRef.current < SECTION_COOLDOWN_MS) return;
       lastSectionChangeAtRef.current = now;
-      playNavSound();
+      playCardNavSound();
       const doc = getActiveDocument(rowRef.current);
       doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
       onNextSection();
@@ -112,7 +112,7 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
         );
         target.focus();
         target.classList.add("gpfocus");
-        playNavSound();
+        playCardNavSound();
 
         if (itemsRef.current[nextIdx]) {
           setBackdropMovie(itemsRef.current[nextIdx]);
@@ -168,25 +168,38 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
       [triggerPrevSection, triggerNextSection, stepCard]
     );
 
+    const lastTitleRef = useRef<string>(title);
+
     // Авто-фокус на первой карточке при смене раздела
     useEffect(() => {
-      if (rowRef.current) {
+      const isNewSection = lastTitleRef.current !== title;
+      lastTitleRef.current = title;
+
+      const doc = getActiveDocument(rowRef.current);
+      const active = doc?.activeElement;
+      const isAlreadyInShelf = !!(active && rowRef.current?.contains(active as Node));
+
+      if (isNewSection && !isAlreadyInShelf && rowRef.current) {
         rowRef.current.scrollTo({ left: 0, behavior: "auto" });
       }
 
       const focusFirstCard = () => {
-        const doc = getActiveDocument(rowRef.current);
-        const active = doc?.activeElement;
+        if (isModalOpen()) return;
+        const currentDoc = getActiveDocument(rowRef.current);
+        const currentActive = currentDoc?.activeElement;
+        if (currentActive && rowRef.current?.contains(currentActive as Node)) {
+          return;
+        }
         const inTabs = !!(
-          active &&
-          (active.classList?.contains("projacktor-tab-item") ||
-            doc?.querySelector(".projacktor-nav-bar")?.contains(active))
+          currentActive &&
+          (currentActive.classList?.contains("projacktor-tab-item") ||
+            currentDoc?.querySelector(".projacktor-nav-bar")?.contains(currentActive as Node))
         );
         if (inTabs) return;
 
         const firstCard = rowRef.current?.querySelector<HTMLElement>(".projacktor-card");
         if (firstCard) {
-          doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+          currentDoc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
           firstCard.focus();
           firstCard.classList.add("gpfocus");
           if (itemsRef.current[0]) {
@@ -195,23 +208,29 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
         }
       };
 
-      focusFirstCard();
-      const t1 = setTimeout(focusFirstCard, 40);
-      const t2 = setTimeout(focusFirstCard, 120);
-      return () => {
-        clearTimeout(t1);
-        clearTimeout(t2);
-      };
+      if (!isAlreadyInShelf) {
+        focusFirstCard();
+        const t1 = setTimeout(focusFirstCard, 40);
+        const t2 = setTimeout(focusFirstCard, 120);
+        return () => {
+          clearTimeout(t1);
+          clearTimeout(t2);
+        };
+      }
+      return undefined;
     }, [title, items]);
 
     // Подписка на raw-события геймпада Big Picture (SteamClient.Input)
     useEffect(() => {
       const un = subscribeControllerInput((e) => {
         if (!e.pressed) return;
-        if (isModalOpen()) return;
+        if (isModalOpen() || isPlayerActive()) return;
 
         const doc = getActiveDocument(rowRef.current);
         const active = doc?.activeElement;
+        const inRow = !!(active && rowRef.current?.contains(active as Node));
+        if (!inRow) return;
+
         const inTabs = !!(
           active &&
           (active.classList?.contains("projacktor-tab-item") ||
@@ -264,8 +283,11 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
       const doc = getActiveDocument(shelfEl);
 
       const handleKeyDown = (e: KeyboardEvent) => {
-        if (isModalOpen()) return;
+        if (isModalOpen() || isPlayerActive()) return;
         const active = doc?.activeElement || document?.activeElement;
+        const inRow = !!(active && rowRef.current?.contains(active as Node));
+        if (!inRow) return;
+
         const inTabs = !!(
           active &&
           (active.classList?.contains("projacktor-tab-item") ||
@@ -292,11 +314,10 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
         }
       };
 
-      doc?.addEventListener?.("keydown", handleKeyDown, true);
-      window.addEventListener("keydown", handleKeyDown, true);
+      const target = doc || window;
+      target.addEventListener("keydown", handleKeyDown, true);
       return () => {
-        doc?.removeEventListener?.("keydown", handleKeyDown, true);
-        window.removeEventListener("keydown", handleKeyDown, true);
+        target.removeEventListener("keydown", handleKeyDown, true);
       };
     }, [triggerPrevSection, triggerNextSection, stepCard]);
 
@@ -367,6 +388,24 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
               onGamepadDirection={handleGamepadDirection}
             />
           ))}
+
+          {items.length === 0 && loading && (
+            Array.from({ length: 6 }).map((_, idx) => (
+              <div
+                key={`shelf-skeleton-${idx}`}
+                tabIndex={0}
+                className="projacktor-card projacktor-card--skeleton"
+                style={{
+                  width: 140,
+                  height: 210,
+                  flexShrink: 0,
+                  background: "rgba(255, 255, 255, 0.05)",
+                  borderRadius: 4,
+                  opacity: 0.4,
+                }}
+              />
+            ))
+          )}
 
           {items.length === 0 && !loading && (
             <div style={{ padding: "20px 10px", fontSize: 13, color: "rgba(255,255,255,0.4)" }}>

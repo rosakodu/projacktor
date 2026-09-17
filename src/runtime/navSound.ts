@@ -132,6 +132,42 @@ export function playNavSound() {
   } catch {}
 }
 
+let cardNavAudio: HTMLAudioElement | null = null;
+let lastCardPlayAt = 0;
+const CARD_SOUND_COOLDOWN_MS = 60;
+
+export function playCardNavSound() {
+  const now = Date.now();
+  if (now - lastCardPlayAt < CARD_SOUND_COOLDOWN_MS) {
+    return;
+  }
+  lastCardPlayAt = now;
+
+  try {
+    const store =
+      (window as any).SteamUIStore?.m_GamepadUIAudioStore ||
+      (window as any).opener?.SteamUIStore?.m_GamepadUIAudioStore;
+    if (store && typeof store.PlayNavSound === "function") {
+      store.PlayNavSound(15);
+      return;
+    }
+  } catch {}
+
+  try {
+    if (!cardNavAudio) {
+      cardNavAudio = new Audio("/sounds/deck_ui_navigation.wav");
+      cardNavAudio.volume = 0.6;
+    }
+    cardNavAudio.currentTime = 0;
+    const playPromise = cardNavAudio.play();
+    if (playPromise && typeof playPromise.catch === "function") {
+      playPromise.catch(() => {});
+    }
+  } catch {}
+}
+
+export const playTabSound = playNavSound;
+
 // Automatically install guard on module load
 try {
   installSteamAudioGuard();

@@ -11,8 +11,10 @@ import {
 } from "../types";
 import { API_BASE, formatBytes } from "./utils";
 import { getCachedCatalog, setCachedCatalog } from "./cache";
+import { getLocale } from "../i18n/state";
 
 // ── RPC Functions ──────────────────────────────────────────────
+export const rpcGetSteamLanguage = callable<[], string>("get_steam_language");
 export const rpcGetWatchlist = callable<[], WatchlistItem[]>("get_watchlist");
 export const rpcAddToWatchlist = callable<[string], { success: boolean; error?: string }>("add_to_watchlist");
 export const rpcRemoveFromWatchlist = callable<[number], boolean>("remove_from_watchlist");
@@ -31,7 +33,7 @@ export const rpcStartDownload = callable<[number, string?], { success: boolean; 
 export const rpcGetEpisodes = callable<[number], EpisodeItem[]>("get_episodes");
 export const rpcDownloadEpisode = callable<[number, number], { success: boolean; gid?: string; error?: string }>("download_episode");
 export const rpcPrepareStream = callable<
-  [number, number?],
+  [mid: number, file_index?: number, force_online?: boolean, magnet?: string],
   {
     success: boolean;
     stream_url?: string;
@@ -41,6 +43,7 @@ export const rpcPrepareStream = callable<
     title?: string;
     transcode?: boolean;
     online?: boolean;
+    duration?: number;
     error?: string;
   }
 >("prepare_stream");
@@ -140,6 +143,11 @@ export async function fetchCatalog(
 
     if (!url) return [];
 
+    const isEn = getLocale() === "en";
+    const langParam = isEn ? "en-US" : "ru-RU";
+    const separator = url.includes("?") ? "&" : "?";
+    url = `${url}${separator}language=${langParam}`;
+
     const res = await fetch(url);
     if (!res.ok) {
       return getCachedCatalog(endpoint, mediaType) || [];
@@ -148,7 +156,7 @@ export async function fetchCatalog(
     const inferredType = mediaType === "cartoon" ? "movie" : mediaType === "anime" ? "tv" : mediaType;
     const items = (data.results || []).map((item: any) => ({
       ...item,
-      title: item.title || item.name || "Без названия",
+      title: item.title || item.name || (isEn ? "Untitled" : "Без названия"),
       release_date: item.release_date || item.first_air_date || "",
       media_type: item.media_type || inferredType,
     }));
@@ -165,14 +173,18 @@ export async function fetchCatalog(
 export async function searchCatalog(query: string): Promise<MediaItem[]> {
   if (!query.trim()) return [];
   try {
-    const res = await fetch(`${API_BASE}/tmdb/search/multi?query=${encodeURIComponent(query)}`);
+    const isEn = getLocale() === "en";
+    const langParam = isEn ? "en-US" : "ru-RU";
+    const res = await fetch(
+      `${API_BASE}/tmdb/search/multi?query=${encodeURIComponent(query)}&language=${langParam}`
+    );
     if (!res.ok) return [];
     const data = await res.json();
     return (data.results || [])
       .filter((i: any) => i.media_type === "movie" || i.media_type === "tv")
       .map((item: any) => ({
         ...item,
-        title: item.title || item.name || "Без названия",
+        title: item.title || item.name || (isEn ? "Untitled" : "Без названия"),
         release_date: item.release_date || item.first_air_date || "",
       }));
   } catch {
@@ -346,27 +358,37 @@ export async function searchTorrents(
       }
     }
 
-    const queryList = Array.from(queries).slice(0, 5);
-    const results = await Promise.allSettled(
-      queryList.map((q) => fetchQ(q))
-    );
-
+    const queryList = Array.from(queries).slice(0, 4);
     let rawCandidates: any[] = [];
-    for (const r of results) {
-      if (r.status === "fulfilled" && Array.isArray(r.value)) {
-        rawCandidates.push(...r.value);
+
+    // Последовательный опрос с ранним выходом, чтобы избежать Cloudflare 429 Too Many Requests
+    for (let i = 0; i < queryList.length; i++) {
+      const q = queryList[i];
+      try {
+        const res = await fetchQ(q);
+        if (Array.isArray(res) && res.length > 0) {
+          rawCandidates.push(...res);
+          // Если уже найдено достаточно раздач (>= 5), прекращаем нагружать сервер
+          if (rawCandidates.length >= 8) {
+            break;
+          }
+        }
+      } catch (err) {
+        // Одиночная ошибка запроса не должна ломать весь поиск
+      }
+      // Небольшая пауза между запросами для сглаживания нагрузки
+      if (i < queryList.length - 1 && rawCandidates.length < 8) {
+        await new Promise((resolve) => setTimeout(resolve, 150));
       }
     }
 
-    if (rawCandidates.length === 0) {
-      const fallbackResults = await Promise.allSettled(
-        queryList.slice(0, 3).map((q) => fetchQ(q, ""))
-      );
-      for (const r of fallbackResults) {
-        if (r.status === "fulfilled" && Array.isArray(r.value)) {
-          rawCandidates.push(...r.value);
+    if (rawCandidates.length === 0 && queryList.length > 0) {
+      try {
+        const fallbackRes = await fetchQ(queryList[0], "");
+        if (Array.isArray(fallbackRes)) {
+          rawCandidates.push(...fallbackRes);
         }
-      }
+      } catch {}
     }
 
     const filtered = filterTorrents(rawCandidates, cleanTitle, year, mediaType, originalTitle);
@@ -399,6 +421,39 @@ export async function getLibraryItemDetails(id: number): Promise<LibraryItem | n
     const res = await fetch(`${API_BASE}/library/${id}`);
     if (!res.ok) return null;
     return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchMovieLogo(
+  tmdbId: number,
+  mediaType: string = "movie"
+): Promise<string | null> {
+  try {
+    const type = mediaType === "tv" ? "tv" : "movie";
+    const res = await fetch(
+      `${API_BASE}/tmdb/${type}/${tmdbId}/images?include_image_language=ru,en,null`
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const logos = data.logos || [];
+    if (!logos.length) return null;
+
+    // Приоритет языка логотипа в зависимости от выбранной локали
+    const isEn = getLocale() === "en";
+    const primaryLang = isEn ? "en" : "ru";
+    const fallbackLang = isEn ? "ru" : "en";
+
+    const pLogo = logos.find((l: any) => l.iso_639_1 === primaryLang);
+    if (pLogo?.file_path) return pLogo.file_path;
+
+    const fLogo = logos.find((l: any) => l.iso_639_1 === fallbackLang);
+    if (fLogo?.file_path) return fLogo.file_path;
+
+    // Логотип без языка или с наивысшим рейтингом
+    logos.sort((a: any, b: any) => (b.vote_average || 0) - (a.vote_average || 0));
+    return logos[0]?.file_path || null;
   } catch {
     return null;
   }

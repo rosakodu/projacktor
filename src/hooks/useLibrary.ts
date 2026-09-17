@@ -26,6 +26,7 @@ export function useLibrary(
   ) => void
 ) {
   const [library, setLibrary] = useState<LibraryItem[]>([]);
+  const [isInitialLoading, setIsInitialLoading] = useState<boolean>(true);
   const [expandedEpisodes, setExpandedEpisodes] = useState<Record<number, boolean>>({});
   const [episodesMap, setEpisodesMap] = useState<Record<number, EpisodeItem[]>>({});
   const [episodesLoading, setEpisodesLoading] = useState<Record<number, boolean>>({});
@@ -40,15 +41,22 @@ export function useLibrary(
           setLibrary(lib);
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (mountedRef.current) {
+          setIsInitialLoading(false);
+        }
+      });
   }, []);
 
   useEffect(() => {
     mountedRef.current = true;
     refreshLibrary();
     const interval = setInterval(() => {
-      refreshLibrary();
-    }, 2500);
+      if (typeof document === "undefined" || !document.hidden) {
+        refreshLibrary();
+      }
+    }, 1500);
     return () => {
       mountedRef.current = false;
       clearInterval(interval);
@@ -174,6 +182,7 @@ export function useLibrary(
 
   return {
     library,
+    isInitialLoading,
     expandedEpisodes,
     episodesMap,
     episodesLoading,

@@ -34,7 +34,7 @@ export const MovieCard: FC<MovieCardProps> = memo(({ movie, onActivate, onGamepa
         className="projacktor-card-poster"
         loading="lazy"
         onError={(e) => {
-          (e.currentTarget as HTMLImageElement).src = getImageUrl(null);
+          (e.currentTarget as HTMLImageElement).style.display = "none";
         }}
       />
       <div className="projacktor-card-info">

@@ -28,7 +28,7 @@ export const TabBar: FC<TabBarProps> = memo(
       <div className="projacktor-nav-bar">
         {/* L1 Bumper Indicator */}
         <div
-          className="projacktor-bumper-pill"
+          className="projacktor-bumper-pill l1"
           onClick={onPrevTab}
           role="button"
           aria-label="Предыдущая вкладка (L1)"
@@ -56,7 +56,7 @@ export const TabBar: FC<TabBarProps> = memo(
 
         {/* R1 Bumper Indicator */}
         <div
-          className="projacktor-bumper-pill"
+          className="projacktor-bumper-pill r1"
           onClick={onNextTab}
           role="button"
           aria-label="Следующая вкладка (R1)"
