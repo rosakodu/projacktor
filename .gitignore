@@ -28,7 +28,7 @@ Thumbs.db
 *.log
 
 # Local deployment & credentials
-deploy_deck.sh
+deploy_deck*
 *.secret
 *.env
 *.env.*
@@ -43,5 +43,7 @@ screenshot.jpg
 
 # Internal docs & scratch
 AGENT_TASK.md
+AUDIT_REPORT.md
 uninstall_deck.sh
+
 
