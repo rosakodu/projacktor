@@ -23,7 +23,8 @@ from .common import (
     _build_gui_env,
     POPULAR_TRACKERS,
     get_steam_language,
-    get_available_storage_drives
+    get_available_storage_drives,
+    has_vaapi_support
 )
 from .download_manager import DownloadManager
 from .torrserver import TorrServerManager, extract_hash_from_magnet, extract_ts_files

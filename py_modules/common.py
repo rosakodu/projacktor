@@ -7,6 +7,8 @@ import urllib.parse
 import urllib.error
 import ssl
 import re
+import subprocess
+
 
 # Decky Loader API
 try:
@@ -115,7 +117,57 @@ def save_settings(settings):
     with open(SETTINGS_PATH, 'w', encoding='utf-8') as f:
         json.dump(current, f, indent=4)
 
+_vaapi_supported = None
+
+def has_vaapi_support() -> bool:
+    global _vaapi_supported
+    if _vaapi_supported is not None:
+        return _vaapi_supported
+
+    dri_dev = "/dev/dri/renderD128"
+    if not (os.path.exists(dri_dev) and os.access(dri_dev, os.R_OK | os.W_OK)):
+        _vaapi_supported = False
+        return False
+
+    ffmpeg_bin = get_bin_path("ffmpeg")
+    try:
+        res = subprocess.run(
+            [ffmpeg_bin, "-hide_banner", "-encoders"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=3,
+            env=_clean_env()
+        )
+        if "h264_vaapi" in res.stdout:
+            logger.info("[Hardware] VA-API hardware video acceleration detected and enabled (/dev/dri/renderD128)")
+            _vaapi_supported = True
+            return True
+    except Exception as e:
+        logger.debug(f"[Hardware] VA-API detection error: {e}")
+
+    _vaapi_supported = False
+    return False
+
 def get_bin_path(name: str) -> str:
+    # Prefer system ffmpeg / ffprobe if it supports VA-API
+    if name in ("ffmpeg", "ffprobe"):
+        system_bin = shutil.which(name)
+        if system_bin and os.path.isfile(system_bin):
+            try:
+                res = subprocess.run(
+                    [system_bin, "-hide_banner", "-hwaccels"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=2,
+                    env=_clean_env()
+                )
+                if "vaapi" in res.stdout:
+                    return system_bin
+            except Exception:
+                pass
+
     plugin_dir = os.environ.get("DECKY_PLUGIN_DIR", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     candidates = [
         os.path.join(plugin_dir, "bin", name),
@@ -132,6 +184,7 @@ def get_bin_path(name: str) -> str:
     if system_path:
         return system_path
     return candidates[0]
+
 
 def _clean_env():
     env = os.environ.copy()

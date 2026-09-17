@@ -58,6 +58,7 @@ from py_modules import (
     POPULAR_TRACKERS,
     get_steam_language,
     get_available_storage_drives,
+    has_vaapi_support,
     DownloadManager,
     TorrServerManager,
     extract_hash_from_magnet,
@@ -211,7 +212,8 @@ class Plugin:
             "total_disk_space": total,
             "used_disk_space": used,
             "download_path": dp,
-            "drives": drives
+            "drives": drives,
+            "vaapi_supported": has_vaapi_support()
         }
 
     async def get_settings(self):

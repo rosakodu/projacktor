@@ -15,7 +15,7 @@ from socketserver import ThreadingMixIn
 import threading
 
 from .db import CONFIG_DIR, get_user_home, get_db, logger
-from .common import load_settings, save_settings, ping_jacred, normalize_jacred_url, get_ssl_context, get_bin_path, _clean_env
+from .common import load_settings, save_settings, ping_jacred, normalize_jacred_url, get_ssl_context, get_bin_path, _clean_env, has_vaapi_support
 from .stream import unwrap_stream_source, is_header_ready, probe_media_file
 from .torrserver import extract_hash_from_magnet, extract_ts_files
 
@@ -985,8 +985,19 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
 
             ffmpeg_bin = get_bin_path("ffmpeg")
             cmd = [ffmpeg_bin, "-hide_banner", "-loglevel", "error"]
+
+            wants_video_transcode = video_needs_transcode or (transcode_mode == '1')
+            use_vaapi = wants_video_transcode and has_vaapi_support()
+
+            if use_vaapi:
+                cmd += [
+                    "-hwaccel", "vaapi",
+                    "-hwaccel_device", "/dev/dri/renderD128",
+                    "-hwaccel_output_format", "vaapi"
+                ]
+
             if has_start_offset:
-                if not video_needs_transcode:
+                if not wants_video_transcode:
                     cmd += ["-noaccurate_seek"]
                 cmd += ["-ss", str(start_time)]
             if is_http:
@@ -1000,8 +1011,32 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             else:
                 cmd += ["-map", "0:v:0", "-map", "0:a:0?"]
 
-            if video_needs_transcode:
-                cmd += ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", "23"]
+            if wants_video_transcode:
+                if use_vaapi:
+                    sett = load_settings()
+                    max_res = (sett.get("transcode_max_res") or "4k").lower()
+                    if max_res == "720p":
+                        vf_filter = "scale_vaapi=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:format=nv12"
+                        target_bitrate = "7M"
+                        max_rate = "10M"
+                    elif max_res == "1080p":
+                        vf_filter = "scale_vaapi=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:format=nv12"
+                        target_bitrate = "15M"
+                        max_rate = "22M"
+                    else:  # "4k" or original resolution
+                        vf_filter = "scale_vaapi=format=nv12"
+                        target_bitrate = "28M"
+                        max_rate = "40M"
+
+                    cmd += [
+                        "-vf", vf_filter,
+                        "-c:v", "h264_vaapi",
+                        "-b:v", target_bitrate,
+                        "-maxrate", max_rate,
+                        "-bufsize", f"{int(max_rate[:-1]) * 2}M"
+                    ]
+                else:
+                    cmd += ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", "23"]
             else:
                 cmd += ["-c:v", "copy"]
 

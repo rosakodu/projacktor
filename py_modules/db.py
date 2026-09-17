@@ -71,7 +71,8 @@ DEFAULT_SETTINGS = {
     "download_path": INITIAL_DOWNLOAD_PATH,
     "language": "ru",
     "aria2_port": 6800,
-    "torrserver_port": 8095
+    "torrserver_port": 8095,
+    "transcode_max_res": "4k"
 }
 
 # Мьютекс для предотвращения состояния гонки (Race condition) между параллельными потоками
