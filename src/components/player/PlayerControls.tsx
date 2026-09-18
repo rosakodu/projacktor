@@ -1,4 +1,4 @@
-import { FC, RefObject } from "react";
+import { FC, RefObject, useEffect, useRef } from "react";
 import { Focusable } from "@decky/ui";
 import {
   FaPlay,
@@ -91,6 +91,21 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
   onHoverAudioItem,
   onChangeVolume,
 }) => {
+  const prevMenuOpenRef = useRef<boolean>(false);
+  const lastMenuCloseTimeRef = useRef<number>(0);
+  const isAnyMenuOpen = showAudioMenu || showSubtitleMenu;
+
+  useEffect(() => {
+    if (prevMenuOpenRef.current && !isAnyMenuOpen) {
+      lastMenuCloseTimeRef.current = Date.now();
+    }
+    prevMenuOpenRef.current = isAnyMenuOpen;
+  }, [isAnyMenuOpen]);
+
+  const isActionBlocked = () => {
+    return isAnyMenuOpen || (Date.now() - lastMenuCloseTimeRef.current < 450);
+  };
+
   return (
     <div
       onClick={(e) => e.stopPropagation()}
@@ -213,10 +228,12 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
           <Focusable
             className="ds-btn ds-btn--compact ds-btn--icon"
             onActivate={(e?: any) => {
+              if (isActionBlocked()) return;
               e?.stopPropagation?.();
               onSeekRelative(-10);
             }}
             onClick={(e?: any) => {
+              if (isActionBlocked()) return;
               e?.stopPropagation?.();
               onSeekRelative(-10);
             }}
@@ -232,10 +249,12 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
             ref={playBtnRef}
             className="ds-btn ds-btn--primary ds-btn--compact ds-btn--icon"
             onActivate={(e?: any) => {
+              if (isActionBlocked()) return;
               e?.stopPropagation?.();
               onTogglePlay();
             }}
             onClick={(e?: any) => {
+              if (isActionBlocked()) return;
               e?.stopPropagation?.();
               onTogglePlay();
             }}
@@ -250,10 +269,12 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
           <Focusable
             className="ds-btn ds-btn--compact ds-btn--icon"
             onActivate={(e?: any) => {
+              if (isActionBlocked()) return;
               e?.stopPropagation?.();
               onSeekRelative(10);
             }}
             onClick={(e?: any) => {
+              if (isActionBlocked()) return;
               e?.stopPropagation?.();
               onSeekRelative(10);
             }}
@@ -269,10 +290,12 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
             <Focusable
               className="ds-btn ds-btn--compact ds-btn--icon"
               onActivate={(e?: any) => {
+                if (isActionBlocked()) return;
                 e?.stopPropagation?.();
                 onSeekTo(0);
               }}
               onClick={(e?: any) => {
+                if (isActionBlocked()) return;
                 e?.stopPropagation?.();
                 onSeekTo(0);
               }}

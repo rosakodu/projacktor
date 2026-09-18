@@ -66,7 +66,10 @@ export const TrackSelectionMenu: FC<TrackSelectionMenuProps> = ({
             tabIndex={0}
             className={`ds-btn ds-btn--compact ${activeIdx === 0 ? "gpfocus active-nav" : ""}`}
             data-selected={selectedSubtitle === null ? "true" : undefined}
-            onClick={() => onSelectSubtitle?.(null)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectSubtitle?.(null);
+            }}
             onMouseEnter={() => onHoverItem(0)}
             style={{
               justifyContent: "flex-start",
@@ -100,7 +103,8 @@ export const TrackSelectionMenu: FC<TrackSelectionMenuProps> = ({
                   tabIndex={isSupported ? 0 : -1}
                   className={`ds-btn ds-btn--compact ${isNavActive ? "gpfocus active-nav" : ""}`}
                   data-selected={isSelected ? "true" : undefined}
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     if (isSupported) {
                       onSelectSubtitle?.(sub.index);
                     }
@@ -154,7 +158,10 @@ export const TrackSelectionMenu: FC<TrackSelectionMenuProps> = ({
                   tabIndex={0}
                   className={`ds-btn ds-btn--compact ${isNavActive ? "gpfocus active-nav" : ""}`}
                   data-selected={isSelected ? "true" : undefined}
-                  onClick={() => onSelectAudio?.(track.index)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectAudio?.(track.index);
+                  }}
                   onMouseEnter={() => onHoverItem(tIdx)}
                   style={{
                     justifyContent: "flex-start",

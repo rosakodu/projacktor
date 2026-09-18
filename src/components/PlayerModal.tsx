@@ -164,6 +164,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   const volumeHudTimerRef = useRef<number | null>(null);
   const seekCommitTimerRef = useRef<number | null>(null);
   const targetSeekTimeRef = useRef<number | null>(null);
+  const lastTrackSelectionTimeRef = useRef<number>(0);
   const [zoom, setZoom] = useState<number>(1);
   const zoomRef = useRef<number>(1);
   const [zoomHudVisible, setZoomHudVisible] = useState<boolean>(false);
@@ -548,15 +549,30 @@ export const PlayerModal: FC<PlayerModalProps> = ({
 
   const selectSubtitleTrack = useCallback((trackIndex: number | string | null) => {
     userInteractedWithSubtitlesRef.current = true;
+    lastTrackSelectionTimeRef.current = Date.now();
     setSelectedSubtitle(trackIndex);
-    setShowSubtitleMenu(false);
-    resetControlsTimer();
-    setTimeout(() => {
-      if (subtitleBtnRef.current) {
+
+    // Синхронно переводим фокус на кнопку субтитров ДО закрытия меню,
+    // чтобы фокус браузера/Decky не сбрасывался на первый элемент (перемотку назад)
+    if (subtitleBtnRef.current) {
+      try {
         const doc = getActiveDocument(subtitleBtnRef.current) || document;
         doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
         subtitleBtnRef.current.focus();
         subtitleBtnRef.current.classList.add("gpfocus");
+      } catch {}
+    }
+
+    setShowSubtitleMenu(false);
+    resetControlsTimer();
+    setTimeout(() => {
+      if (subtitleBtnRef.current) {
+        try {
+          const doc = getActiveDocument(subtitleBtnRef.current) || document;
+          doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+          subtitleBtnRef.current.focus();
+          subtitleBtnRef.current.classList.add("gpfocus");
+        } catch {}
       }
     }, 50);
   }, [resetControlsTimer]);
@@ -756,6 +772,11 @@ export const PlayerModal: FC<PlayerModalProps> = ({
 
   const seekRelative = useCallback(
     (delta: number) => {
+      // Игнорируем фантомные нажатия кнопок перемотки в момент закрытия меню субтитров/аудио
+      if (Date.now() - lastTrackSelectionTimeRef.current < 450) {
+        return;
+      }
+
       const currentBase =
         targetSeekTimeRef.current !== null
           ? targetSeekTimeRef.current
@@ -785,7 +806,19 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   );
 
   const selectAudioTrack = useCallback((trackIndex: number) => {
+    lastTrackSelectionTimeRef.current = Date.now();
     setSelectedAudio(trackIndex);
+
+    // Синхронно переводим фокус на кнопку аудио ДО закрытия меню
+    if (audioBtnRef.current) {
+      try {
+        const doc = getActiveDocument(audioBtnRef.current) || document;
+        doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+        audioBtnRef.current.focus();
+        audioBtnRef.current.classList.add("gpfocus");
+      } catch {}
+    }
+
     setShowAudioMenu(false);
     setErrorMsg(null);
     const cur = (isDirectStream && videoRef.current) ? videoRef.current.currentTime : (baseTime + (videoRef.current ? videoRef.current.currentTime : 0));
@@ -795,10 +828,12 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     resetControlsTimer();
     setTimeout(() => {
       if (audioBtnRef.current) {
-        const doc = getActiveDocument(audioBtnRef.current) || document;
-        doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-        audioBtnRef.current.focus();
-        audioBtnRef.current.classList.add("gpfocus");
+        try {
+          const doc = getActiveDocument(audioBtnRef.current) || document;
+          doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+          audioBtnRef.current.focus();
+          audioBtnRef.current.classList.add("gpfocus");
+        } catch {}
       }
     }, 50);
   }, [baseTime, getStreamUrl, isDirectStream, resetControlsTimer]);
