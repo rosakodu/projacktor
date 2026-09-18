@@ -384,8 +384,8 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
         const eps = await rpcGetEpisodes(mid);
         if (Array.isArray(eps) && eps.length > 0) {
           setEpisodesMap((prev) => ({ ...prev, [tId]: sortEpisodes(eps) }));
-        } else {
-          // Фоновый авто-повтор через 3.5 сек, если раздача ещё открыта
+        } else if ((torrent.seeds || 0) > 0) {
+          // Фоновый авто-повтор через 3.5 сек, только если у раздачи есть сиды
           setTimeout(async () => {
             if (expandedTorrentIdRef.current === tId) {
               try {
@@ -841,20 +841,30 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                           {isEpLoading ? (
                             <div style={{ padding: "8px 4px", fontSize: 11, color: "var(--ds-text-dim)", display: "flex", alignItems: "center", gap: 8 }}>
                               <FaSpinner style={{ animation: "projacktor-spin 0.9s linear infinite" }} />
-                              <span>Получение списка серий из раздачи...</span>
+                              <span>Подключение к сидерам и загрузка серий...</span>
                             </div>
                           ) : episodes.length === 0 ? (
-                            <div style={{ padding: "8px 4px", fontSize: 11, color: "var(--ds-text-dim)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                              <span>Серии загружаются из сети. Подождите пару секунд...</span>
-                              <Focusable
-                                className="ds-btn ds-btn--compact ds-btn--primary"
-                                noFocusRing
-                                onActivate={() => fetchEpisodesForTorrent(tor)}
-                                onClick={() => fetchEpisodesForTorrent(tor)}
-                                style={{ padding: "3px 12px", fontSize: 10, flexShrink: 0 }}
-                              >
-                                Обновить
-                              </Focusable>
+                            <div style={{ padding: "8px 4px", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                              {(tor.seeds || 0) === 0 ? (
+                                <span style={{ color: "#ff7875" }}>
+                                  Раздача недоступна: 0 сидеров в сети (↑). Выберите раздачу с сидами.
+                                </span>
+                              ) : (
+                                <>
+                                  <span style={{ color: "var(--ds-text-dim)" }}>
+                                    Не удалось получить список серий (таймаут ответа сидеров).
+                                  </span>
+                                  <Focusable
+                                    className="ds-btn ds-btn--compact ds-btn--primary"
+                                    noFocusRing
+                                    onActivate={() => fetchEpisodesForTorrent(tor)}
+                                    onClick={() => fetchEpisodesForTorrent(tor)}
+                                    style={{ padding: "3px 12px", fontSize: 10, flexShrink: 0 }}
+                                  >
+                                    Повторить
+                                  </Focusable>
+                                </>
+                              )}
                             </div>
                           ) : (
                             episodes.map((ep) => {

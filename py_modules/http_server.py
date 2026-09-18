@@ -702,9 +702,9 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                     is_tc = bool(re.search(r'\b(telecine)\b|(?:\s|^|[\[\(/])tc(?:\s|$|[\]\)/])', title_l))
 
                     res = ""
-                    for rk in ["2160p", "4K", "1080p", "720p"]:
-                        if rk.lower() in title_l:
-                            res = rk
+                    for rk in ["2160p", "4k", "4к", "uhd", "1080p", "720p"]:
+                        if rk in title_l:
+                            res = "4K" if rk in ["2160p", "4k", "4к", "uhd"] else rk
                             break
 
                     if is_ts:

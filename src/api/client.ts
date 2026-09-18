@@ -287,7 +287,7 @@ export function parseQuality(title: string, existingQuality?: string): string {
   const isTc = /\b(telecine)\b|(?:\s|^|[\[\(/])tc(?:\s|$|[\]\)/])/i.test(t);
 
   let res = "";
-  if (t.includes("2160p") || t.includes("4k") || t.includes("uhd")) res = "4K";
+  if (t.includes("2160p") || t.includes("4k") || t.includes("4к") || t.includes("uhd")) res = "4K";
   else if (t.includes("1080p") || t.includes("fhd")) res = "1080p";
   else if (t.includes("720p") || t.includes("hd")) res = "720p";
 
