@@ -72,7 +72,7 @@ DEFAULT_SETTINGS = {
     "language": "ru",
     "aria2_port": 6800,
     "torrserver_port": 8095,
-    "transcode_max_res": "4k"
+    "transcode_max_res": "auto"
 }
 
 # Мьютекс для предотвращения состояния гонки (Race condition) между параллельными потоками

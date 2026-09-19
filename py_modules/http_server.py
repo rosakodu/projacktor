@@ -18,6 +18,7 @@ from .db import CONFIG_DIR, get_user_home, get_db, logger
 from .common import load_settings, save_settings, ping_jacred, normalize_jacred_url, get_ssl_context, get_bin_path, _clean_env, has_vaapi_support
 from .stream import unwrap_stream_source, is_header_ready, probe_media_file
 from .torrserver import extract_hash_from_magnet, extract_ts_files
+from .transcoder import resolve_transcode_plan, build_ffmpeg_stream_command
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
@@ -55,6 +56,23 @@ def ensure_utf8_subtitles(raw_data: bytes) -> bytes:
             continue
     return raw_data
 
+def finalize_vtt(data: bytes) -> bytes:
+    """Ensures WebVTT format is valid and trims trailing incomplete cue blocks."""
+    if not data or len(data) < 10:
+        return b"WEBVTT\n\n"
+    text = data.decode('utf-8', errors='ignore')
+    if not text.startswith("WEBVTT"):
+        text = "WEBVTT\n\n" + text
+    blocks = text.split("\n\n")
+    valid_blocks = ["WEBVTT"]
+    for b in blocks[1:]:
+        b_clean = b.strip()
+        if "-->" in b_clean:
+            lines = [l for l in b_clean.split("\n") if l.strip()]
+            if len(lines) >= 2 and any("-->" in l for l in lines):
+                valid_blocks.append(b_clean)
+    return ("\n\n".join(valid_blocks) + "\n\n").encode('utf-8')
+
 def find_external_subtitles(source: str):
     """
     Detects external subtitle files (.srt, .ass, .vtt, .ssa) associated with the given video source.
@@ -68,22 +86,24 @@ def find_external_subtitles(source: str):
         
         if is_http and ('link=' in parsed.query or 'torrserver' in source.lower() or ':8095' in source):
             qs = urllib.parse.parse_qs(parsed.query)
-            thash = qs.get('link', [''])[0]
-            chosen_id = qs.get('index', [''])[0]
+            thash = qs.get('link', [''])[0] or qs.get('hash', [''])[0]
+            chosen_id = qs.get('index', [''])[0] or qs.get('id', [''])[0]
             
-            if thash and plugin_instance and getattr(plugin_instance, 'ts', None):
-                t_info = plugin_instance.ts.get_torrent(thash)
+            ts_mgr = getattr(plugin_instance, 'ts', None) or TorrServerManager()
+            if thash and ts_mgr:
+                t_info = ts_mgr.get_torrent(thash)
                 ts_files = extract_ts_files(t_info)
                 if not ts_files:
                     try:
-                        plugin_instance.ts.add_torrent(f"magnet:?xt=urn:btih:{thash}")
+                        ts_mgr.add_torrent(f"magnet:?xt=urn:btih:{thash}")
                     except Exception:
                         pass
-                    for _ in range(4):
-                        time.sleep(0.35)
-                        t_info = plugin_instance.ts.get_torrent(thash)
+                    for attempt in range(6):
+                        time.sleep(0.5)
+                        t_info = ts_mgr.get_torrent(thash)
                         ts_files = extract_ts_files(t_info)
                         if ts_files:
+                            logger.info(f"[find_external_subtitles] TorrServer metadata loaded on attempt {attempt+1}")
                             break
                 if ts_files:
                     current_video_file = None
@@ -97,6 +117,7 @@ def find_external_subtitles(source: str):
                     video_name = os.path.basename(video_path)
                     
                     sub_candidates = [f for f in ts_files if f.get('path', '').lower().endswith(sub_exts)]
+                    logger.info(f"[find_external_subtitles] Searching subs for hash {thash}, video={video_name}, raw sub files={len(sub_candidates)}")
                     if sub_candidates:
                         ep_match = re.search(r'(?:s\d+e|ep|e|серия)\s*(\d{1,4})\b', video_name, re.IGNORECASE)
                         if ep_match and len(sub_candidates) > 1:
@@ -134,7 +155,7 @@ def find_external_subtitles(source: str):
                             else:
                                 title = f"Внешние ({sf_name})"
                                 
-                            sub_url = f"{plugin_instance.ts.base_url}/stream/{urllib.parse.quote(sf_name)}?link={thash}&index={sf_id}&play"
+                            sub_url = f"{ts_mgr.base_url}/stream/{urllib.parse.quote(sf_name)}?link={thash}&index={sf_id}&play"
                             tracks.append({
                                 "index": f"ext_{sf_id}",
                                 "codec": sf_ext,
@@ -196,6 +217,8 @@ def find_external_subtitles(source: str):
     except Exception as e:
         logger.warning(f"[find_external_subtitles] Error finding external subtitles: {e}")
     tracks.sort(key=lambda t: 0 if t.get('lang') == 'rus' or any(x in t.get('title', '').lower() for x in ['rus', 'рус', 'ru']) else 1)
+    if tracks:
+        logger.info(f"[find_external_subtitles] Detected {len(tracks)} external subtitle tracks")
     return tracks
 
 def prewarm_subtitle_cache(sub_url: str, video_source: str = "", track_idx: str = ""):
@@ -224,7 +247,7 @@ def prewarm_subtitle_cache(sub_url: str, video_source: str = "", track_idx: str 
         raw_sub = None
         if is_http:
             req = urllib.request.Request(sub_url)
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            with urllib.request.urlopen(req, timeout=20) as resp:
                 raw_sub = resp.read()
         else:
             with open(sub_url, 'rb') as f:
@@ -942,38 +965,31 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                 time.sleep(0.5)
 
         info = probe_media_file(source)
-        vcodec = (info.get('vcodec') or '').lower()
-        acodec = (info.get('acodec') or '').lower()
         clean_ext = os.path.splitext(source.split('?')[0])[1].lower()
 
-        target_acodec = acodec
-        if audio_idx:
-            try:
-                a_id = int(audio_idx)
-                for trk in info.get('audio_tracks', []):
-                    if trk.get('index') == a_id:
-                        target_acodec = (trk.get('codec') or '').lower()
-                        break
-            except Exception:
-                pass
+        sett = load_settings()
+        user_max_res = (sett.get("transcode_max_res") or "auto").lower()
 
-        # Chromium on Linux / Steam Deck HTML5 <video> reliably plays AAC and MP3 in MP4 container.
-        # Formats like AC-3, E-AC-3, DTS, TrueHD, FLAC will cause player demuxer/codec errors in CEF.
-        # Transcode audio to AAC whenever the target audio stream is not AAC or MP3.
-        audio_needs_transcode = target_acodec not in ['aac', 'mp3']
-        video_needs_transcode = vcodec not in ['h264', 'avc1', 'vp8', 'vp9']
-        container_needs_remux = is_http or (clean_ext not in ['.mp4', '.m4v', '.webm']) or audio_needs_transcode
-        has_start_offset = False
-        try:
-            has_start_offset = float(start_time) > 0
-        except Exception:
-            pass
+        plan = resolve_transcode_plan(
+            media_info=info,
+            audio_idx=audio_idx,
+            is_http=is_http,
+            transcode_mode=transcode_mode,
+            user_max_res=user_max_res
+        )
 
-        is_native_local = (not is_http) and (clean_ext in ['.mp4', '.m4v', '.webm']) and (not audio_needs_transcode) and (not video_needs_transcode)
+        logger.info(
+            f"[Transcoder] source={clean_ext} vcodec={plan['vcodec']} acodec={plan['acodec']} "
+            f"profile='{plan['profile_name']}' docked={plan['is_docked']} vaapi={plan['use_vaapi']}"
+        )
+
+        container_needs_remux = is_http or (clean_ext not in ['.mp4', '.m4v', '.webm']) or plan["audio_needs_transcode"]
+        is_native_local = (not is_http) and (clean_ext in ['.mp4', '.m4v', '.webm']) and (not plan["audio_needs_transcode"]) and (not plan["video_needs_transcode"])
+
         if is_native_local and transcode_mode != '1':
             must_transcode = False
         else:
-            must_transcode = (transcode_mode == '1') or (transcode_mode == 'auto' and (audio_needs_transcode or video_needs_transcode or container_needs_remux))
+            must_transcode = (transcode_mode == '1') or (transcode_mode == 'auto' and (plan["audio_needs_transcode"] or plan["video_needs_transcode"] or container_needs_remux))
 
         if must_transcode and transcode_mode != '0':
             self.send_response(200)
@@ -983,76 +999,20 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             self.send_header('Cache-Control', 'no-cache')
             self.end_headers()
 
-            ffmpeg_bin = get_bin_path("ffmpeg")
-            cmd = [ffmpeg_bin, "-hide_banner", "-loglevel", "error"]
+            f_start = 0.0
+            try:
+                f_start = float(start_time)
+            except Exception:
+                pass
 
-            wants_video_transcode = video_needs_transcode or (transcode_mode == '1')
-            use_vaapi = wants_video_transcode and has_vaapi_support()
-
-            if use_vaapi:
-                cmd += [
-                    "-hwaccel", "vaapi",
-                    "-hwaccel_device", "/dev/dri/renderD128",
-                    "-hwaccel_output_format", "vaapi"
-                ]
-
-            if has_start_offset:
-                if not wants_video_transcode:
-                    cmd += ["-noaccurate_seek"]
-                cmd += ["-ss", str(start_time)]
-            if is_http:
-                cmd += ["-reconnect", "1", "-reconnect_at_eof", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "2"]
-            if is_online and not is_http:
-                cmd += ["-follow", "1"]
-            cmd += ["-i", source]
-
-            if audio_idx:
-                cmd += ["-map", "0:v:0", "-map", f"0:{audio_idx}?"]
-            else:
-                cmd += ["-map", "0:v:0", "-map", "0:a:0?"]
-
-            if wants_video_transcode:
-                if use_vaapi:
-                    sett = load_settings()
-                    max_res = (sett.get("transcode_max_res") or "4k").lower()
-                    if max_res == "720p":
-                        vf_filter = "scale_vaapi=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:format=nv12"
-                        target_bitrate = "7M"
-                        max_rate = "10M"
-                    elif max_res == "1080p":
-                        vf_filter = "scale_vaapi=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:format=nv12"
-                        target_bitrate = "15M"
-                        max_rate = "22M"
-                    else:  # "4k" or original resolution
-                        vf_filter = "scale_vaapi=format=nv12"
-                        target_bitrate = "28M"
-                        max_rate = "40M"
-
-                    cmd += [
-                        "-vf", vf_filter,
-                        "-c:v", "h264_vaapi",
-                        "-b:v", target_bitrate,
-                        "-maxrate", max_rate,
-                        "-bufsize", f"{int(max_rate[:-1]) * 2}M"
-                    ]
-                else:
-                    cmd += ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", "23"]
-            else:
-                cmd += ["-c:v", "copy"]
-
-            if audio_needs_transcode or transcode_mode == '1':
-                cmd += ["-c:a", "aac", "-b:a", "192k", "-ac", "2", "-af", "aresample=async=1:first_pts=0"]
-            else:
-                cmd += ["-c:a", "copy"]
-
-            cmd += [
-                "-sn",
-                "-avoid_negative_ts", "make_zero",
-                "-max_muxing_queue_size", "2048",
-                "-movflags", "frag_keyframe+empty_moov+default_base_moof",
-                "-f", "mp4",
-                "pipe:1"
-            ]
+            cmd = build_ffmpeg_stream_command(
+                source=source,
+                plan=plan,
+                start_time=f_start,
+                audio_idx=audio_idx,
+                is_http=is_http,
+                is_online=is_online
+            )
 
             env = _clean_env()
             # Note: stderr=subprocess.DEVNULL is required to prevent deadlocks from full stderr pipe buffer
@@ -1190,6 +1150,11 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
         filepath = query.get('file', [''])[0]
         source = unwrap_stream_source(url or filepath)
         track_idx = str(query.get('track', [''])[0])
+        start_val = query.get('start', [''])[0]
+        try:
+            start_sec = max(0.0, float(start_val)) if start_val else 0.0
+        except Exception:
+            start_sec = 0.0
 
         if not source:
             self.send_response(400)
@@ -1209,7 +1174,7 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
         os.makedirs(cache_dir, exist_ok=True)
         cache_key = hashlib.md5(f"{source}_{track_idx}".encode('utf-8')).hexdigest() + ".vtt"
         cache_path = os.path.join(cache_dir, cache_key)
-        if os.path.isfile(cache_path) and os.path.getsize(cache_path) > 10:
+        if start_sec == 0.0 and os.path.isfile(cache_path) and os.path.getsize(cache_path) > 10:
             try:
                 with open(cache_path, 'rb') as f:
                     cached_data = f.read()
@@ -1271,7 +1236,7 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             try:
                 if sub_is_http:
                     req = urllib.request.Request(actual_sub_source)
-                    with urllib.request.urlopen(req, timeout=10) as resp:
+                    with urllib.request.urlopen(req, timeout=20) as resp:
                         raw_sub = resp.read()
                 else:
                     with open(actual_sub_source, 'rb') as f:
@@ -1289,7 +1254,7 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                     proc = None
                     try:
                         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=env)
-                        vtt_out, _ = proc.communicate(input=raw_sub, timeout=12)
+                        vtt_out, _ = proc.communicate(input=raw_sub, timeout=15)
                     except subprocess.TimeoutExpired:
                         if proc:
                             try:
@@ -1379,36 +1344,70 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
 
         # 4. Embedded subtitle track inside video container
         sub_source = source
-        if is_http and '&play' in sub_source:
-            sub_source = sub_source.replace('&play', '')
+        if is_http and '&play' not in sub_source and ('link=' in sub_source or 'torrent' in sub_source):
+            sub_source += '&play'
 
-        cmd = [ffmpeg_bin, "-hide_banner", "-loglevel", "error", "-vn", "-an"]
+        cmd = [ffmpeg_bin, "-hide_banner", "-loglevel", "error"]
+        if start_sec > 0:
+            cmd += ["-ss", str(start_sec), "-copyts"]
+        cmd += ["-vn", "-an"]
         if is_http:
-            cmd += ["-reconnect", "1", "-reconnect_at_eof", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "2"]
+            cmd += ["-reconnect", "1", "-reconnect_at_eof", "1", "-reconnect_delay_max", "2"]
         cmd += ["-i", sub_source]
         if track_idx:
             cmd += ["-map", f"0:{track_idx}"]
         else:
             cmd += ["-map", "0:s:0?"]
-        cmd += ["-c:s", "webvtt", "-f", "webvtt", "pipe:1"]
+        cmd += ["-c:s", "webvtt", "-flush_packets", "1", "-f", "webvtt", "pipe:1"]
 
         proc = None
         vtt_out = None
+        chunks = []
+        completed_full = False
         try:
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=env)
-            vtt_out, _ = proc.communicate(timeout=30)
-        except subprocess.TimeoutExpired:
-            logger.warning(f"[stream_subtitles] FFmpeg timeout extracting subtitles for {source}")
-            if proc:
+
+            def _reader():
                 try:
-                    proc.kill()
-                    proc.wait(timeout=1.0)
+                    while True:
+                        c = proc.stdout.read1(4096) if hasattr(proc.stdout, 'read1') else proc.stdout.read(512)
+                        if not c:
+                            break
+                        chunks.append(c)
                 except Exception:
                     pass
-            vtt_out = None
+
+            reader_th = threading.Thread(target=_reader, daemon=True)
+            reader_th.start()
+
+            t0 = time.time()
+            max_wait = 20.0 if is_http else 10.0
+            while time.time() - t0 < max_wait:
+                reader_th.join(timeout=0.2)
+                if not reader_th.is_alive():
+                    completed_full = True
+                    break
+                current_len = sum(len(x) for x in chunks)
+                if (time.time() - t0 > 2.0) and current_len > 150:
+                    raw_preview = b"".join(chunks)
+                    if raw_preview.count(b"-->") >= 3:
+                        break
+                elif current_len > 32768:
+                    raw_preview = b"".join(chunks)
+                    if raw_preview.count(b"-->") >= 30:
+                        break
+
+            raw_vtt = b"".join(chunks)
+            if raw_vtt and b"-->" in raw_vtt:
+                vtt_out = finalize_vtt(raw_vtt)
+            elif raw_vtt and b"WEBVTT" in raw_vtt[:30]:
+                vtt_out = raw_vtt
+            else:
+                vtt_out = None
         except Exception as e:
             logger.error(f"[stream_subtitles] FFmpeg extraction error: {e}")
-            vtt_out = None
+            raw_vtt = b"".join(chunks)
+            vtt_out = finalize_vtt(raw_vtt) if (raw_vtt and b"-->" in raw_vtt) else None
         finally:
             if proc and proc.poll() is None:
                 try:
@@ -1418,16 +1417,20 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                     pass
 
         if vtt_out and len(vtt_out) > 10 and b"WEBVTT" in vtt_out[:64] and b"-->" in vtt_out:
-            try:
-                with open(cache_path, 'wb') as cf:
-                    cf.write(vtt_out)
-            except Exception:
-                pass
+            if completed_full and start_sec == 0:
+                try:
+                    with open(cache_path, 'wb') as cf:
+                        cf.write(vtt_out)
+                except Exception:
+                    pass
             self.send_response(200)
             self.send_cors_headers()
             self.send_header('Content-Type', 'text/vtt; charset=utf-8')
             self.send_header('Content-Length', str(len(vtt_out)))
-            self.send_header('Cache-Control', 'public, max-age=86400')
+            if completed_full and start_sec == 0:
+                self.send_header('Cache-Control', 'public, max-age=86400')
+            else:
+                self.send_header('Cache-Control', 'no-cache')
             self.end_headers()
             try:
                 self.wfile.write(vtt_out)

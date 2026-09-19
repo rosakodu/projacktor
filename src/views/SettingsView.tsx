@@ -5,7 +5,7 @@ import {
   TextField,
   Focusable,
 } from "@decky/ui";
-import { FaTrash, FaCheck, FaTimes, FaSpinner, FaHdd, FaSdCard, FaBolt } from "react-icons/fa";
+import { FaTrash, FaCheck, FaTimes, FaSpinner, FaHdd, FaSdCard } from "react-icons/fa";
 import {
   rpcGetSettings,
   rpcSaveSettings,
@@ -39,9 +39,6 @@ export const SettingsView: FC = memo(() => {
   const [clearingCache, setClearingCache] = useState(false);
   const [cacheClearedSuccess, setCacheClearedSuccess] = useState(false);
   const [drives, setDrives] = useState<StorageDrive[]>([]);
-  const [vaapiOk, setVaapiOk] = useState<boolean | null>(null);
-  const [transcodeRes, setTranscodeRes] = useState<string>("4k");
-  const [transcodeSavedSuccess, setTranscodeSavedSuccess] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -56,9 +53,6 @@ export const SettingsView: FC = memo(() => {
         }
         if (sett && sett.download_path) {
           setDownloadPath(sett.download_path);
-        }
-        if (sett && sett.transcode_max_res) {
-          setTranscodeRes(sett.transcode_max_res);
         }
       })
       .catch(() => {});
@@ -82,9 +76,6 @@ export const SettingsView: FC = memo(() => {
           }
           if (st.download_path && !downloadPath) {
             setDownloadPath(st.download_path);
-          }
-          if (st.vaapi_supported !== undefined) {
-            setVaapiOk(Boolean(st.vaapi_supported));
           }
         }
       })
@@ -185,16 +176,6 @@ export const SettingsView: FC = memo(() => {
     }
   }, [handleSaveDownloadPath]);
 
-  const handleSelectTranscodeRes = useCallback(async (res: string) => {
-    setTranscodeRes(res);
-    try {
-      await rpcSaveSettings(JSON.stringify({ transcode_max_res: res }));
-      setTranscodeSavedSuccess(true);
-      setTimeout(() => setTranscodeSavedSuccess(false), 2500);
-    } catch (err) {
-      console.error("Не удалось сохранить качество транскодинга:", err);
-    }
-  }, []);
 
   const handleClearCache = useCallback(async () => {
     if (clearingCache) return;
@@ -330,87 +311,6 @@ export const SettingsView: FC = memo(() => {
                   )}
                 </div>
               </div>
-            </PanelSectionRow>
-          </PanelSection>
-        </div>
-
-        {/* Карточка: Аппаратное GPU-ускорение (4K HEVC) */}
-        <div className="projacktor-settings-card">
-          <PanelSection>
-            <PanelSectionRow>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", marginBottom: 4 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <FaBolt style={{ color: "#10b981", fontSize: 12 }} />
-                  <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>
-                    Аппаратное GPU-ускорение (4K HEVC)
-                  </span>
-                </div>
-                <div>
-                  {vaapiOk === null ? (
-                    <span style={{ color: "rgba(255, 255, 255, 0.5)", fontSize: 11, display: "inline-flex", alignItems: "center", gap: 5 }}>
-                      <FaSpinner style={{ fontSize: 10, animation: "projacktor-spin 1s linear infinite" }} /> {t("checking")}
-                    </span>
-                  ) : vaapiOk ? (
-                    <span style={{ color: "#10b981", fontSize: 11, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
-                      <FaCheck style={{ fontSize: 10 }} /> VA-API Активно
-                    </span>
-                  ) : (
-                    <span style={{ color: "#f59e0b", fontSize: 11, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
-                      CPU режим
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div style={{ fontSize: 11, color: "rgba(255, 255, 255, 0.6)", marginBottom: 8 }}>
-                Аппаратное декодирование «тяжёлых» 4K H.265 потоков на видеочипе (AMD RDNA 2 / VA-API) без нагрева консоли.
-              </div>
-            </PanelSectionRow>
-
-            <PanelSectionRow>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", marginBottom: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: "#ffffff" }}>
-                  Максимальное качество видео:
-                </span>
-                {transcodeSavedSuccess && (
-                  <span style={{ color: "#1a9fff", fontSize: 11, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
-                    <FaCheck style={{ fontSize: 10 }} /> {t("saved")}
-                  </span>
-                )}
-              </div>
-              <Focusable noFocusRing flow-children="row" style={{ display: "flex", gap: 8, width: "100%", marginBottom: 4 }}>
-                {[
-                  { id: "4k", label: "4K (Оригинал)", desc: "Для 4K ТВ и мониторов" },
-                  { id: "1080p", label: "1080p (Full HD)", desc: "Рекомендуется для экрана Deck" },
-                  { id: "720p", label: "720p (HD)", desc: "Энергосбережение" }
-                ].map((item) => {
-                  const isCurrent = transcodeRes === item.id;
-                  return (
-                    <Focusable
-                      noFocusRing
-                      key={item.id}
-                      onActivate={() => handleSelectTranscodeRes(item.id)}
-                      onClick={() => handleSelectTranscodeRes(item.id)}
-                      className="ds-btn ds-btn--compact"
-                      style={{
-                        flex: 1,
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        padding: "8px 6px",
-                        cursor: "pointer",
-                        backgroundColor: isCurrent ? "rgba(26, 159, 255, 0.2)" : "rgba(255, 255, 255, 0.05)",
-                        border: isCurrent ? "1px solid #1a9fff" : "1px solid rgba(255, 255, 255, 0.1)",
-                        borderRadius: 6,
-                        color: isCurrent ? "#60baff" : "#ffffff",
-                      }}
-                    >
-                      <span style={{ fontSize: 11.5, fontWeight: 700 }}>{item.label}</span>
-                      <span style={{ fontSize: 9.5, opacity: 0.7, marginTop: 2 }}>{item.desc}</span>
-                    </Focusable>
-                  );
-                })}
-              </Focusable>
             </PanelSectionRow>
           </PanelSection>
         </div>

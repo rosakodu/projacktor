@@ -92,6 +92,15 @@ const parseWebVTT = (vtt: string): SubtitleCue[] => {
   return cues;
 };
 
+const mergeCues = (prev: SubtitleCue[], next: SubtitleCue[]): SubtitleCue[] => {
+  if (prev.length === 0) return next;
+  if (next.length === 0) return prev;
+  const map = new Map<string, SubtitleCue>();
+  for (const c of prev) map.set(`${c.start.toFixed(2)}_${c.end.toFixed(2)}`, c);
+  for (const c of next) map.set(`${c.start.toFixed(2)}_${c.end.toFixed(2)}`, c);
+  return Array.from(map.values()).sort((a, b) => a.start - b.start);
+};
+
 export const PlayerModal: FC<PlayerModalProps> = ({
   filePath,
   title,
@@ -164,7 +173,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   const volumeHudTimerRef = useRef<number | null>(null);
   const seekCommitTimerRef = useRef<number | null>(null);
   const targetSeekTimeRef = useRef<number | null>(null);
-  const lastTrackSelectionTimeRef = useRef<number>(0);
+
   const [zoom, setZoom] = useState<number>(1);
   const zoomRef = useRef<number>(1);
   const [zoomHudVisible, setZoomHudVisible] = useState<boolean>(false);
@@ -549,7 +558,6 @@ export const PlayerModal: FC<PlayerModalProps> = ({
 
   const selectSubtitleTrack = useCallback((trackIndex: number | string | null) => {
     userInteractedWithSubtitlesRef.current = true;
-    lastTrackSelectionTimeRef.current = Date.now();
     setSelectedSubtitle(trackIndex);
 
     // Синхронно переводим фокус на кнопку субтитров ДО закрытия меню,
@@ -772,10 +780,6 @@ export const PlayerModal: FC<PlayerModalProps> = ({
 
   const seekRelative = useCallback(
     (delta: number) => {
-      // Игнорируем фантомные нажатия кнопок перемотки в момент закрытия меню субтитров/аудио
-      if (Date.now() - lastTrackSelectionTimeRef.current < 450) {
-        return;
-      }
 
       const currentBase =
         targetSeekTimeRef.current !== null
@@ -806,7 +810,6 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   );
 
   const selectAudioTrack = useCallback((trackIndex: number) => {
-    lastTrackSelectionTimeRef.current = Date.now();
     setSelectedAudio(trackIndex);
 
     // Синхронно переводим фокус на кнопку аудио ДО закрытия меню
@@ -1056,15 +1059,15 @@ export const PlayerModal: FC<PlayerModalProps> = ({
           }
 
           const hasExtSubs = hasSubs && data.subtitle_tracks.some((s: SubtitleTrack) => String(s.index).startsWith("ext_"));
-          if ((!hasSubs || !hasExtSubs) && isHttp && retryCount < 2) {
+          if ((!hasSubs || !hasExtSubs) && isHttp && retryCount < 4) {
             retryCount++;
-            retryTimer = setTimeout(runProbe, 1500);
+            retryTimer = setTimeout(runProbe, 2000);
           }
         })
         .catch(() => {
-          if (!cancelled && retryCount < 2) {
+          if (!cancelled && retryCount < 4) {
             retryCount++;
-            retryTimer = setTimeout(runProbe, 1500);
+            retryTimer = setTimeout(runProbe, 2000);
           }
         });
     };
@@ -1077,7 +1080,10 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     };
   }, [actualFilePath, filePath]);
 
-  // Загрузка и парсинг активной дорожки субтитров для надежного кастомного оверлея
+  // Ссылка для предотвращения одновременных повторных запросов субтитров
+  const isFetchingMoreSubsRef = useRef(false);
+
+  // Загрузка дорожки субтитров (с поддержкой polling и retry для онлайн торрентов)
   useEffect(() => {
     if (selectedSubtitle === null) {
       setParsedCues([]);
@@ -1098,27 +1104,82 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     const subTarget = activeTrack?.url || actualFilePath || filePath;
     const isHttpSub = subTarget.startsWith("http://") || subTarget.startsWith("https://");
     const trackParam = activeTrack?.url ? "" : `&track=${selectedSubtitle}`;
-    const subUrl = `http://127.0.0.1:8400/api/stream/subtitles?${isHttpSub ? "url" : "file"}=${encodeURIComponent(subTarget)}${trackParam}`;
+    const curPos = isDirectStream ? videoTime : (baseTime + videoTime);
+    const startParam = (curPos > 15 && isOnline) ? `&start=${Math.max(0, Math.floor(curPos - 10))}` : "";
+    const subUrl = `http://127.0.0.1:8400/api/stream/subtitles?${isHttpSub ? "url" : "file"}=${encodeURIComponent(subTarget)}${trackParam}${startParam}`;
 
     let cancelled = false;
-    fetch(subUrl)
-      .then((res) => {
-        if (!res.ok) throw new Error(`Subtitle fetch failed: ${res.status}`);
-        return res.text();
-      })
-      .then((vtt) => {
-        if (cancelled) return;
-        const cues = parseWebVTT(vtt);
-        setParsedCues(cues);
-      })
-      .catch(() => {
-        if (!cancelled) setParsedCues([]);
-      });
+    let retryTimer: any = null;
+    let pollCount = 0;
+
+    const loadSubtitles = () => {
+      if (cancelled) return;
+      fetch(subUrl)
+        .then((res) => {
+          if (!res.ok) throw new Error(`Subtitle fetch failed: ${res.status}`);
+          return res.text();
+        })
+        .then((vtt) => {
+          if (cancelled) return;
+          const cues = parseWebVTT(vtt);
+          if (cues.length > 0) {
+            setParsedCues((prev) => mergeCues(prev, cues));
+          }
+          if (cues.length === 0 && pollCount < 4) {
+            pollCount++;
+            retryTimer = setTimeout(loadSubtitles, 4000);
+          }
+        })
+        .catch(() => {
+          if (!cancelled && pollCount < 3) {
+            pollCount++;
+            retryTimer = setTimeout(loadSubtitles, 4000);
+          }
+        });
+    };
+
+    loadSubtitles();
 
     return () => {
       cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
     };
   }, [selectedSubtitle, subtitleTracks, actualFilePath, filePath]);
+
+  // Фоновое докачивание субтитров, если при старте торрента файл был скачан частично
+  useEffect(() => {
+    if (selectedSubtitle === null || parsedCues.length === 0 || !duration || duration <= 180) return;
+    const lastCue = parsedCues[parsedCues.length - 1];
+    if (!lastCue || lastCue.end >= duration - 60) return; // субтитры уже полные
+
+    const curTime = isDirectStream ? videoTime : (baseTime + videoTime);
+    if (curTime >= lastCue.end - 45 && !isFetchingMoreSubsRef.current) {
+      isFetchingMoreSubsRef.current = true;
+      const activeTrack = subtitleTracks.find((s) => String(s.index) === String(selectedSubtitle));
+      const subTarget = activeTrack?.url || actualFilePath || filePath;
+      const isHttpSub = subTarget.startsWith("http://") || subTarget.startsWith("https://");
+      const trackParam = activeTrack?.url ? "" : `&track=${selectedSubtitle}`;
+      const startParam = isOnline ? `&start=${Math.max(0, Math.floor(curTime - 10))}` : "";
+      const subUrl = `http://127.0.0.1:8400/api/stream/subtitles?${isHttpSub ? "url" : "file"}=${encodeURIComponent(subTarget)}${trackParam}${startParam}`;
+
+      fetch(subUrl)
+        .then((res) => (res.ok ? res.text() : ""))
+        .then((vtt) => {
+          if (vtt) {
+            const nextCues = parseWebVTT(vtt);
+            if (nextCues.length > 0) {
+              setParsedCues((prev) => mergeCues(prev, nextCues));
+            }
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          setTimeout(() => {
+            isFetchingMoreSubsRef.current = false;
+          }, 6000);
+        });
+    }
+  }, [videoTime, baseTime, isDirectStream, parsedCues, duration, selectedSubtitle, subtitleTracks, actualFilePath, filePath]);
 
   // Синхронизация реплики субтитров с текущим временем видео
   useEffect(() => {

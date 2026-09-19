@@ -1,4 +1,5 @@
 import { FC, RefObject } from "react";
+import { Focusable } from "@decky/ui";
 import { FaCheck } from "react-icons/fa";
 import { AudioTrack, SubtitleTrack } from "./types";
 
@@ -7,6 +8,7 @@ interface TrackSelectionMenuProps {
   menuRef: RefObject<HTMLDivElement | null>;
   activeIdx: number;
   onHoverItem: (idx: number) => void;
+  onClose?: () => void;
   // Subtitle specific
   subtitleTracks?: SubtitleTrack[];
   selectedSubtitle?: number | string | null;
@@ -22,6 +24,7 @@ export const TrackSelectionMenu: FC<TrackSelectionMenuProps> = ({
   menuRef,
   activeIdx,
   onHoverItem,
+  onClose,
   subtitleTracks = [],
   selectedSubtitle,
   onSelectSubtitle,
@@ -30,12 +33,16 @@ export const TrackSelectionMenu: FC<TrackSelectionMenuProps> = ({
   onSelectAudio,
 }) => {
   return (
-    <div
+    <Focusable
       ref={menuRef}
+      flow-children="vertical"
       className="projacktor-player-dropdown-menu"
-      onClick={(e) => e.stopPropagation()}
-      onTouchStart={(e) => e.stopPropagation()}
-      onTouchEnd={(e) => e.stopPropagation()}
+      onCancel={() => {
+        onClose?.();
+      }}
+      onClick={(e: any) => e?.stopPropagation?.()}
+      onTouchStart={(e: any) => e?.stopPropagation?.()}
+      onTouchEnd={(e: any) => e?.stopPropagation?.()}
       style={{
         position: "absolute",
         bottom: "100%",
@@ -61,13 +68,15 @@ export const TrackSelectionMenu: FC<TrackSelectionMenuProps> = ({
           <div style={{ padding: "4px 8px", fontSize: 11, fontWeight: 700, color: "var(--ds-text-dim)", textTransform: "uppercase" }}>
             Субтитры
           </div>
-          <div
-            role="button"
-            tabIndex={0}
+          <Focusable
             className={`ds-btn ds-btn--compact ${activeIdx === 0 ? "gpfocus active-nav" : ""}`}
             data-selected={selectedSubtitle === null ? "true" : undefined}
-            onClick={(e) => {
-              e.stopPropagation();
+            onActivate={(e?: any) => {
+              e?.stopPropagation?.();
+              onSelectSubtitle?.(null);
+            }}
+            onClick={(e: any) => {
+              e?.stopPropagation?.();
               onSelectSubtitle?.(null);
             }}
             onMouseEnter={() => onHoverItem(0)}
@@ -84,7 +93,7 @@ export const TrackSelectionMenu: FC<TrackSelectionMenuProps> = ({
           >
             <FaCheck style={{ fontSize: 10, opacity: selectedSubtitle === null ? 1 : 0, flexShrink: 0 }} />
             <span style={{ fontSize: 12 }}>Отключить субтитры</span>
-          </div>
+          </Focusable>
 
           {subtitleTracks.length === 0 ? (
             <div style={{ padding: "8px 10px", fontSize: 12, color: "rgba(255,255,255,0.4)" }}>
@@ -97,14 +106,18 @@ export const TrackSelectionMenu: FC<TrackSelectionMenuProps> = ({
               const isSelected = selectedSubtitle !== null && String(sub.index) === String(selectedSubtitle);
               const isSupported = sub.supported !== false;
               return (
-                <div
+                <Focusable
                   key={sub.index}
-                  role="button"
-                  tabIndex={isSupported ? 0 : -1}
                   className={`ds-btn ds-btn--compact ${isNavActive ? "gpfocus active-nav" : ""}`}
                   data-selected={isSelected ? "true" : undefined}
-                  onClick={(e) => {
-                    e.stopPropagation();
+                  onActivate={(e?: any) => {
+                    e?.stopPropagation?.();
+                    if (isSupported) {
+                      onSelectSubtitle?.(sub.index);
+                    }
+                  }}
+                  onClick={(e: any) => {
+                    e?.stopPropagation?.();
                     if (isSupported) {
                       onSelectSubtitle?.(sub.index);
                     }
@@ -131,7 +144,7 @@ export const TrackSelectionMenu: FC<TrackSelectionMenuProps> = ({
                       </span>
                     )}
                   </span>
-                </div>
+                </Focusable>
               );
             })
           )}
@@ -152,14 +165,16 @@ export const TrackSelectionMenu: FC<TrackSelectionMenuProps> = ({
               const isNavActive = activeIdx === tIdx;
               const isSelected = selectedAudio !== undefined && String(track.index) === String(selectedAudio);
               return (
-                <div
+                <Focusable
                   key={track.index}
-                  role="button"
-                  tabIndex={0}
                   className={`ds-btn ds-btn--compact ${isNavActive ? "gpfocus active-nav" : ""}`}
                   data-selected={isSelected ? "true" : undefined}
-                  onClick={(e) => {
-                    e.stopPropagation();
+                  onActivate={(e?: any) => {
+                    e?.stopPropagation?.();
+                    onSelectAudio?.(track.index);
+                  }}
+                  onClick={(e: any) => {
+                    e?.stopPropagation?.();
                     onSelectAudio?.(track.index);
                   }}
                   onMouseEnter={() => onHoverItem(tIdx)}
@@ -178,12 +193,12 @@ export const TrackSelectionMenu: FC<TrackSelectionMenuProps> = ({
                   <span style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {track.title || (track.lang ? `Аудио (${track.lang.toUpperCase()})` : `Дорожка #${track.index}`)}
                   </span>
-                </div>
+                </Focusable>
               );
             })
           )}
         </div>
       )}
-    </div>
+    </Focusable>
   );
 };

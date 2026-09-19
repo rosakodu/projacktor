@@ -60,6 +60,74 @@ def unwrap_stream_source(source):
             break
     return source
 
+def _parse_ffprobe_data(data):
+    vcodec, acodec = None, None
+    duration = 0.0
+    width = 0
+    height = 0
+    try:
+        duration = float(data.get('format', {}).get('duration', 0.0))
+    except (ValueError, TypeError):
+        pass
+
+    if duration <= 0:
+        for s in data.get('streams', []):
+            try:
+                s_dur = float(s.get('duration', 0.0))
+                if s_dur > duration:
+                    duration = s_dur
+            except (ValueError, TypeError):
+                pass
+            tags = s.get('tags', {})
+            dur_str = tags.get('DURATION', '') or tags.get('duration', '')
+            if dur_str and ':' in dur_str:
+                try:
+                    parts = dur_str.split(':')
+                    if len(parts) == 3:
+                        s_dur = float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
+                        if s_dur > duration:
+                            duration = s_dur
+                except (ValueError, TypeError):
+                    pass
+    audio_tracks = []
+    subtitle_tracks = []
+    for s in data.get('streams', []):
+        if s.get('codec_type') == 'video':
+            if not vcodec:
+                vcodec = s.get('codec_name')
+            if not width or not height:
+                try:
+                    width = int(s.get('width', 0) or 0)
+                    height = int(s.get('height', 0) or 0)
+                except Exception:
+                    pass
+        elif s.get('codec_type') == 'audio':
+            if not acodec:
+                acodec = s.get('codec_name')
+            tags = s.get('tags', {})
+            audio_tracks.append({
+                "index": s.get('index'),
+                "codec": s.get('codec_name'),
+                "channels": s.get('channels', 2),
+                "lang": tags.get('language', tags.get('lang', '')),
+                "title": tags.get('title', f"Аудио #{s.get('index')}")
+            })
+        elif s.get('codec_type') == 'subtitle':
+            codec_name = (s.get('codec_name') or '').lower()
+            tags = s.get('tags', {})
+            is_bitmap = codec_name in ['hdmv_pgs_subtitle', 'pgssub', 'pgs', 'dvd_subtitle', 'dvdsub', 'vobsub', 'dvb_subtitle', 'xsub']
+            sub_title = tags.get('title', f"Субтитры #{s.get('index')}")
+            if is_bitmap:
+                sub_title = f"{sub_title} (графические)"
+            subtitle_tracks.append({
+                "index": s.get('index'),
+                "codec": codec_name,
+                "supported": not is_bitmap,
+                "lang": tags.get('language', tags.get('lang', '')),
+                "title": sub_title
+            })
+    return vcodec, acodec, duration, audio_tracks, subtitle_tracks, width, height
+
 def probe_media_file(filepath):
     filepath = unwrap_stream_source(filepath)
     if filepath in PROBE_CACHE:
@@ -73,89 +141,57 @@ def probe_media_file(filepath):
             return {}
 
     ffprobe_bin = get_bin_path("ffprobe")
-    probesize = "500000" if is_http else "5000000"
-    analyzeduration = "1000000" if is_http else "5000000"
-    cmd = [
-        ffprobe_bin,
-        "-v", "quiet",
-        "-print_format", "json",
-        "-show_streams",
-        "-show_format",
-        "-probesize", probesize,
-        "-analyzeduration", analyzeduration,
-    ]
-    if is_http:
-        cmd += [
-            "-reconnect", "1",
-            "-reconnect_at_eof", "1",
-            "-reconnect_streamed", "1",
-            "-reconnect_delay_max", "2"
-        ]
-    probe_url = filepath
-    if is_http and "127.0.0.1:8095" in probe_url and "/stream" in probe_url and "&play" not in probe_url:
-        probe_url += "&play"
-    cmd.append(probe_url)
-    probe_timeout = 7.0 if is_http else 5.0
-    try:
-        env = _clean_env()
-        out = subprocess.check_output(cmd, env=env, timeout=probe_timeout).decode('utf-8')
-        data = json.loads(out)
-        vcodec, acodec = None, None
-        duration = 0.0
-        try:
-            duration = float(data.get('format', {}).get('duration', 0.0))
-        except (ValueError, TypeError):
-            pass
+    probesize = "1500000" if is_http else "6000000"
+    analyzeduration = "2000000" if is_http else "4000000"
 
-        if duration <= 0:
-            for s in data.get('streams', []):
-                try:
-                    s_dur = float(s.get('duration', 0.0))
-                    if s_dur > duration:
-                        duration = s_dur
-                except (ValueError, TypeError):
-                    pass
-                tags = s.get('tags', {})
-                dur_str = tags.get('DURATION', '') or tags.get('duration', '')
-                if dur_str and ':' in dur_str:
-                    try:
-                        parts = dur_str.split(':')
-                        if len(parts) == 3:
-                            s_dur = float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
-                            if s_dur > duration:
-                                duration = s_dur
-                    except (ValueError, TypeError):
-                        pass
-        audio_tracks = []
-        subtitle_tracks = []
-        for s in data.get('streams', []):
-            if s.get('codec_type') == 'video' and not vcodec:
-                vcodec = s.get('codec_name')
-            elif s.get('codec_type') == 'audio':
-                if not acodec:
-                    acodec = s.get('codec_name')
-                tags = s.get('tags', {})
-                audio_tracks.append({
-                    "index": s.get('index'),
-                    "codec": s.get('codec_name'),
-                    "channels": s.get('channels', 2),
-                    "lang": tags.get('language', tags.get('lang', '')),
-                    "title": tags.get('title', f"Аудио #{s.get('index')}")
-                })
-            elif s.get('codec_type') == 'subtitle':
-                codec_name = (s.get('codec_name') or '').lower()
-                tags = s.get('tags', {})
-                is_bitmap = codec_name in ['hdmv_pgs_subtitle', 'pgssub', 'pgs', 'dvd_subtitle', 'dvdsub', 'vobsub', 'dvb_subtitle', 'xsub']
-                sub_title = tags.get('title', f"Субтитры #{s.get('index')}")
-                if is_bitmap:
-                    sub_title = f"{sub_title} (графические)"
-                subtitle_tracks.append({
-                    "index": s.get('index'),
-                    "codec": codec_name,
-                    "supported": not is_bitmap,
-                    "lang": tags.get('language', tags.get('lang', '')),
-                    "title": sub_title
-                })
+    def run_ffprobe(psize, adur, timeout):
+        cmd = [
+            ffprobe_bin,
+            "-v", "quiet",
+            "-print_format", "json",
+            "-show_streams",
+            "-show_format",
+            "-probesize", str(psize),
+            "-analyzeduration", str(adur),
+        ]
+        if is_http:
+            cmd += [
+                "-reconnect", "1",
+                "-reconnect_at_eof", "1",
+                "-reconnect_streamed", "1",
+                "-reconnect_delay_max", "2"
+            ]
+        probe_url = filepath
+        if is_http and "127.0.0.1:8095" in probe_url and "/stream" in probe_url and "&play" not in probe_url:
+            probe_url += "&play"
+        cmd.append(probe_url)
+        env = _clean_env()
+        out = subprocess.check_output(cmd, env=env, timeout=timeout).decode('utf-8')
+        return json.loads(out)
+
+    probe_timeout = 4.0 if is_http else 3.0
+    try:
+        data = run_ffprobe(probesize, analyzeduration, probe_timeout)
+        vcodec, acodec, duration, audio_tracks, subtitle_tracks, width, height = _parse_ffprobe_data(data)
+
+        # Если для HTTP потока субтитры не обнаружены при первом быстром проходе,
+        # делаем второй проход с увеличенным размером пробы (6MB / 5s),
+        # так как субтитры часто находятся дальше в заголовках MKV/MP4 контейнеров
+        if is_http and len(subtitle_tracks) == 0:
+            try:
+                retry_data = run_ffprobe("6000000", "5000000", 3.0)
+                _, _, r_dur, r_audio, r_subs, r_w, r_h = _parse_ffprobe_data(retry_data)
+                if r_subs:
+                    subtitle_tracks = r_subs
+                    logger.info(f"[probe_media_file] Retry found {len(r_subs)} subtitle tracks")
+                if len(r_audio) > len(audio_tracks):
+                    audio_tracks = r_audio
+                if r_dur > duration:
+                    duration = r_dur
+                if r_w and r_h:
+                    width, height = r_w, r_h
+            except Exception as e:
+                logger.debug(f"[probe_media_file] Retry probe skipped/failed: {e}")
         
         # Direct playback in Chromium HTML5 <video> is ONLY supported for non-HTTP local files in MP4/WebM with H264/VP8/VP9 and AAC/MP3.
         # Online / TorrServer streams ALWAYS require remux/transcode in http_server and are never direct.
@@ -169,6 +205,8 @@ def probe_media_file(filepath):
         res = {
             "vcodec": vcodec,
             "acodec": acodec,
+            "width": width,
+            "height": height,
             "duration": duration,
             "direct": direct,
             "audio_tracks": audio_tracks,
@@ -186,8 +224,10 @@ def probe_media_file(filepath):
     except subprocess.TimeoutExpired:
         logger.warning(f"probe_media_file timeout ({probe_timeout}s) for {filepath}")
         return {
-            "vcodec": None,
-            "acodec": None,
+            "vcodec": "h264",
+            "acodec": "aac",
+            "width": 0,
+            "height": 0,
             "duration": 0.0,
             "direct": False,
             "audio_tracks": [],
@@ -196,5 +236,15 @@ def probe_media_file(filepath):
         }
     except Exception as e:
         logger.error(f"probe_media_file error: {e}")
-        return {}
+        return {
+            "vcodec": "h264",
+            "acodec": "aac",
+            "width": 0,
+            "height": 0,
+            "duration": 0.0,
+            "direct": False,
+            "audio_tracks": [],
+            "subtitle_tracks": [],
+            "status": "error"
+        }
 

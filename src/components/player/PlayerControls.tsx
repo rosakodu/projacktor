@@ -1,4 +1,4 @@
-import { FC, RefObject, useEffect, useRef } from "react";
+import { FC, RefObject } from "react";
 import { Focusable } from "@decky/ui";
 import {
   FaPlay,
@@ -91,20 +91,169 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
   onHoverAudioItem,
   onChangeVolume,
 }) => {
-  const prevMenuOpenRef = useRef<boolean>(false);
-  const lastMenuCloseTimeRef = useRef<number>(0);
   const isAnyMenuOpen = showAudioMenu || showSubtitleMenu;
 
-  useEffect(() => {
-    if (prevMenuOpenRef.current && !isAnyMenuOpen) {
-      lastMenuCloseTimeRef.current = Date.now();
-    }
-    prevMenuOpenRef.current = isAnyMenuOpen;
-  }, [isAnyMenuOpen]);
-
-  const isActionBlocked = () => {
-    return isAnyMenuOpen || (Date.now() - lastMenuCloseTimeRef.current < 450);
+  // Общие стили для ряда кнопок
+  const barStyle: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    width: "100%",
+    position: "relative",
+    zIndex: 2,
   };
+
+  // Содержимое ряда кнопок
+  const buttonBarContent = (
+    <>
+      {/* Кнопка 1: Перемотка назад (-10с) */}
+      <Focusable
+        tabIndex={isAnyMenuOpen ? -1 : 0}
+        noFocusRing={isAnyMenuOpen}
+        className="ds-btn ds-btn--compact ds-btn--icon"
+        onActivate={(e?: any) => {
+          if (isAnyMenuOpen) return;
+          e?.stopPropagation?.();
+          onSeekRelative(-10);
+        }}
+        onClick={(e?: any) => {
+          if (isAnyMenuOpen) return;
+          e?.stopPropagation?.();
+          onSeekRelative(-10);
+        }}
+        onTouchStart={(e: any) => e?.stopPropagation?.()}
+        style={{ width: 36, height: 32, opacity: isAnyMenuOpen ? 0.4 : 1 }}
+        title="Перемотка назад (-10с)"
+      >
+        <FaBackward />
+      </Focusable>
+
+      {/* Кнопка 2: Пауза / Плей */}
+      <Focusable
+        ref={playBtnRef}
+        tabIndex={isAnyMenuOpen ? -1 : 0}
+        noFocusRing={isAnyMenuOpen}
+        className="ds-btn ds-btn--primary ds-btn--compact ds-btn--icon"
+        onActivate={(e?: any) => {
+          if (isAnyMenuOpen) return;
+          e?.stopPropagation?.();
+          onTogglePlay();
+        }}
+        onClick={(e?: any) => {
+          if (isAnyMenuOpen) return;
+          e?.stopPropagation?.();
+          onTogglePlay();
+        }}
+        onTouchStart={(e: any) => e?.stopPropagation?.()}
+        style={{ width: 36, height: 32, opacity: isAnyMenuOpen ? 0.4 : 1 }}
+        title={isPlaying ? "Пауза" : "Воспроизведение"}
+      >
+        {isPlaying ? <FaPause /> : <FaPlay />}
+      </Focusable>
+
+      {/* Кнопка 3: Перемотка вперед (+10с) */}
+      <Focusable
+        tabIndex={isAnyMenuOpen ? -1 : 0}
+        noFocusRing={isAnyMenuOpen}
+        className="ds-btn ds-btn--compact ds-btn--icon"
+        onActivate={(e?: any) => {
+          if (isAnyMenuOpen) return;
+          e?.stopPropagation?.();
+          onSeekRelative(10);
+        }}
+        onClick={(e?: any) => {
+          if (isAnyMenuOpen) return;
+          e?.stopPropagation?.();
+          onSeekRelative(10);
+        }}
+        onTouchStart={(e: any) => e?.stopPropagation?.()}
+        style={{ width: 36, height: 32, opacity: isAnyMenuOpen ? 0.4 : 1 }}
+        title="Перемотка вперед (+10с)"
+      >
+        <FaForward />
+      </Focusable>
+
+      {/* Кнопка 4: Начать сначала (если playhead > 30s) */}
+      {currentPlayhead > 30 && (
+        <Focusable
+          tabIndex={isAnyMenuOpen ? -1 : 0}
+          noFocusRing={isAnyMenuOpen}
+          className="ds-btn ds-btn--compact ds-btn--icon"
+          onActivate={(e?: any) => {
+            if (isAnyMenuOpen) return;
+            e?.stopPropagation?.();
+            onSeekTo(0);
+          }}
+          onClick={(e?: any) => {
+            if (isAnyMenuOpen) return;
+            e?.stopPropagation?.();
+            onSeekTo(0);
+          }}
+          onTouchStart={(e: any) => e?.stopPropagation?.()}
+          style={{ width: 36, height: 32, opacity: isAnyMenuOpen ? 0.4 : 1 }}
+          title="Начать сначала"
+        >
+          <FaUndo style={{ fontSize: 11 }} />
+        </Focusable>
+      )}
+
+      {/* Кнопка 5: Выбор субтитров */}
+      <Focusable
+        ref={subtitleBtnRef}
+        tabIndex={isAnyMenuOpen ? -1 : 0}
+        noFocusRing={isAnyMenuOpen}
+        className="ds-btn ds-btn--compact ds-btn--icon"
+        onActivate={(e?: any) => {
+          e?.stopPropagation?.();
+          onToggleSubtitleMenu();
+        }}
+        onClick={(e?: any) => {
+          e?.stopPropagation?.();
+          onToggleSubtitleMenu();
+        }}
+        onTouchStart={(e: any) => e?.stopPropagation?.()}
+        title="Выбор субтитров (X)"
+        style={{
+          marginLeft: "auto",
+          borderRadius: 0,
+          background: showSubtitleMenu || selectedSubtitle !== null ? "var(--ds-surface-hi)" : "var(--ds-surface)",
+          borderColor: showSubtitleMenu || selectedSubtitle !== null ? "rgba(255,255,255,0.4)" : "var(--ds-border)",
+          color: selectedSubtitle !== null ? "var(--ds-accent)" : "#fff",
+          width: 34,
+          height: 32,
+        }}
+      >
+        <FaClosedCaptioning style={{ fontSize: 14 }} />
+      </Focusable>
+
+      {/* Кнопка 6: Выбор аудиодорожки */}
+      <Focusable
+        ref={audioBtnRef}
+        tabIndex={isAnyMenuOpen ? -1 : 0}
+        noFocusRing={isAnyMenuOpen}
+        className="ds-btn ds-btn--compact ds-btn--icon"
+        onActivate={(e?: any) => {
+          e?.stopPropagation?.();
+          onToggleAudioMenu();
+        }}
+        onClick={(e?: any) => {
+          e?.stopPropagation?.();
+          onToggleAudioMenu();
+        }}
+        onTouchStart={(e: any) => e?.stopPropagation?.()}
+        title="Выбор звуковой дорожки (Y)"
+        style={{
+          borderRadius: 0,
+          background: showAudioMenu ? "var(--ds-surface-hi)" : "var(--ds-surface)",
+          borderColor: showAudioMenu ? "rgba(255,255,255,0.4)" : "var(--ds-border)",
+          width: 34,
+          height: 32,
+        }}
+      >
+        <FaHeadphones style={{ fontSize: 13 }} />
+      </Focusable>
+    </>
+  );
 
   return (
     <div
@@ -184,12 +333,12 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
           {formatTime(currentPlayhead)} / {duration > 0 ? formatTime(duration) : (isOnline ? "Онлайн" : "--:--")}
         </div>
 
-        {/* Чистый ряд Focusable: ТОЛЬКО интерактивные кнопки! */}
         <Focusable
           flow-children="horizontal"
           className="projacktor-player-controls-bar"
+          noFocusRing={isAnyMenuOpen}
           onGamepadDirection={(evt: any) => {
-            if (showAudioMenu || showSubtitleMenu) {
+            if (isAnyMenuOpen) {
               try {
                 evt?.preventDefault?.();
                 evt?.stopPropagation?.();
@@ -215,149 +364,9 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
             }
             return undefined;
           }}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            width: "100%",
-            position: "relative",
-            zIndex: 2,
-          }}
+          style={barStyle}
         >
-          {/* Кнопка 1: Перемотка назад (-10с) */}
-          <Focusable
-            className="ds-btn ds-btn--compact ds-btn--icon"
-            onActivate={(e?: any) => {
-              if (isActionBlocked()) return;
-              e?.stopPropagation?.();
-              onSeekRelative(-10);
-            }}
-            onClick={(e?: any) => {
-              if (isActionBlocked()) return;
-              e?.stopPropagation?.();
-              onSeekRelative(-10);
-            }}
-            onTouchStart={(e: any) => e?.stopPropagation?.()}
-            style={{ width: 36, height: 32 }}
-            title="Перемотка назад (-10с)"
-          >
-            <FaBackward />
-          </Focusable>
-
-          {/* Кнопка 2: Пауза / Плей */}
-          <Focusable
-            ref={playBtnRef}
-            className="ds-btn ds-btn--primary ds-btn--compact ds-btn--icon"
-            onActivate={(e?: any) => {
-              if (isActionBlocked()) return;
-              e?.stopPropagation?.();
-              onTogglePlay();
-            }}
-            onClick={(e?: any) => {
-              if (isActionBlocked()) return;
-              e?.stopPropagation?.();
-              onTogglePlay();
-            }}
-            onTouchStart={(e: any) => e?.stopPropagation?.()}
-            style={{ width: 36, height: 32 }}
-            title={isPlaying ? "Пауза" : "Воспроизведение"}
-          >
-            {isPlaying ? <FaPause /> : <FaPlay />}
-          </Focusable>
-
-          {/* Кнопка 3: Перемотка вперед (+10с) */}
-          <Focusable
-            className="ds-btn ds-btn--compact ds-btn--icon"
-            onActivate={(e?: any) => {
-              if (isActionBlocked()) return;
-              e?.stopPropagation?.();
-              onSeekRelative(10);
-            }}
-            onClick={(e?: any) => {
-              if (isActionBlocked()) return;
-              e?.stopPropagation?.();
-              onSeekRelative(10);
-            }}
-            onTouchStart={(e: any) => e?.stopPropagation?.()}
-            style={{ width: 36, height: 32 }}
-            title="Перемотка вперед (+10с)"
-          >
-            <FaForward />
-          </Focusable>
-
-          {/* Кнопка 4: Начать сначала (если playhead > 30s) */}
-          {currentPlayhead > 30 && (
-            <Focusable
-              className="ds-btn ds-btn--compact ds-btn--icon"
-              onActivate={(e?: any) => {
-                if (isActionBlocked()) return;
-                e?.stopPropagation?.();
-                onSeekTo(0);
-              }}
-              onClick={(e?: any) => {
-                if (isActionBlocked()) return;
-                e?.stopPropagation?.();
-                onSeekTo(0);
-              }}
-              onTouchStart={(e: any) => e?.stopPropagation?.()}
-              style={{ width: 36, height: 32 }}
-              title="Начать сначала"
-            >
-              <FaUndo style={{ fontSize: 11 }} />
-            </Focusable>
-          )}
-
-          {/* Кнопка 5: Выбор субтитров */}
-          <Focusable
-            ref={subtitleBtnRef}
-            className="ds-btn ds-btn--compact ds-btn--icon"
-            onActivate={(e?: any) => {
-              e?.stopPropagation?.();
-              onToggleSubtitleMenu();
-            }}
-            onClick={(e?: any) => {
-              e?.stopPropagation?.();
-              onToggleSubtitleMenu();
-            }}
-            onTouchStart={(e: any) => e?.stopPropagation?.()}
-            title="Выбор субтитров (X)"
-            style={{
-              marginLeft: "auto",
-              borderRadius: 0,
-              background: showSubtitleMenu || selectedSubtitle !== null ? "var(--ds-surface-hi)" : "var(--ds-surface)",
-              borderColor: showSubtitleMenu || selectedSubtitle !== null ? "rgba(255,255,255,0.4)" : "var(--ds-border)",
-              color: selectedSubtitle !== null ? "var(--ds-accent)" : "#fff",
-              width: 34,
-              height: 32,
-            }}
-          >
-            <FaClosedCaptioning style={{ fontSize: 14 }} />
-          </Focusable>
-
-          {/* Кнопка 6: Выбор аудиодорожки */}
-          <Focusable
-            ref={audioBtnRef}
-            className="ds-btn ds-btn--compact ds-btn--icon"
-            onActivate={(e?: any) => {
-              e?.stopPropagation?.();
-              onToggleAudioMenu();
-            }}
-            onClick={(e?: any) => {
-              e?.stopPropagation?.();
-              onToggleAudioMenu();
-            }}
-            onTouchStart={(e: any) => e?.stopPropagation?.()}
-            title="Выбор звуковой дорожки (Y)"
-            style={{
-              borderRadius: 0,
-              background: showAudioMenu ? "var(--ds-surface-hi)" : "var(--ds-surface)",
-              borderColor: showAudioMenu ? "rgba(255,255,255,0.4)" : "var(--ds-border)",
-              width: 34,
-              height: 32,
-            }}
-          >
-            <FaHeadphones style={{ fontSize: 13 }} />
-          </Focusable>
+          {buttonBarContent}
         </Focusable>
 
         {/* Выпадающее меню субтитров */}
@@ -367,6 +376,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
             menuRef={subtitleMenuRef}
             activeIdx={activeSubMenuIdx}
             onHoverItem={onHoverSubItem}
+            onClose={onToggleSubtitleMenu}
             subtitleTracks={subtitleTracks}
             selectedSubtitle={selectedSubtitle}
             onSelectSubtitle={onSelectSubtitle}
@@ -380,6 +390,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
             menuRef={audioMenuRef}
             activeIdx={activeAudioMenuIdx}
             onHoverItem={onHoverAudioItem}
+            onClose={onToggleAudioMenu}
             audioTracks={audioTracks}
             selectedAudio={selectedAudio}
             onSelectAudio={onSelectAudio}

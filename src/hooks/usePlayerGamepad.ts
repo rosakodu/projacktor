@@ -343,6 +343,10 @@ export function usePlayerGamepad({
         e.button === 12 ||
         e.button === 13
       ) {
+        // Блокируем горизонтальную навигацию когда меню открыто
+        if (showAudioMenuRef.current || showSubtitleMenuRef.current) {
+          return;
+        }
         if (!showControlsRef.current) {
           setShowControls(true);
           resetControlsTimer();
