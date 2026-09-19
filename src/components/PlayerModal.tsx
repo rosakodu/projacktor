@@ -16,6 +16,7 @@ import { usePlayerGamepad } from "../hooks/usePlayerGamepad";
 import { triggerHaptic } from "../runtime/haptics";
 import { setPlayerActive } from "../runtime/homeInputBus";
 import { useI18n } from "../i18n";
+import { useScreensaverInhibitor } from "../runtime/screensaverInhibitor";
 
 export type { AudioTrack, SubtitleTrack };
 
@@ -155,6 +156,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   const isOnlineOrProxied = isOnline || filePath.startsWith("http://") || filePath.startsWith("https://") || filePath.includes("/api/stream?url=");
   const savedStartTimeRef = useRef<number>(getSavedProgress());
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
+  useScreensaverInhibitor(isPlaying);
   const [isDirectStream, setIsDirectStream] = useState<boolean>(false);
   const [baseTime, setBaseTime] = useState<number>(() => savedStartTimeRef.current);
   const [videoTime, setVideoTime] = useState<number>(0);
