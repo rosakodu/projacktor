@@ -46,6 +46,8 @@ export const translations = {
     checkAgain: "Проверить снова",
     episodesNotFound: "Серии пока не найдены",
     episodesWaitDesc: "Если торрент только добавлен, подождите несколько секунд подключения к раздаче.",
+    noData: "Нет данных",
+    loading: "Загрузка...",
 
     // Настройки
     jackettParserUrl: "Ссылка на парсер Jackett",
@@ -119,6 +121,8 @@ export const translations = {
     checkAgain: "Check again",
     episodesNotFound: "Episodes not found yet",
     episodesWaitDesc: "If the torrent was just added, please wait a few seconds to connect to seeds.",
+    noData: "No data",
+    loading: "Loading...",
 
     // Settings
     jackettParserUrl: "Jackett Parser URL",

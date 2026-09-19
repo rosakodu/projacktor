@@ -7,6 +7,7 @@ import { isModalOpen, isPlayerActive } from "../runtime/homeInputBus";
 import { getActiveDocument } from "../runtime/activeDoc";
 import { playCardNavSound } from "../runtime/navSound";
 import { setBackdropMovie } from "../runtime/backdropBus";
+import { useI18n } from "../i18n";
 
 interface SectorShelfProps {
   title: string;
@@ -42,6 +43,7 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
     hasPrevSection,
     hasNextSection,
   }) => {
+    const { t } = useI18n();
     const shelfRef = useRef<HTMLDivElement>(null);
     const rowRef = useRef<HTMLDivElement>(null);
 
@@ -368,7 +370,7 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
       <div ref={shelfRef} className="projacktor-shelf">
         <div className="projacktor-shelf-title">
           <span>{title}</span>
-          {loading && <span style={{ fontSize: 12, opacity: 0.6 }}>Загрузка...</span>}
+          {loading && <span style={{ fontSize: 12, opacity: 0.6 }}>{t("loading")}</span>}
         </div>
 
         <Focusable
@@ -409,7 +411,7 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
 
           {items.length === 0 && !loading && (
             <div style={{ padding: "20px 10px", fontSize: 13, color: "rgba(255,255,255,0.4)" }}>
-              Нет данных
+              {t("noData")}
             </div>
           )}
 
