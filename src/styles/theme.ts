@@ -102,11 +102,11 @@ export const THEME_STYLES = `
   z-index: 2 !important;
   display: flex !important;
   align-items: center !important;
-  justify-content: flex-start !important;
+  justify-content: space-between !important;
   width: 100% !important;
   padding: 0 !important;
-  gap: 6px !important;
-  height: 24px !important;
+  gap: 16px !important;
+  height: 38px !important;
   flex-shrink: 0 !important;
   user-select: none !important;
   outline: none !important;
@@ -124,13 +124,13 @@ export const THEME_STYLES = `
   background: #ffffff !important;
   color: #0b1016 !important;
   font-weight: 800 !important;
-  font-size: 11px !important;
-  letter-spacing: 0.2px !important;
-  padding: 0 7px !important;
-  height: 24px !important;
-  min-width: 32px !important;
-  line-height: 24px !important;
-  border-radius: 3px !important;
+  font-size: 13.5px !important;
+  letter-spacing: 0.3px !important;
+  padding: 0 10px !important;
+  height: 34px !important;
+  min-width: 44px !important;
+  line-height: 34px !important;
+  border-radius: 4px !important;
   border: none !important;
   cursor: pointer !important;
   user-select: none !important;
@@ -142,11 +142,11 @@ export const THEME_STYLES = `
 }
 
 .projacktor-bumper-pill.l1 {
-  border-radius: 8px 3px 3px 3px !important;
+  border-radius: 8px 4px 4px 4px !important;
 }
 
 .projacktor-bumper-pill.r1 {
-  border-radius: 3px 8px 3px 3px !important;
+  border-radius: 4px 8px 4px 4px !important;
 }
 
 .projacktor-bumper-pill:hover,
@@ -157,12 +157,13 @@ export const THEME_STYLES = `
 }
 
 .projacktor-tabs-track {
+  flex: 1 1 auto !important;
   display: flex !important;
   align-items: center !important;
-  justify-content: flex-start !important;
-  gap: 2px !important;
-  height: 24px !important;
-  flex-shrink: 0 !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+  height: 38px !important;
+  min-width: 0 !important;
   outline: none !important;
   border-bottom: none !important;
   position: relative !important;
@@ -170,19 +171,21 @@ export const THEME_STYLES = `
 }
 
 .projacktor-tab-item {
+  flex: 1 1 0 !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  height: 24px !important;
-  line-height: 21.5px !important;
-  padding: 0 4.5px !important;
-  font-size: 11px !important;
+  text-align: center !important;
+  height: 38px !important;
+  line-height: 34px !important;
+  padding: 0 6px !important;
+  font-size: 15px !important;
   font-weight: 600 !important;
-  letter-spacing: 0.1px !important;
+  letter-spacing: 0.15px !important;
   color: #8b929a !important;
   background: transparent !important;
   border: none !important;
-  border-bottom: 2.5px solid transparent !important;
+  border-bottom: 3.5px solid transparent !important;
   border-radius: 0px !important;
   margin: 0 !important;
   cursor: pointer !important;
@@ -192,7 +195,7 @@ export const THEME_STYLES = `
   white-space: nowrap !important;
   user-select: none !important;
   box-sizing: border-box !important;
-  flex-shrink: 0 !important;
+  min-width: 0 !important;
 }
 
 .projacktor-tab-item:hover {
@@ -207,11 +210,45 @@ export const THEME_STYLES = `
   border-top: none !important;
   border-left: none !important;
   border-right: none !important;
-  border-bottom: 2.5px solid #1a9fff !important;
+  border-bottom: 3.5px solid #1a9fff !important;
   border-radius: 0px !important;
   margin: 0 !important;
   outline: none !important;
   box-shadow: none !important;
+}
+
+/* ───── Дополнительный масштаб для сверхвысоких разрешений 4K ───── */
+@media (min-width: 2200px) {
+  .projacktor-top-header h1 {
+    font-size: 40px !important;
+  }
+
+  .projacktor-nav-bar {
+    height: 48px !important;
+    gap: 14px !important;
+  }
+
+  .projacktor-bumper-pill {
+    height: 44px !important;
+    min-width: 58px !important;
+    font-size: 16px !important;
+    padding: 0 16px !important;
+    line-height: 44px !important;
+    border-radius: 6px !important;
+  }
+
+  .projacktor-tabs-track {
+    height: 48px !important;
+    gap: 12px !important;
+  }
+
+  .projacktor-tab-item {
+    height: 48px !important;
+    line-height: 44px !important;
+    padding: 0 18px !important;
+    font-size: 19px !important;
+    border-bottom-width: 4px !important;
+  }
 }
 
 /* ───── Main Scroll Container (Below Fixed Tab Bar) ───── */
