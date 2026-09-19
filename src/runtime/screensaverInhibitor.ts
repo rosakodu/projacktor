@@ -4,22 +4,25 @@
  *
  * 1. Steam Screensaver Service (b3.ForceScreensaver({ enabled: false }))
  * 2. W3C Screen Wake Lock API (navigator.wakeLock.request('screen'))
- * 3. Heartbeat + микро-события активности
  */
 
 import { useEffect, useRef } from "react";
 
 let screensaverService: any = null;
+let hasSearchedScreensaverService = false;
 let activeNotificationHandle: any = null;
 let wakeLockSentinel: any = null;
 let heartbeatInterval: any = null;
 let isInhibiting = false;
 
 /**
- * Динамический поиск внутреннего сервиса Screensaver Steam через webpackChunksteamui
+ * Динамический поиск внутреннего сервиса Screensaver Steam через webpackChunksteamui.
+ * Поиск выполняется единожды с кэшированием результата, чтобы избежать лишней нагрузки на CPU.
  */
 export function getScreensaverService(): any {
-  if (screensaverService) return screensaverService;
+  if (hasSearchedScreensaverService) return screensaverService;
+  hasSearchedScreensaverService = true;
+
   try {
     const win = typeof window !== "undefined" ? (window as any) : null;
     const chunk = win?.webpackChunksteamui || (document?.defaultView as any)?.webpackChunksteamui;
@@ -43,7 +46,7 @@ export function getScreensaverService(): any {
 }
 
 /**
- * Запрос W3C Screen Wake Lock
+ * Запрос W3C Screen Wake Lock (нативно поддерживается CEF/Chromium, 0% CPU)
  */
 async function acquireWakeLock() {
   try {
@@ -83,24 +86,6 @@ function suppressSteamScreensaver() {
 }
 
 /**
- * Сброс таймера бездействия подсистемы ввода Steam
- */
-function pingInputActivity() {
-  try {
-    if (typeof window !== "undefined") {
-      // Имитируем микро-событие движения мыши для сброса таймера активности окна
-      const ev = new MouseEvent("mousemove", {
-        bubbles: true,
-        cancelable: false,
-        clientX: 0,
-        clientY: 0,
-      });
-      window.dispatchEvent(ev);
-    }
-  } catch {}
-}
-
-/**
  * Запуск подавления заставки и ухода экрана в сон
  */
 export function startInhibiting() {
@@ -119,7 +104,6 @@ export function startInhibiting() {
           const isActive = notif?.Body?.()?.active?.();
           if (isActive) {
             suppressSteamScreensaver();
-            pingInputActivity();
           }
         }
       });
@@ -131,14 +115,15 @@ export function startInhibiting() {
   // 3. Захватываем Screen Wake Lock
   acquireWakeLock();
 
-  // 4. Запускаем периодический heartbeat каждые 30 секунд
+  // 4. Легковесный heartbeat раз в 60 секунд (только повторный захват wakeLock при необходимости)
   if (heartbeatInterval) clearInterval(heartbeatInterval);
   heartbeatInterval = setInterval(() => {
     if (!isInhibiting) return;
     suppressSteamScreensaver();
-    acquireWakeLock();
-    pingInputActivity();
-  }, 30000);
+    if (!wakeLockSentinel) {
+      acquireWakeLock();
+    }
+  }, 60000);
 }
 
 /**
