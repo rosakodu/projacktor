@@ -1,7 +1,8 @@
-import { FC, memo, useState, useEffect, useCallback } from "react";
+import { FC, memo, useState, useEffect, useCallback, useMemo } from "react";
 import { CatalogCategory, MediaItem, SectorKey } from "../types";
 import { useCatalogCategory } from "../hooks/useCatalogCategory";
 import { SectorShelf } from "../components/SectorShelf";
+import { useI18n } from "../i18n";
 
 interface CatalogViewProps {
   category: CatalogCategory;
@@ -13,19 +14,23 @@ interface SectionConfig {
   title: string;
 }
 
-const SECTIONS: SectionConfig[] = [
-  { key: "watching_today", title: "Сегодня смотрят" },
-  { key: "trending_today", title: "Сегодня в тренде" },
-  { key: "top_rated", title: "Высокий рейтинг" },
-];
-
 export const CatalogView: FC<CatalogViewProps> = memo(({ category, onSelectMovie }) => {
+  const { t } = useI18n();
   const { watchingItems, trendingItems, topRatedItems, loading } =
     useCatalogCategory(category);
 
+  const sections: SectionConfig[] = useMemo(
+    () => [
+      { key: "watching_today", title: t("watchingToday") },
+      { key: "trending_today", title: t("trendingToday") },
+      { key: "top_rated", title: t("topRated") },
+    ],
+    [t]
+  );
+
   const [sectionIndex, setSectionIndex] = useState<number>(0);
 
-  // При переключении вкладок всегда сбрасываем на первый раздел («Сегодня смотрят»)
+  // При переключении вкладок всегда сбрасываем на первый раздел
   useEffect(() => {
     setSectionIndex(0);
   }, [category]);
@@ -35,10 +40,10 @@ export const CatalogView: FC<CatalogViewProps> = memo(({ category, onSelectMovie
   }, []);
 
   const onNextSection = useCallback(() => {
-    setSectionIndex((prev) => (prev < SECTIONS.length - 1 ? prev + 1 : prev));
-  }, []);
+    setSectionIndex((prev) => (prev < sections.length - 1 ? prev + 1 : prev));
+  }, [sections.length]);
 
-  const currentSection = SECTIONS[sectionIndex] || SECTIONS[0];
+  const currentSection = sections[sectionIndex] || sections[0];
 
   const currentItems =
     sectionIndex === 0
@@ -58,7 +63,7 @@ export const CatalogView: FC<CatalogViewProps> = memo(({ category, onSelectMovie
         onPrevSection={onPrevSection}
         onNextSection={onNextSection}
         hasPrevSection={sectionIndex > 0}
-        hasNextSection={sectionIndex < SECTIONS.length - 1}
+        hasNextSection={sectionIndex < sections.length - 1}
       />
     </div>
   );

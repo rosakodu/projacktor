@@ -8,12 +8,14 @@ import { RawButton, subscribeControllerInput } from "../runtime/controllerInput"
 import { isModalOpen, isUserInTabs, isPlayerActive } from "../runtime/homeInputBus";
 import { playCardNavSound } from "../runtime/navSound";
 import { setBackdropMovie } from "../runtime/backdropBus";
+import { useI18n } from "../i18n";
 
 interface SearchViewProps {
   onSelectMovie: (movie: MediaItem) => void;
 }
 
 export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
+  const { t } = useI18n();
   const rootRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchResults, setSearchResults] = useState<MediaItem[]>([]);
@@ -280,7 +282,7 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
               onChange={(e) => setSearchQuery(e.target.value)}
               onFocus={() => setBackdropMovie(null)}
               onKeyDown={handleKeyDown}
-              {...({ placeholder: "Введите название фильма или сериала..." } as any)}
+              {...({ placeholder: t("enterMovieOrShowName") } as any)}
             />
           </div>
         </form>
@@ -319,7 +321,7 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
             return undefined;
           }}
         >
-          {searchLoading ? "Поиск..." : "Найти"}
+          {searchLoading ? t("searching") : t("searchBtn")}
         </Focusable>
       </Focusable>
 

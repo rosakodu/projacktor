@@ -256,7 +256,7 @@ export const SettingsView: FC = memo(() => {
                     value={jacredUrl}
                     onChange={(e) => setJacredUrl(e.target.value)}
                     {...({
-                      placeholder: "Введите URL парсера",
+                      placeholder: t("enterParserUrl"),
                       spellCheck: false,
                       autoCorrect: "off",
                       autoCapitalize: "off"
@@ -282,7 +282,7 @@ export const SettingsView: FC = memo(() => {
                   }}
                 >
                   {settingsSaving ? <FaSpinner style={{ fontSize: 10, animation: "projacktor-spin 1s linear infinite" }} /> : null}
-                  {settingsSaving ? t("checking") : "Проверить"}
+                  {settingsSaving ? t("checking") : t("check")}
                 </Focusable>
               </Focusable>
             </PanelSectionRow>
@@ -292,7 +292,7 @@ export const SettingsView: FC = memo(() => {
                 <div>
                   <div style={{ fontSize: 12, fontWeight: 600, color: "#fff" }}>{t("torrserverStatus")}</div>
                   <div style={{ fontSize: 10.5, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>
-                    Порт: {torrServerPort}
+                    {t("port")}: {torrServerPort}
                   </div>
                 </div>
                 <div>
@@ -420,7 +420,7 @@ export const SettingsView: FC = memo(() => {
                   alignItems: "center"
                 }}
               >
-                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Кэш постеров и метаданных</span>
+                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>{t("cachePostersMetadata")}</span>
                 <Focusable
                   noFocusRing
                   onActivate={handleClearCache}
