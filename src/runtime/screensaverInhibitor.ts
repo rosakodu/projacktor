@@ -2,51 +2,120 @@
  * screensaverInhibitor.ts
  * Подавление заставки Steam Big Picture и ухода экрана в спящий режим во время просмотра видео.
  *
- * 1. Steam Screensaver Service (b3.ForceScreensaver({ enabled: false }))
- * 2. W3C Screen Wake Lock API (navigator.wakeLock.request('screen'))
+ * 1. Временное отключение idle-таймеров Steam (system_idle_screensaver_*_sec = 0) с восстановлением при паузе/выходе.
+ * 2. Реактивное подавление заставки через Steam Screensaver Service (ForceScreensaver({ enabled: false })).
+ * 3. W3C Screen Wake Lock API (navigator.wakeLock.request('screen')).
+ *
+ * Никаких искусственных событий мыши (0% нагрузки на CPU, UI контролов не всплывает).
  */
 
 import { useEffect, useRef } from "react";
 
 let screensaverService: any = null;
-let hasSearchedScreensaverService = false;
+let settingsModule: any = null;
 let activeNotificationHandle: any = null;
 let wakeLockSentinel: any = null;
-let heartbeatInterval: any = null;
 let isInhibiting = false;
+let originalSettings: Record<string, number | undefined> = {};
+let settingsOverridden = false;
 
 /**
- * Динамический поиск внутреннего сервиса Screensaver Steam через webpackChunksteamui.
- * Поиск выполняется единожды с кэшированием результата, чтобы избежать лишней нагрузки на CPU.
+ * Получение webpackChunksteamui из текущего окна или родительского/opener (SharedJSContext)
  */
-export function getScreensaverService(): any {
-  if (hasSearchedScreensaverService) return screensaverService;
-  hasSearchedScreensaverService = true;
-
-  try {
-    const win = typeof window !== "undefined" ? (window as any) : null;
-    const chunk = win?.webpackChunksteamui || (document?.defaultView as any)?.webpackChunksteamui;
-    if (chunk && typeof chunk.push === "function") {
-      chunk.push([[Symbol()], {}, (require: any) => {
-        for (const id in require.m) {
-          try {
-            const m = require(id);
-            if (m?.b3?.ForceScreensaver && m?.b3?.GetActiveState) {
-              screensaverService = m.b3;
-              break;
-            }
-          } catch {}
-        }
-      }]);
-    }
-  } catch (e) {
-    console.warn("[ScreensaverInhibitor] Failed to find Steam screensaver service:", e);
-  }
-  return screensaverService;
+function getWebpackChunk(): any {
+  const win = typeof window !== "undefined" ? (window as any) : null;
+  return (
+    win?.webpackChunksteamui ||
+    win?.opener?.webpackChunksteamui ||
+    win?.parent?.webpackChunksteamui ||
+    win?.top?.webpackChunksteamui ||
+    (document?.defaultView as any)?.webpackChunksteamui ||
+    (document?.defaultView as any)?.opener?.webpackChunksteamui
+  );
 }
 
 /**
- * Запрос W3C Screen Wake Lock (нативно поддерживается CEF/Chromium, 0% CPU)
+ * Получение внутренних сервисов Steam Screensaver и настроек (прямой импорт по ID без перебора модулей)
+ */
+export function getSteamModules(): { screensaverService: any; settingsModule: any } {
+  if (screensaverService && settingsModule) {
+    return { screensaverService, settingsModule };
+  }
+  try {
+    const chunk = getWebpackChunk();
+    if (chunk && typeof chunk.push === "function") {
+      chunk.push([[Symbol()], {}, (require: any) => {
+        try {
+          if (!screensaverService) {
+            screensaverService = require("2099")?.b3;
+          }
+        } catch {}
+        try {
+          if (!settingsModule) {
+            settingsModule = require("39828");
+          }
+        } catch {}
+      }]);
+    }
+  } catch (e) {
+    console.warn("[ScreensaverInhibitor] Failed to load Steam modules:", e);
+  }
+  return { screensaverService, settingsModule };
+}
+
+/**
+ * Временное отключение idle таймеров Steam (0 = Disabled в Steam)
+ */
+function overrideIdleSettings() {
+  if (settingsOverridden) return;
+  try {
+    const { settingsModule } = getSteamModules();
+    if (settingsModule?.qt && settingsModule?.rV?.clientSettings) {
+      const keys = [
+        "system_idle_screensaver_ac_sec",
+        "system_idle_screensaver_battery_sec",
+        "system_idle_suspend_ac_sec",
+        "system_idle_suspend_battery_sec",
+      ];
+      originalSettings = {};
+      for (const key of keys) {
+        const val = settingsModule.rV.clientSettings[key];
+        if (typeof val === "number" && val > 0) {
+          originalSettings[key] = val;
+          settingsModule.qt(key, 0);
+        }
+      }
+      settingsOverridden = true;
+    }
+  } catch (e) {
+    console.warn("[ScreensaverInhibitor] overrideIdleSettings failed:", e);
+  }
+}
+
+/**
+ * Восстановление оригинальных настроек idle таймеров Steam
+ */
+function restoreIdleSettings() {
+  if (!settingsOverridden) return;
+  try {
+    const { settingsModule } = getSteamModules();
+    if (settingsModule?.qt) {
+      for (const [key, val] of Object.entries(originalSettings)) {
+        if (typeof val === "number") {
+          settingsModule.qt(key, val);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("[ScreensaverInhibitor] restoreIdleSettings failed:", e);
+  } finally {
+    originalSettings = {};
+    settingsOverridden = false;
+  }
+}
+
+/**
+ * Запрос W3C Screen Wake Lock
  */
 async function acquireWakeLock() {
   try {
@@ -74,15 +143,34 @@ function releaseWakeLock() {
 }
 
 /**
- * Отправка сигнала подавления заставки Steam
+ * Настройка реактивного подавления при попытке запуска заставки Steam
  */
-function suppressSteamScreensaver() {
-  try {
-    const service = getScreensaverService();
-    if (service?.ForceScreensaver) {
-      service.ForceScreensaver({ enabled: false }).catch(() => {});
+function setupActiveNotification() {
+  if (activeNotificationHandle) return;
+  const { screensaverService } = getSteamModules();
+  if (screensaverService?.RegisterForNotifyActiveStateChanged) {
+    try {
+      activeNotificationHandle = screensaverService.RegisterForNotifyActiveStateChanged((notif: any) => {
+        if (isInhibiting) {
+          const isActive = notif?.Body?.()?.active?.();
+          if (isActive) {
+            screensaverService.ForceScreensaver({ enabled: false }).catch(() => {});
+          }
+        }
+      });
+    } catch (e) {
+      console.warn("[ScreensaverInhibitor] RegisterForNotifyActiveStateChanged error:", e);
     }
-  } catch {}
+  }
+}
+
+function teardownActiveNotification() {
+  if (activeNotificationHandle) {
+    try {
+      activeNotificationHandle.unregister?.();
+    } catch {}
+    activeNotificationHandle = null;
+  }
 }
 
 /**
@@ -92,60 +180,46 @@ export function startInhibiting() {
   if (isInhibiting) return;
   isInhibiting = true;
 
-  // 1. Подавляем заставку Steam сразу
-  suppressSteamScreensaver();
+  // 1. Отключаем таймеры заставки и сна в Steam
+  overrideIdleSettings();
 
-  // 2. Подписываемся на события попытки включения заставки Steam
-  const service = getScreensaverService();
-  if (service?.RegisterForNotifyActiveStateChanged && !activeNotificationHandle) {
-    try {
-      activeNotificationHandle = service.RegisterForNotifyActiveStateChanged((notif: any) => {
-        if (isInhibiting) {
-          const isActive = notif?.Body?.()?.active?.();
-          if (isActive) {
-            suppressSteamScreensaver();
-          }
-        }
-      });
-    } catch (e) {
-      console.warn("[ScreensaverInhibitor] Failed to register active state changed listener:", e);
-    }
+  // 2. Сбрасываем заставку, если она уже включена
+  const { screensaverService } = getSteamModules();
+  if (screensaverService?.ForceScreensaver) {
+    screensaverService.ForceScreensaver({ enabled: false }).catch(() => {});
   }
 
-  // 3. Захватываем Screen Wake Lock
-  acquireWakeLock();
+  // 3. Подписываемся на реактивное подавление попыток активации
+  setupActiveNotification();
 
-  // 4. Легковесный heartbeat раз в 60 секунд (только повторный захват wakeLock при необходимости)
-  if (heartbeatInterval) clearInterval(heartbeatInterval);
-  heartbeatInterval = setInterval(() => {
-    if (!isInhibiting) return;
-    suppressSteamScreensaver();
-    if (!wakeLockSentinel) {
-      acquireWakeLock();
-    }
-  }, 60000);
+  // 4. Захватываем нативный Screen Wake Lock
+  acquireWakeLock();
 }
 
 /**
- * Остановка подавления
+ * Остановка подавления и восстановление системных таймеров
  */
 export function stopInhibiting() {
   if (!isInhibiting) return;
   isInhibiting = false;
 
-  if (heartbeatInterval) {
-    clearInterval(heartbeatInterval);
-    heartbeatInterval = null;
-  }
+  // 1. Восстанавливаем оригинальные таймеры Steam
+  restoreIdleSettings();
 
-  if (activeNotificationHandle) {
-    try {
-      activeNotificationHandle.unregister?.();
-    } catch {}
-    activeNotificationHandle = null;
-  }
+  // 2. Отписываемся от уведомлений
+  teardownActiveNotification();
 
+  // 3. Освобождаем Wake Lock
   releaseWakeLock();
+}
+
+// Защита от потери настроек при закрытии окна
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", () => {
+    restoreIdleSettings();
+    releaseWakeLock();
+    teardownActiveNotification();
+  });
 }
 
 /**
@@ -162,11 +236,10 @@ export function useScreensaverInhibitor(isPlaying: boolean) {
       stopInhibiting();
     }
 
-    // При возвращении на вкладку/окно восстанавливаем Wake Lock если видео всё ещё играет
     const handleVisibilityChange = () => {
       if (!document.hidden && isPlayingRef.current) {
         acquireWakeLock();
-        suppressSteamScreensaver();
+        overrideIdleSettings();
       }
     };
 
