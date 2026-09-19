@@ -5,6 +5,7 @@ import { EpisodeItem, LibraryItem } from "../types";
 import { formatBytes, rpcGetEpisodes, sortEpisodes } from "../api";
 import { PROJACKTOR_STYLES } from "../styles";
 import { getActiveDocument } from "../runtime/activeDoc";
+import { useI18n } from "../i18n";
 
 interface EpisodesModalProps {
   item: LibraryItem;
@@ -19,12 +20,13 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
   onWatchOnline,
   onDownloadEpisode,
 }) => {
+  const { t } = useI18n();
   const listRef = useRef<HTMLDivElement>(null);
   const [episodes, setEpisodes] = useState<EpisodeItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [downloadingEpIdx, setDownloadingEpIdx] = useState<number | null>(null);
 
-  const title = item.title || "Без названия";
+  const title = item.title || t("noTitle");
   const year = item.year ? String(item.year).split("-")[0] : "";
 
   const fetchEpisodes = useCallback(async (showSpinner = true) => {
@@ -158,7 +160,7 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                   letterSpacing: 0.4,
                 }}
               >
-                {item.media_type === "tv" ? "Сериал" : "Фильм"}
+                {item.media_type === "tv" ? t("seriesBadge") : t("movieBadge")}
               </span>
               {item.effective_quality && (
                 <span
@@ -217,9 +219,9 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
               color: "#fff",
             }}
           >
-            <span>Серии</span>
+            <span>{t("episodes")}</span>
             {episodes.length > 0 && (
-              <span style={{ fontSize: 10, opacity: 0.5 }}>Найдено: {episodes.length}</span>
+              <span style={{ fontSize: 10, opacity: 0.5 }}>{t("foundCount")}: {episodes.length}</span>
             )}
           </div>
 
@@ -245,7 +247,7 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                 }}
               >
                 <Spinner />
-                <span style={{ fontSize: 12, opacity: 0.6 }}>Загрузка серий из торрента...</span>
+                <span style={{ fontSize: 12, opacity: 0.6 }}>{t("loadingEpisodes")}</span>
               </div>
             ) : episodes.length === 0 ? (
               <div
@@ -263,10 +265,10 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
               >
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 600, color: "#fff", marginBottom: 3 }}>
-                    Серии пока не найдены
+                    {t("noEpisodesYet")}
                   </div>
                   <div>
-                    Если торрент только добавлен, подождите несколько секунд подключения к раздаче.
+                    {t("episodesWaitDesc")}
                   </div>
                 </div>
                 <Focusable
@@ -277,7 +279,7 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                   onCancelButton={closeModal}
                   style={{ padding: "6px 20px", fontSize: 12 }}
                 >
-                  Проверить снова
+                  {t("checkAgain")}
                 </Focusable>
               </div>
             ) : (
@@ -327,7 +329,7 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                               fontWeight: 600,
                             }}
                           >
-                            ✓ Скачано
+                            {t("downloadedBadge")}
                           </span>
                         )}
                         {isEpPartial && (
@@ -353,11 +355,11 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                           onActivate={() => onWatchOnline(item, ep.index)}
                           onClick={() => onWatchOnline(item, ep.index)}
                           onCancelButton={closeModal}
-                          title="Смотреть файл"
+                          title={t("watchFile")}
                           style={{ padding: "4px 10px", fontSize: 11 }}
                         >
                           <FaPlay style={{ fontSize: 9, marginRight: 4 }} />
-                          Смотреть
+                          {t("watch")}
                         </Focusable>
                       )}
 
@@ -368,7 +370,7 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                           onActivate={() => handleDownload(ep)}
                           onClick={() => handleDownload(ep)}
                           onCancelButton={closeModal}
-                          title="Скачать эту серию"
+                          title={t("downloadThisEpisode")}
                           style={{ padding: "4px 10px", fontSize: 11 }}
                         >
                           {isEpDownloading ? (
@@ -376,7 +378,7 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                           ) : (
                             <FaDownload style={{ fontSize: 9, marginRight: 4 }} />
                           )}
-                          Скачать
+                          {t("download")}
                         </Focusable>
                       )}
                     </Focusable>

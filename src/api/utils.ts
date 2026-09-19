@@ -1,3 +1,5 @@
+import { getLocale } from "../i18n/state";
+
 export const API_BASE = "http://127.0.0.1:8400/api";
 
 export function getImageUrl(path: string | null | undefined): string {
@@ -30,18 +32,20 @@ export function getLogoUrl(path: string | null | undefined): string {
 }
 
 export function formatBytes(bytes: number): string {
-  if (!bytes || bytes <= 0) return "0 Б";
-  const units = ["Б", "КБ", "МБ", "ГБ", "ТБ"];
+  const isEn = getLocale() === "en";
+  if (!bytes || bytes <= 0) return isEn ? "0 B" : "0 Б";
+  const units = isEn ? ["B", "KB", "MB", "GB", "TB"] : ["Б", "КБ", "МБ", "ГБ", "ТБ"];
   const i = Math.floor(Math.log(bytes) / Math.log(1024));
   return (bytes / Math.pow(1024, i)).toFixed(1) + " " + units[i];
 }
 
 export function formatSpeed(bytesPerSec: number): string {
-  if (!bytesPerSec || bytesPerSec <= 0) return "0 КБ/с";
+  const isEn = getLocale() === "en";
+  if (!bytesPerSec || bytesPerSec <= 0) return isEn ? "0 KB/s" : "0 КБ/с";
   if (bytesPerSec < 1048576) {
-    return (bytesPerSec / 1024).toFixed(1) + " КБ/с";
+    return (bytesPerSec / 1024).toFixed(1) + (isEn ? " KB/s" : " КБ/с");
   }
-  return (bytesPerSec / 1048576).toFixed(1) + " МБ/с";
+  return (bytesPerSec / 1048576).toFixed(1) + (isEn ? " MB/s" : " МБ/с");
 }
 
 export function sortEpisodes<T extends { name?: string; path?: string }>(episodes: T[]): T[] {

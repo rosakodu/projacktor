@@ -2,6 +2,7 @@ import { FC, memo } from "react";
 import { Focusable } from "@decky/ui";
 import { MediaItem, getImageUrl } from "../api";
 import { setBackdropMovie } from "../runtime/backdropBus";
+import { useI18n } from "../i18n";
 
 interface MovieCardProps {
   movie: MediaItem;
@@ -10,7 +11,8 @@ interface MovieCardProps {
 }
 
 export const MovieCard: FC<MovieCardProps> = memo(({ movie, onActivate, onGamepadDirection }) => {
-  const title = movie.title || movie.name || "Без названия";
+  const { t } = useI18n();
+  const title = movie.title || movie.name || t("noTitle");
   const date = movie.release_date || movie.first_air_date || "";
   const year = date ? String(date).split("-")[0] : "";
   const rating = movie.vote_average ? movie.vote_average.toFixed(1) : null;
@@ -22,7 +24,7 @@ export const MovieCard: FC<MovieCardProps> = memo(({ movie, onActivate, onGamepa
       noFocusRing
       onActivate={() => onActivate(movie)}
       onClick={() => onActivate(movie)}
-      onOKActionDescription="Подробнее"
+      onOKActionDescription={t("details")}
       onGamepadDirection={onGamepadDirection}
       onFocus={() => setBackdropMovie(movie)}
       onMouseEnter={() => setBackdropMovie(movie)}

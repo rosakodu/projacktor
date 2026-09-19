@@ -29,7 +29,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
     const rootRef = useRef<HTMLDivElement>(null);
     const rowRef = useRef<HTMLDivElement>(null);
     const lastInteractedItemIdRef = useRef<number | string | null>(null);
-    const { t } = useI18n();
+    const { t, locale } = useI18n();
 
     const {
       library,
@@ -303,24 +303,27 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                 }
               };
 
-              let badgeText = "В библиотеке";
+              let badgeText = t("inLibraryBadge");
               let badgeClass = "queued";
               if (isCompleted) {
                 // "✓ Скачано" пишем ТОЛЬКО когда загружены абсолютно все серии (или фильм целиком)
-                badgeText = "✓ Скачано";
+                badgeText = t("downloadedBadge");
                 badgeClass = "completed";
               } else if (isDownloading) {
                 const spd = formatSpeed(item.download_speed || 0);
                 badgeText = `${progress.toFixed(0)}% • ${spd}`;
                 badgeClass = "downloading";
               } else if (isPaused) {
-                badgeText = progress > 0 ? `⏸ Пауза (${progress.toFixed(0)}%)` : "⏸ Пауза";
+                badgeText = progress > 0 ? `${t("pausedBadge")} (${progress.toFixed(0)}%)` : t("pausedBadge");
                 badgeClass = "paused";
               } else if (isTv && downloadedEps > 0) {
                 // Скачана часть серий (например, одна или две) - пишем точное количество серий, а не "Скачано"
+                const epWord = locale === "en"
+                  ? (downloadedEps === 1 ? "episode" : "episodes")
+                  : (downloadedEps % 10 === 1 && downloadedEps % 100 !== 11 ? "серия" : (downloadedEps % 10 >= 2 && downloadedEps % 10 <= 4 && (downloadedEps % 100 < 10 || downloadedEps % 100 >= 20) ? "серии" : "серий"));
                 badgeText = totalEps > 0
-                  ? `${downloadedEps} из ${totalEps} серий`
-                  : `${downloadedEps} ${downloadedEps === 1 ? "серия" : downloadedEps < 5 ? "серии" : "серий"}`;
+                  ? `${downloadedEps} ${t("episodesOf")} ${totalEps} ${t("episodesPlural")}`
+                  : `${downloadedEps} ${epWord}`;
                 badgeClass = "queued";
               }
 
@@ -356,7 +359,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                     {/* Бейдж качества или типа (показываем когда не скачивается, чтобы не перегружать постер) */}
                     {!isDownloading && (item.effective_quality || isTv) && (
                       <div className="projacktor-dl-badge-quality">
-                        {item.effective_quality || "Сериал"}
+                        {item.effective_quality || t("seriesBadge")}
                       </div>
                     )}
 
@@ -412,7 +415,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                         onFocus={() => setBackdropMovie(item as any)}
                         onMouseEnter={() => setBackdropMovie(item as any)}
                         onGamepadDirection={handleGamepadDir}
-                        title={canPlayDirect ? "Смотреть файл" : "Серии"}
+                        title={canPlayDirect ? t("watchFile") : t("episodes")}
                       >
                         {canPlayDirect ? (
                           <FaPlay style={{ fontSize: 10, marginLeft: 1 }} />
@@ -472,7 +475,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                         onFocus={() => setBackdropMovie(item as any)}
                         onMouseEnter={() => setBackdropMovie(item as any)}
                         onGamepadDirection={handleGamepadDir}
-                        title="Загрузка с выключенным экраном (Magic Black)"
+                        title={t("downloadSleepMagicBlack")}
                       >
                         <FaMoon style={{ fontSize: 9.5 }} />
                       </Focusable>

@@ -15,6 +15,7 @@ import { PlayerControls } from "./player/PlayerControls";
 import { usePlayerGamepad } from "../hooks/usePlayerGamepad";
 import { triggerHaptic } from "../runtime/haptics";
 import { setPlayerActive } from "../runtime/homeInputBus";
+import { useI18n } from "../i18n";
 
 export type { AudioTrack, SubtitleTrack };
 
@@ -110,6 +111,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   initialTime,
   closeModal,
 }) => {
+  const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -138,7 +140,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
         const val = parseFloat(raw);
         if (!isNaN(val) && val > 15) return Math.floor(val);
       }
-      const cleanTitle = title.replace(/\s*\(Онлайн\)\s*/i, "").trim();
+      const cleanTitle = title.replace(/\s*\((?:Онлайн|Online)\)\s*/i, "").trim();
       if (cleanTitle) {
         const rawTitle = localStorage.getItem(`projacktor_progress_t_${cleanTitle}`);
         if (rawTitle) {
@@ -695,7 +697,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
         const fileTarget = actualFilePath || filePath;
         const rawFileName = fileTarget.split(/[\/\\]/).pop() || fileTarget;
         const fileName = rawFileName.split("?")[0];
-        const cleanTitle = title.replace(/\s*\(Онлайн\)\s*/i, "").trim();
+        const cleanTitle = title.replace(/\s*\((?:Онлайн|Online)\)\s*/i, "").trim();
         const dur = totalDur ?? durationRef.current;
         if (dur && dur > 0 && sec >= dur - 60) {
           localStorage.removeItem(`projacktor_progress_${fileName}`);
@@ -1214,7 +1216,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   }, [selectedSubtitle]);
 
   const handleVideoError = () => {
-    setErrorMsg("Ошибка воспроизведения потока. Проверьте файл.");
+    setErrorMsg(t("streamPlaybackError"));
   };
 
   useEffect(() => {
@@ -1288,7 +1290,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
       try {
         const fileTarget = actualFilePath || filePath;
         const fileName = fileTarget.split(/[\/\\]/).pop() || fileTarget;
-        const cleanTitle = title.replace(/\s*\(Онлайн\)\s*/i, "").trim();
+        const cleanTitle = title.replace(/\s*\((?:Онлайн|Online)\)\s*/i, "").trim();
         localStorage.removeItem(`projacktor_progress_${fileName}`);
         if (cleanTitle) {
           localStorage.removeItem(`projacktor_progress_t_${cleanTitle}`);

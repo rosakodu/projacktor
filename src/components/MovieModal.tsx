@@ -125,7 +125,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
     }
   }, []);
 
-  const title = movie.title || movie.name || "Без названия";
+  const title = movie.title || movie.name || t("noTitle");
   const origTitle = movie.original_title || movie.original_name || "";
   const date = movie.release_date || movie.first_air_date || "";
   const year = date ? String(date).split("-")[0] : "";
@@ -566,7 +566,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                   letterSpacing: 0.4,
                 }}
               >
-                {movie.media_type === "tv" ? "Сериал" : "Фильм"}
+                {movie.media_type === "tv" ? t("seriesBadge") : t("movieBadge")}
               </span>
             </div>
 
@@ -663,9 +663,9 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
               color: "#fff",
             }}
           >
-            <span>Раздачи</span>
+            <span>{t("torrents")}</span>
             {torrents.length > 0 && (
-              <span style={{ fontSize: 10, opacity: 0.5 }}>Найдено: {torrents.length}</span>
+              <span style={{ fontSize: 10, opacity: 0.5 }}>{t("foundCount")}: {torrents.length}</span>
             )}
           </div>
 
@@ -686,7 +686,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                 }}
               >
                 <Spinner />
-                <span style={{ fontSize: 12, opacity: 0.6 }}>Поиск лучших раздач...</span>
+                <span style={{ fontSize: 12, opacity: 0.6 }}>{t("searchingTorrents")}</span>
               </Focusable>
             ) : torrents.length === 0 ? (
               <div
@@ -704,10 +704,10 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
               >
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 600, color: "#fff", marginBottom: 3 }}>
-                    Раздач пока нет в сети
+                    {t("noTorrentsYet")}
                   </div>
                   <div style={{ color: "rgba(255, 255, 255, 0.6)" }}>
-                    Для данного релиза не найдено подходящих раздач на трекерах (включая TS и цифровые релизы).
+                    {t("noTorrentsDesc")}
                   </div>
                 </div>
                 {closeModal && (
@@ -717,7 +717,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                     onActivate={closeModal}
                     style={{ padding: "6px 20px", fontSize: 12 }}
                   >
-                    Закрыть
+                    {t("close")}
                   </Focusable>
                 )}
               </div>
@@ -782,7 +782,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                               noFocusRing
                               onActivate={() => handleToggleEpisodes(tor)}
                               onClick={() => handleToggleEpisodes(tor)}
-                              title={isExpanded ? "Скрыть серии" : "Выбор серии"}
+                              title={isExpanded ? t("hideEpisodes") : t("selectEpisode")}
                             >
                               {isEpLoading ? (
                                 <FaSpinner style={{ animation: "projacktor-spin 0.9s linear infinite" }} />
@@ -828,7 +828,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                             noFocusRing
                             onActivate={() => handleDownloadWithMagicBlack(tor)}
                             onClick={() => handleDownloadWithMagicBlack(tor)}
-                            title="Скачать с выключенным экраном"
+                            title={t("downloadSleepMagicBlack")}
                           >
                             <FaMoon style={{ fontSize: 11 }} />
                           </Focusable>
@@ -841,18 +841,18 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                           {isEpLoading ? (
                             <div style={{ padding: "8px 4px", fontSize: 11, color: "var(--ds-text-dim)", display: "flex", alignItems: "center", gap: 8 }}>
                               <FaSpinner style={{ animation: "projacktor-spin 0.9s linear infinite" }} />
-                              <span>Подключение к сидерам и загрузка серий...</span>
+                              <span>{t("connectingSeedsLoadingEpisodes")}</span>
                             </div>
                           ) : episodes.length === 0 ? (
                             <div style={{ padding: "8px 4px", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
                               {(tor.seeds || 0) === 0 ? (
                                 <span style={{ color: "#ff7875" }}>
-                                  Раздача недоступна: 0 сидеров в сети (↑). Выберите раздачу с сидами.
+                                  {t("torrentNoSeeds")}
                                 </span>
                               ) : (
                                 <>
                                   <span style={{ color: "var(--ds-text-dim)" }}>
-                                    Не удалось получить список серий (таймаут ответа сидеров).
+                                    {t("failedToGetEpisodesTimeout")}
                                   </span>
                                   <Focusable
                                     className="ds-btn ds-btn--compact ds-btn--primary"
@@ -861,7 +861,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                                     onClick={() => fetchEpisodesForTorrent(tor)}
                                     style={{ padding: "3px 12px", fontSize: 10, flexShrink: 0 }}
                                   >
-                                    Повторить
+                                    {t("retry")}
                                   </Focusable>
                                 </>
                               )}
@@ -885,7 +885,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                                       noFocusRing
                                       onActivate={() => handleWatchEpisodeOnline(tor, ep)}
                                       onClick={() => handleWatchEpisodeOnline(tor, ep)}
-                                      title="Смотреть серию онлайн"
+                                      title={t("watchEpisodeOnline")}
                                     >
                                       {isEpStreaming ? (
                                         <FaSpinner style={{ animation: "projacktor-spin 0.9s linear infinite" }} />
@@ -899,7 +899,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                                       noFocusRing
                                       onActivate={() => handleDownloadEpisode(tor, ep)}
                                       onClick={() => handleDownloadEpisode(tor, ep)}
-                                      title="Загрузить серию"
+                                      title={t("downloadEpisode")}
                                     >
                                       {isEpDownloading ? (
                                         <FaSpinner style={{ animation: "projacktor-spin 0.9s linear infinite" }} />
@@ -913,7 +913,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                                       noFocusRing
                                       onActivate={() => handleDownloadEpisodeWithMagicBlack(tor, ep)}
                                       onClick={() => handleDownloadEpisodeWithMagicBlack(tor, ep)}
-                                      title="Скачать серию с выключенным экраном"
+                                      title={t("downloadEpisodeMagicBlack")}
                                     >
                                       <FaMoon style={{ fontSize: 9 }} />
                                     </Focusable>

@@ -1,5 +1,6 @@
 import { FC, memo, useCallback } from "react";
 import { playNavSound } from "../runtime/navSound";
+import { useI18n } from "../i18n";
 
 export interface TabConfig {
   id: string;
@@ -16,6 +17,7 @@ interface TabBarProps {
 
 export const TabBar: FC<TabBarProps> = memo(
   ({ tabs, activeTab, onSelectTab, onPrevTab, onNextTab }) => {
+    const { t } = useI18n();
     const handleTabClick = useCallback(
       (tabId: string) => {
         playNavSound();
@@ -31,7 +33,7 @@ export const TabBar: FC<TabBarProps> = memo(
           className="projacktor-bumper-pill l1"
           onClick={onPrevTab}
           role="button"
-          aria-label="Предыдущая вкладка (L1)"
+          aria-label={t("prevTab")}
         >
           L1
         </div>
@@ -59,7 +61,7 @@ export const TabBar: FC<TabBarProps> = memo(
           className="projacktor-bumper-pill r1"
           onClick={onNextTab}
           role="button"
-          aria-label="Следующая вкладка (R1)"
+          aria-label={t("nextTab")}
         >
           R1
         </div>

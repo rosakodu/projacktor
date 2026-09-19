@@ -22,7 +22,17 @@ const T: Record<string, Record<string, string>> = {
     openCatalog:      "Open Catalog",
     support:          "Support",
   },
+  en: {
+    title:            "Projacktor",
+    openCatalog:      "Open Catalog",
+    support:          "Support",
+  },
   russian: {
+    title:            "Projacktor",
+    openCatalog:      "Открыть каталог",
+    support:          "Поддержка",
+  },
+  ru: {
     title:            "Projacktor",
     openCatalog:      "Открыть каталог",
     support:          "Поддержка",
@@ -38,7 +48,11 @@ const Content: FC = () => {
     getSteamLanguage()
       .then((l: unknown) => {
         const steamLang = (typeof l === "string" ? l : "").toLowerCase();
-        if (T[steamLang]) setLang(steamLang);
+        if (steamLang.startsWith("en")) {
+          setLang("english");
+        } else if (T[steamLang]) {
+          setLang(steamLang);
+        }
       })
       .catch(() => {});
   }, []);

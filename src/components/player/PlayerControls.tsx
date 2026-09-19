@@ -11,6 +11,7 @@ import {
 } from "react-icons/fa";
 import { AudioTrack, SubtitleTrack } from "./types";
 import { TrackSelectionMenu } from "./TrackSelectionMenu";
+import { useI18n } from "../../i18n";
 
 function formatTime(seconds: number): string {
   if (isNaN(seconds) || seconds < 0 || !isFinite(seconds)) return "00:00";
@@ -91,6 +92,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
   onHoverAudioItem,
   onChangeVolume,
 }) => {
+  const { t } = useI18n();
   const isAnyMenuOpen = showAudioMenu || showSubtitleMenu;
 
   // Общие стили для ряда кнопок
@@ -123,7 +125,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
         }}
         onTouchStart={(e: any) => e?.stopPropagation?.()}
         style={{ width: 36, height: 32, opacity: isAnyMenuOpen ? 0.4 : 1 }}
-        title="Перемотка назад (-10с)"
+        title={t("rewind10s")}
       >
         <FaBackward />
       </Focusable>
@@ -146,7 +148,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
         }}
         onTouchStart={(e: any) => e?.stopPropagation?.()}
         style={{ width: 36, height: 32, opacity: isAnyMenuOpen ? 0.4 : 1 }}
-        title={isPlaying ? "Пауза" : "Воспроизведение"}
+        title={isPlaying ? t("pause") : t("play")}
       >
         {isPlaying ? <FaPause /> : <FaPlay />}
       </Focusable>
@@ -168,7 +170,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
         }}
         onTouchStart={(e: any) => e?.stopPropagation?.()}
         style={{ width: 36, height: 32, opacity: isAnyMenuOpen ? 0.4 : 1 }}
-        title="Перемотка вперед (+10с)"
+        title={t("fastForward10s")}
       >
         <FaForward />
       </Focusable>
@@ -191,7 +193,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
           }}
           onTouchStart={(e: any) => e?.stopPropagation?.()}
           style={{ width: 36, height: 32, opacity: isAnyMenuOpen ? 0.4 : 1 }}
-          title="Начать сначала"
+          title={t("restart")}
         >
           <FaUndo style={{ fontSize: 11 }} />
         </Focusable>
@@ -212,7 +214,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
           onToggleSubtitleMenu();
         }}
         onTouchStart={(e: any) => e?.stopPropagation?.()}
-        title="Выбор субтитров (X)"
+        title={t("selectSubtitles")}
         style={{
           marginLeft: "auto",
           borderRadius: 0,
@@ -241,7 +243,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
           onToggleAudioMenu();
         }}
         onTouchStart={(e: any) => e?.stopPropagation?.()}
-        title="Выбор звуковой дорожки (Y)"
+        title={t("selectAudio")}
         style={{
           borderRadius: 0,
           background: showAudioMenu ? "var(--ds-surface-hi)" : "var(--ds-surface)",
@@ -330,7 +332,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
             zIndex: 1,
           }}
         >
-          {formatTime(currentPlayhead)} / {duration > 0 ? formatTime(duration) : (isOnline ? "Онлайн" : "--:--")}
+          {formatTime(currentPlayhead)} / {duration > 0 ? formatTime(duration) : (isOnline ? t("onlineBadge") : "--:--")}
         </div>
 
         <Focusable

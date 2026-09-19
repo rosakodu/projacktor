@@ -280,7 +280,7 @@ export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie, onNa
 
                   {/* Бейдж типа медиа */}
                   <div className="projacktor-dl-badge-status queued">
-                    {isTv ? "Сериал" : "Фильм"}
+                    {isTv ? t("seriesBadge") : t("movieBadge")}
                   </div>
 
                   {/* Рейтинг */}
@@ -310,7 +310,7 @@ export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie, onNa
                     tabIndex={0}
                     onClick={() => handleCardClick(item)}
                     onActivate={() => handleCardClick(item)}
-                    title="Открыть проект"
+                    title={t("openProject")}
                   >
                     <FaPlay style={{ fontSize: 10, marginLeft: 1 }} />
                   </Focusable>

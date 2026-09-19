@@ -255,7 +255,7 @@ export const Shelf: FC<ShelfProps> = memo(({ title, items, onSelectMovie, loadin
         flow-children="horizontal"
         noFocusRing
         role="list"
-        aria-label={title || "Полка"}
+        aria-label={title || t("shelf")}
         className="projacktor-shelf-row"
         onGamepadDirection={handleGamepadDirection}
       >

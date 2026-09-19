@@ -2,6 +2,7 @@ import { FC, RefObject } from "react";
 import { Focusable } from "@decky/ui";
 import { FaCheck } from "react-icons/fa";
 import { AudioTrack, SubtitleTrack } from "./types";
+import { useI18n } from "../../i18n";
 
 interface TrackSelectionMenuProps {
   type: "subtitle" | "audio";
@@ -32,6 +33,8 @@ export const TrackSelectionMenu: FC<TrackSelectionMenuProps> = ({
   selectedAudio,
   onSelectAudio,
 }) => {
+  const { t } = useI18n();
+
   return (
     <Focusable
       ref={menuRef}
@@ -66,7 +69,7 @@ export const TrackSelectionMenu: FC<TrackSelectionMenuProps> = ({
       {type === "subtitle" && (
         <>
           <div style={{ padding: "4px 8px", fontSize: 11, fontWeight: 700, color: "var(--ds-text-dim)", textTransform: "uppercase" }}>
-            Субтитры
+            {t("subtitles")}
           </div>
           <Focusable
             className={`ds-btn ds-btn--compact ${activeIdx === 0 ? "gpfocus active-nav" : ""}`}
@@ -92,12 +95,12 @@ export const TrackSelectionMenu: FC<TrackSelectionMenuProps> = ({
             }}
           >
             <FaCheck style={{ fontSize: 10, opacity: selectedSubtitle === null ? 1 : 0, flexShrink: 0 }} />
-            <span style={{ fontSize: 12 }}>Отключить субтитры</span>
+            <span style={{ fontSize: 12 }}>{t("disableSubtitles")}</span>
           </Focusable>
 
           {subtitleTracks.length === 0 ? (
             <div style={{ padding: "8px 10px", fontSize: 12, color: "rgba(255,255,255,0.4)" }}>
-              Субтитры в раздаче не найдены
+              {t("noSubtitlesFound")}
             </div>
           ) : (
             subtitleTracks.map((sub, sIdx) => {
@@ -137,10 +140,10 @@ export const TrackSelectionMenu: FC<TrackSelectionMenuProps> = ({
                 >
                   <FaCheck style={{ fontSize: 10, opacity: isSelected ? 1 : 0, flexShrink: 0 }} />
                   <span style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {sub.title || (sub.lang ? `Субтитры (${sub.lang.toUpperCase()})` : `Субтитры #${sub.index}`)}
+                    {sub.title || (sub.lang ? `${t("subtitles")} (${sub.lang.toUpperCase()})` : `${t("subtitlesNumber")}${sub.index}`)}
                     {!isSupported && (
                       <span style={{ fontSize: 10, color: "var(--ds-text-dim)", marginLeft: 6 }}>
-                        (не поддерживаются)
+                        ({t("unsupported")})
                       </span>
                     )}
                   </span>
@@ -154,11 +157,11 @@ export const TrackSelectionMenu: FC<TrackSelectionMenuProps> = ({
       {type === "audio" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
           <div style={{ padding: "4px 8px", fontSize: 11, fontWeight: 700, color: "var(--ds-text-dim)", textTransform: "uppercase" }}>
-            Аудиодорожка
+            {t("audioTrack")}
           </div>
           {audioTracks.length === 0 ? (
             <div style={{ padding: "8px 10px", fontSize: 12, color: "rgba(255,255,255,0.4)" }}>
-              Дорожка по умолчанию
+              {t("defaultTrack")}
             </div>
           ) : (
             audioTracks.map((track, tIdx) => {
@@ -191,7 +194,7 @@ export const TrackSelectionMenu: FC<TrackSelectionMenuProps> = ({
                 >
                   <FaCheck style={{ fontSize: 10, opacity: isSelected ? 1 : 0, flexShrink: 0 }} />
                   <span style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {track.title || (track.lang ? `Аудио (${track.lang.toUpperCase()})` : `Дорожка #${track.index}`)}
+                    {track.title || (track.lang ? `${t("audioLang")} (${track.lang.toUpperCase()})` : `${t("trackNumber")}${track.index}`)}
                   </span>
                 </Focusable>
               );

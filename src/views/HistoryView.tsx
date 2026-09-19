@@ -357,7 +357,7 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onNavigate
                   <div
                     className={`projacktor-dl-badge-status ${isOffline ? "completed" : "downloading"}`}
                   >
-                    {isOffline ? "✓ Скачано" : "Онлайн"}
+                    {isOffline ? t("downloadedBadge") : t("onlineBadge")}
                   </div>
 
                   {/* Полоса прогресса внизу постера */}

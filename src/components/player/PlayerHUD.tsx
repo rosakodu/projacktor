@@ -2,6 +2,7 @@ import { FC, RefObject, useState, useEffect } from "react";
 import { FaVolumeUp, FaVolumeMute, FaSearchMinus, FaSearchPlus } from "react-icons/fa";
 import { getBackdropUrl, getLogoUrl } from "../../api";
 import { PlayerMediaInfo } from "../../types";
+import { useI18n } from "../../i18n";
 
 interface PlayerHUDProps {
   volumeHudVisible: boolean;
@@ -34,6 +35,7 @@ export const PlayerHUD: FC<PlayerHUDProps> = ({
   title,
   isOnline,
 }) => {
+  const { t } = useI18n();
   const [logoFailed, setLogoFailed] = useState(false);
   useEffect(() => { setLogoFailed(false); }, [logoPath]);
   return (
@@ -199,7 +201,7 @@ export const PlayerHUD: FC<PlayerHUDProps> = ({
             }}
           />
           <div style={{ color: "#fff", fontSize: 13.5, fontWeight: 500, letterSpacing: 0.3 }}>
-            {isOnline ? "Буферизация видеопотока..." : "Загрузка..."}
+            {isOnline ? t("bufferingStream") : t("loading")}
           </div>
         </div>
       )}
