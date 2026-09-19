@@ -150,7 +150,7 @@ def has_vaapi_support() -> bool:
     return False
 
 def get_bin_path(name: str) -> str:
-    # Prefer system ffmpeg / ffprobe if it supports VA-API
+    # Prefer system ffmpeg / ffprobe if it supports hardware acceleration (VA-API, CUDA/NVENC, QSV)
     if name in ("ffmpeg", "ffprobe"):
         system_bin = shutil.which(name)
         if system_bin and os.path.isfile(system_bin):
@@ -163,7 +163,8 @@ def get_bin_path(name: str) -> str:
                     timeout=2,
                     env=_clean_env()
                 )
-                if "vaapi" in res.stdout:
+                out_lower = res.stdout.lower()
+                if any(hw in out_lower for hw in ("vaapi", "cuda", "nvdec", "nvenc", "qsv")):
                     return system_bin
             except Exception:
                 pass

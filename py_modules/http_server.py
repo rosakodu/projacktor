@@ -980,7 +980,7 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
 
         logger.info(
             f"[Transcoder] source={clean_ext} vcodec={plan['vcodec']} acodec={plan['acodec']} "
-            f"profile='{plan['profile_name']}' docked={plan['is_docked']} vaapi={plan['use_vaapi']}"
+            f"profile='{plan['profile_name']}' docked={plan['is_docked']} hw_accel={plan['hw_accel']}"
         )
 
         container_needs_remux = is_http or (clean_ext not in ['.mp4', '.m4v', '.webm']) or plan["audio_needs_transcode"]

@@ -5,6 +5,10 @@ from .common import get_bin_path
 
 logger = logging.getLogger("projacktor.transcoder")
 
+_GPU_VENDOR_CACHE = None
+_NVENC_SUPPORT_CACHE = None
+_VAAPI_SUPPORT_CACHE = None
+
 def is_external_display_connected() -> bool:
     """
     Checks Linux DRM sysfs connectors.
@@ -27,10 +31,96 @@ def is_external_display_connected() -> bool:
         logger.debug(f"[Transcoder] Error checking external display: {e}")
     return False
 
+def detect_gpu_vendor() -> str:
+    """
+    Detects GPU vendor on Linux.
+    Returns: 'nvidia', 'amd', 'intel', or 'unknown'.
+    """
+    global _GPU_VENDOR_CACHE
+    if _GPU_VENDOR_CACHE is not None:
+        return _GPU_VENDOR_CACHE
+
+    # 1. Check NVIDIA driver files / devices
+    if os.path.exists("/proc/driver/nvidia/version") or os.path.exists("/dev/nvidiactl") or os.path.exists("/dev/nvidia0"):
+        _GPU_VENDOR_CACHE = "nvidia"
+        return _GPU_VENDOR_CACHE
+
+    # 2. Check PCI device vendors in sysfs
+    try:
+        for vf in glob.glob("/sys/bus/pci/devices/*/vendor"):
+            try:
+                with open(vf, "r", encoding="utf-8") as f:
+                    v = f.read().strip().lower()
+                    if v == "0x10de":
+                        _GPU_VENDOR_CACHE = "nvidia"
+                        return _GPU_VENDOR_CACHE
+                    elif v == "0x1002":
+                        _GPU_VENDOR_CACHE = "amd"
+                        return _GPU_VENDOR_CACHE
+                    elif v == "0x8086":
+                        _GPU_VENDOR_CACHE = "intel"
+                        return _GPU_VENDOR_CACHE
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    _GPU_VENDOR_CACHE = "unknown"
+    return _GPU_VENDOR_CACHE
+
+def has_nvenc_support() -> bool:
+    """
+    Checks if NVIDIA GPU and h264_nvenc encoder are available in FFmpeg.
+    """
+    global _NVENC_SUPPORT_CACHE
+    if _NVENC_SUPPORT_CACHE is not None:
+        return _NVENC_SUPPORT_CACHE
+
+    vendor = detect_gpu_vendor()
+    if vendor != "nvidia":
+        _NVENC_SUPPORT_CACHE = False
+        return False
+
+    ffmpeg_bin = get_bin_path("ffmpeg")
+    try:
+        from .common import _clean_env
+        import subprocess
+        res = subprocess.run(
+            [ffmpeg_bin, "-hide_banner", "-encoders"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=3,
+            env=_clean_env()
+        )
+        _NVENC_SUPPORT_CACHE = "h264_nvenc" in res.stdout
+    except Exception as e:
+        logger.debug(f"[Transcoder] Error checking nvenc: {e}")
+        _NVENC_SUPPORT_CACHE = False
+
+    return _NVENC_SUPPORT_CACHE
+
 def has_vaapi_support() -> bool:
-    """Checks if AMD / Intel VA-API DRM render node is present and accessible."""
+    """
+    Checks if AMD / Intel VA-API DRM render node is present and accessible.
+    If GPU is NVIDIA, VA-API is only used if NVENC is not supported.
+    """
+    global _VAAPI_SUPPORT_CACHE
+    if _VAAPI_SUPPORT_CACHE is not None:
+        return _VAAPI_SUPPORT_CACHE
+
     dev_path = "/dev/dri/renderD128"
-    return os.path.exists(dev_path) and os.access(dev_path, os.R_OK | os.W_OK)
+    if not (os.path.exists(dev_path) and os.access(dev_path, os.R_OK | os.W_OK)):
+        _VAAPI_SUPPORT_CACHE = False
+        return False
+
+    vendor = detect_gpu_vendor()
+    if vendor == "nvidia" and has_nvenc_support():
+        _VAAPI_SUPPORT_CACHE = False
+        return False
+
+    _VAAPI_SUPPORT_CACHE = True
+    return True
 
 def resolve_transcode_plan(
     media_info: dict,
@@ -42,9 +132,10 @@ def resolve_transcode_plan(
     """
     Intelligently determines video/audio transcoding requirements and optimal parameters:
     1. Passthrough (-c:v copy) for native H.264 video streams.
-    2. Smart VA-API hardware transcoding for HEVC/H.265.
+    2. Smart hardware transcoding for HEVC/H.265 (VA-API on AMD/Intel, NVENC on NVIDIA).
     3. Auto-adapts 4K streams based on handheld Steam Deck screen (800p) vs external 4K TV.
     4. Never upscales 720p/1080p sources to higher resolutions.
+    5. Graceful CPU software fallback (libx264) if no hardware encoder is present.
     """
     vcodec = (media_info.get("vcodec") or "").lower()
     acodec = (media_info.get("acodec") or "").lower()
@@ -75,7 +166,17 @@ def resolve_transcode_plan(
         # For auto: only transcode video if codec is not directly supported in CEF HTML5 video (e.g. HEVC/H.265)
         video_needs_transcode = not video_is_compatible
 
-    use_vaapi = video_needs_transcode and has_vaapi_support()
+    # Determine hardware acceleration method
+    hw_accel = "none"
+    if video_needs_transcode:
+        if has_nvenc_support():
+            hw_accel = "nvenc"
+        elif has_vaapi_support():
+            hw_accel = "vaapi"
+        else:
+            hw_accel = "none"
+
+    use_vaapi = (hw_accel == "vaapi")
     is_docked = is_external_display_connected()
     pref_res = (user_max_res or "auto").lower()
 
@@ -83,57 +184,81 @@ def resolve_transcode_plan(
     is_source_4k = (width >= 3800 or height >= 2000)
     is_source_1080p = (width >= 1800 or height >= 1000)
 
-    vf_filter = "scale_vaapi=format=nv12"
     target_bitrate = "15M"
     max_rate = "22M"
     profile_name = "Direct Copy"
+    vf_filter = ""
 
     if video_needs_transcode:
+        accel_tag = "VA-API" if hw_accel == "vaapi" else ("NVIDIA NVENC" if hw_accel == "nvenc" else "CPU Software")
+        
         if pref_res == "720p":
-            vf_filter = "scale_vaapi=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:format=nv12"
+            if hw_accel == "vaapi":
+                vf_filter = "scale_vaapi=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:format=nv12"
+            else:
+                vf_filter = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease,format=yuv420p"
             target_bitrate = "7M"
             max_rate = "10M"
-            profile_name = "720p (Energy saving)"
+            profile_name = f"720p ({accel_tag})"
         elif pref_res == "1080p":
-            vf_filter = "scale_vaapi=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:format=nv12"
+            if hw_accel == "vaapi":
+                vf_filter = "scale_vaapi=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:format=nv12"
+            else:
+                vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease,format=yuv420p"
             target_bitrate = "15M"
             max_rate = "22M"
-            profile_name = "1080p (Full HD)"
+            profile_name = f"1080p ({accel_tag})"
         elif pref_res == "4k":
-            vf_filter = "scale_vaapi=format=nv12"
+            if hw_accel == "vaapi":
+                vf_filter = "scale_vaapi=format=nv12"
+            else:
+                vf_filter = "format=yuv420p"
             target_bitrate = "28M"
             max_rate = "40M"
-            profile_name = "4K Force"
+            profile_name = f"4K Force ({accel_tag})"
         else:
             # AUTO mode: intelligent detection based on source dimensions and display
             if is_source_4k:
                 if is_docked:
                     # Output native 4K to external 4K TV / Monitor
-                    vf_filter = "scale_vaapi=format=nv12"
+                    if hw_accel == "vaapi":
+                        vf_filter = "scale_vaapi=format=nv12"
+                    else:
+                        vf_filter = "format=yuv420p"
                     target_bitrate = "28M"
                     max_rate = "40M"
-                    profile_name = "4K Native (External Display)"
+                    profile_name = f"4K Native External ({accel_tag})"
                 else:
                     # Handheld Steam Deck (800p display):
                     # Smart downscale 4K to 1080p for super-sampling sharpness, zero stutter and battery savings
-                    vf_filter = "scale_vaapi=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:format=nv12"
+                    if hw_accel == "vaapi":
+                        vf_filter = "scale_vaapi=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:format=nv12"
+                    else:
+                        vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease,format=yuv420p"
                     target_bitrate = "14M"
                     max_rate = "20M"
-                    profile_name = "4K -> 1080p Adaptive (Steam Deck Handheld)"
+                    profile_name = f"4K -> 1080p Adaptive Handheld ({accel_tag})"
             elif is_source_1080p:
-                vf_filter = "scale_vaapi=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:format=nv12"
+                if hw_accel == "vaapi":
+                    vf_filter = "scale_vaapi=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:format=nv12"
+                else:
+                    vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease,format=yuv420p"
                 target_bitrate = "14M"
                 max_rate = "20M"
-                profile_name = "1080p Native (No upscale)"
+                profile_name = f"1080p Native ({accel_tag})"
             else:
-                vf_filter = "scale_vaapi=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:format=nv12"
+                if hw_accel == "vaapi":
+                    vf_filter = "scale_vaapi=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:format=nv12"
+                else:
+                    vf_filter = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease,format=yuv420p"
                 target_bitrate = "7M"
                 max_rate = "10M"
-                profile_name = "720p Native (No upscale)"
+                profile_name = f"720p Native ({accel_tag})"
 
     return {
         "video_needs_transcode": video_needs_transcode,
         "audio_needs_transcode": audio_needs_transcode,
+        "hw_accel": hw_accel,
         "use_vaapi": use_vaapi,
         "is_docked": is_docked,
         "profile_name": profile_name,
@@ -156,7 +281,8 @@ def build_ffmpeg_stream_command(
     ffmpeg_bin = get_bin_path("ffmpeg")
     cmd = [ffmpeg_bin, "-hide_banner", "-loglevel", "error"]
 
-    if plan["use_vaapi"]:
+    hw_accel = plan.get("hw_accel", "none")
+    if hw_accel == "vaapi":
         cmd += [
             "-hwaccel", "vaapi",
             "-hwaccel_device", "/dev/dri/renderD128",
@@ -187,8 +313,8 @@ def build_ffmpeg_stream_command(
         cmd += ["-map", "0:v:0", "-map", "0:a:0?"]
 
     if plan["video_needs_transcode"]:
-        if plan["use_vaapi"]:
-            buf_mb = int(plan["max_rate"].rstrip("M")) * 2
+        buf_mb = int(plan["max_rate"].rstrip("M")) * 2
+        if hw_accel == "vaapi":
             cmd += [
                 "-vf", plan["vf_filter"],
                 "-c:v", "h264_vaapi",
@@ -196,14 +322,30 @@ def build_ffmpeg_stream_command(
                 "-maxrate", plan["max_rate"],
                 "-bufsize", f"{buf_mb}M"
             ]
+        elif hw_accel == "nvenc":
+            cmd += [
+                "-vf", plan["vf_filter"],
+                "-c:v", "h264_nvenc",
+                "-preset", "p4",
+                "-tune", "ll",
+                "-b:v", plan["target_bitrate"],
+                "-maxrate", plan["max_rate"],
+                "-bufsize", f"{buf_mb}M"
+            ]
         else:
-            # Software fallback if VA-API device is not accessible
-            cmd += ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", "23"]
+            # Software fallback if hardware acceleration is not available
+            cmd += [
+                "-vf", plan["vf_filter"],
+                "-c:v", "libx264",
+                "-preset", "ultrafast",
+                "-tune", "zerolatency",
+                "-crf", "23"
+            ]
     else:
         cmd += ["-c:v", "copy"]
 
     if plan["audio_needs_transcode"]:
-        cmd += ["-c:a", "aac", "-b:a", "192k", "-ac", "2", "-af", "aresample=async=1:first_pts=0"]
+        cmd += ["-c:a", "aac", "-b:a", "192k", "-ac", "2", "-af", "aresample=async=1000"]
     else:
         cmd += ["-c:a", "copy"]
 
