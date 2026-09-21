@@ -1,6 +1,5 @@
 import { FC, useState, useCallback, useEffect, useRef, memo } from "react";
 import { Focusable } from "@decky/ui";
-import { FaPaste } from "react-icons/fa";
 import { MediaItem } from "../types";
 import { searchCatalog } from "../api";
 import { Shelf } from "../components/Shelf";
@@ -134,20 +133,6 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
       setSearchLoading(false);
     }
   }, [searchQuery, searchLoading]);
-
-  const handlePaste = useCallback(async () => {
-    try {
-      let text = "";
-      if (navigator.clipboard && typeof navigator.clipboard.readText === "function") {
-        text = await navigator.clipboard.readText();
-      }
-      if (text && typeof text === "string") {
-        setSearchQuery(text.trim());
-      }
-    } catch (err) {
-      console.warn("Не удалось прочитать буфер обмена:", err);
-    }
-  }, []);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -307,49 +292,6 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
           placeholder={t("enterMovieOrShowName")}
         />
         <Focusable
-          className="ds-btn ds-btn--compact"
-          noFocusRing
-          onFocus={() => setBackdropMovie(null)}
-          onActivate={handlePaste}
-          onClick={handlePaste}
-          style={{
-            padding: "8px 14px",
-            fontSize: 12,
-            fontWeight: 600,
-            whiteSpace: "nowrap",
-            height: 38,
-            cursor: "pointer",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            flexShrink: 0,
-          }}
-          onGamepadDirection={(evt: any) => {
-            const btn = evt?.detail?.button;
-            if (btn === 11) {
-              // DPAD_LEFT: фокус на поле ввода
-              try {
-                evt?.preventDefault?.();
-                evt?.stopPropagation?.();
-              } catch {}
-              focusSearchInput();
-              return false;
-            } else if (btn === 10 && searchResults.length > 0) {
-              // DPAD_DOWN: переходим на карточки
-              try {
-                evt?.preventDefault?.();
-                evt?.stopPropagation?.();
-              } catch {}
-              focusFirstCard();
-              return false;
-            }
-            return undefined;
-          }}
-          aria-label={t("paste")}
-        >
-          <FaPaste style={{ fontSize: 11 }} /> {t("paste")}
-        </Focusable>
-        <Focusable
           className="ds-btn ds-btn--primary"
           noFocusRing
           onFocus={() => setBackdropMovie(null)}
@@ -369,7 +311,15 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
           }}
           onGamepadDirection={(evt: any) => {
             const btn = evt?.detail?.button;
-            if (btn === 10 && searchResults.length > 0) {
+            if (btn === 11) {
+              // DPAD_LEFT: фокус на поле ввода
+              try {
+                evt?.preventDefault?.();
+                evt?.stopPropagation?.();
+              } catch {}
+              focusSearchInput();
+              return false;
+            } else if (btn === 10 && searchResults.length > 0) {
               // DPAD_DOWN: переходим на карточки
               try {
                 evt?.preventDefault?.();

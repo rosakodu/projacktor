@@ -4,7 +4,7 @@ import {
   PanelSectionRow,
   Focusable,
 } from "@decky/ui";
-import { FaTrash, FaCheck, FaTimes, FaSpinner, FaHdd, FaSdCard, FaPaste } from "react-icons/fa";
+import { FaTrash, FaCheck, FaTimes, FaSpinner, FaHdd, FaSdCard } from "react-icons/fa";
 import { GamepadTextField } from "../components";
 import {
   rpcGetSettings,
@@ -184,34 +184,6 @@ export const SettingsView: FC = memo(() => {
     }
   }, [jacredUrl, settingsSaving]);
 
-  const handlePasteJacred = useCallback(async () => {
-    try {
-      let text = "";
-      if (navigator.clipboard && typeof navigator.clipboard.readText === "function") {
-        text = await navigator.clipboard.readText();
-      }
-      if (text && typeof text === "string") {
-        setJacredUrl(text.trim());
-      }
-    } catch (err) {
-      console.warn("Не удалось прочитать буфер обмена:", err);
-    }
-  }, []);
-
-  const handlePasteDownloadPath = useCallback(async () => {
-    try {
-      let text = "";
-      if (navigator.clipboard && typeof navigator.clipboard.readText === "function") {
-        text = await navigator.clipboard.readText();
-      }
-      if (text && typeof text === "string") {
-        setDownloadPath(text.trim());
-      }
-    } catch (err) {
-      console.warn("Не удалось прочитать буфер обмена:", err);
-    }
-  }, []);
-
   const handleSaveDownloadPath = useCallback(async (customPath?: string) => {
     const pathToSave = (customPath ?? downloadPath).trim();
     if (!pathToSave) return;
@@ -321,27 +293,6 @@ export const SettingsView: FC = memo(() => {
                 />
                 <Focusable
                   noFocusRing
-                  onActivate={handlePasteJacred}
-                  onClick={handlePasteJacred}
-                  className="ds-btn ds-btn--compact"
-                  style={{
-                    padding: "6px 12px",
-                    fontSize: 11,
-                    fontWeight: 600,
-                    whiteSpace: "nowrap",
-                    height: 36,
-                    cursor: "pointer",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                    flexShrink: 0
-                  }}
-                  aria-label={t("paste")}
-                >
-                  <FaPaste style={{ fontSize: 11 }} /> {t("paste")}
-                </Focusable>
-                <Focusable
-                  noFocusRing
                   onActivate={handleSaveSettings}
                   onClick={handleSaveSettings}
                   className="ds-btn ds-btn--compact ds-btn--primary"
@@ -413,27 +364,6 @@ export const SettingsView: FC = memo(() => {
                   onChange={setDownloadPath}
                   placeholder="~/Videos/Projacktor"
                 />
-                <Focusable
-                  noFocusRing
-                  onActivate={handlePasteDownloadPath}
-                  onClick={handlePasteDownloadPath}
-                  className="ds-btn ds-btn--compact"
-                  style={{
-                    padding: "6px 12px",
-                    fontSize: 11,
-                    fontWeight: 600,
-                    whiteSpace: "nowrap",
-                    height: 36,
-                    cursor: "pointer",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                    flexShrink: 0
-                  }}
-                  aria-label={t("paste")}
-                >
-                  <FaPaste style={{ fontSize: 11 }} /> {t("paste")}
-                </Focusable>
                 <Focusable
                   noFocusRing
                   onActivate={() => handleSaveDownloadPath()}
