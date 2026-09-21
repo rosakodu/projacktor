@@ -2,10 +2,10 @@ import { FC, useState, useEffect, useCallback, useRef, memo } from "react";
 import {
   PanelSection,
   PanelSectionRow,
-  TextField,
   Focusable,
 } from "@decky/ui";
-import { FaTrash, FaCheck, FaTimes, FaSpinner, FaHdd, FaSdCard } from "react-icons/fa";
+import { FaTrash, FaCheck, FaTimes, FaSpinner, FaHdd, FaSdCard, FaPaste } from "react-icons/fa";
+import { GamepadTextField } from "../components";
 import {
   rpcGetSettings,
   rpcSaveSettings,
@@ -116,7 +116,7 @@ export const SettingsView: FC = memo(() => {
 
       const firstInteractive = root
         ? root.querySelector<HTMLElement>(
-            "input, button, .DialogButton, [tabindex='0']"
+            ".projacktor-gamepad-textfield, input, button, .DialogButton, [tabindex='0']"
           )
         : null;
       if (firstInteractive) {
@@ -183,6 +183,34 @@ export const SettingsView: FC = memo(() => {
       setSettingsSaving(false);
     }
   }, [jacredUrl, settingsSaving]);
+
+  const handlePasteJacred = useCallback(async () => {
+    try {
+      let text = "";
+      if (navigator.clipboard && typeof navigator.clipboard.readText === "function") {
+        text = await navigator.clipboard.readText();
+      }
+      if (text && typeof text === "string") {
+        setJacredUrl(text.trim());
+      }
+    } catch (err) {
+      console.warn("Не удалось прочитать буфер обмена:", err);
+    }
+  }, []);
+
+  const handlePasteDownloadPath = useCallback(async () => {
+    try {
+      let text = "";
+      if (navigator.clipboard && typeof navigator.clipboard.readText === "function") {
+        text = await navigator.clipboard.readText();
+      }
+      if (text && typeof text === "string") {
+        setDownloadPath(text.trim());
+      }
+    } catch (err) {
+      console.warn("Не удалось прочитать буфер обмена:", err);
+    }
+  }, []);
 
   const handleSaveDownloadPath = useCallback(async (customPath?: string) => {
     const pathToSave = (customPath ?? downloadPath).trim();
@@ -286,18 +314,32 @@ export const SettingsView: FC = memo(() => {
 
             <PanelSectionRow>
               <Focusable noFocusRing flow-children="row" style={{ display: "flex", gap: 8, alignItems: "center", width: "100%", marginBottom: 8 }}>
-                <div style={{ flex: 1 }}>
-                  <TextField
-                    value={jacredUrl}
-                    onChange={(e) => setJacredUrl(e.target.value)}
-                    {...({
-                      placeholder: t("enterParserUrl"),
-                      spellCheck: false,
-                      autoCorrect: "off",
-                      autoCapitalize: "off"
-                    } as any)}
-                  />
-                </div>
+                <GamepadTextField
+                  value={jacredUrl}
+                  onChange={setJacredUrl}
+                  placeholder={t("enterParserUrl")}
+                />
+                <Focusable
+                  noFocusRing
+                  onActivate={handlePasteJacred}
+                  onClick={handlePasteJacred}
+                  className="ds-btn ds-btn--compact"
+                  style={{
+                    padding: "6px 12px",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                    height: 36,
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    flexShrink: 0
+                  }}
+                  aria-label={t("paste")}
+                >
+                  <FaPaste style={{ fontSize: 11 }} /> {t("paste")}
+                </Focusable>
                 <Focusable
                   noFocusRing
                   onActivate={handleSaveSettings}
@@ -366,13 +408,32 @@ export const SettingsView: FC = memo(() => {
 
             <PanelSectionRow>
               <Focusable noFocusRing flow-children="row" style={{ display: "flex", gap: 8, alignItems: "center", width: "100%", marginBottom: 6 }}>
-                <div style={{ flex: 1 }}>
-                  <TextField
-                    value={downloadPath}
-                    onChange={(e) => setDownloadPath(e.target.value)}
-                    {...({ placeholder: "~/Videos/Projacktor" } as any)}
-                  />
-                </div>
+                <GamepadTextField
+                  value={downloadPath}
+                  onChange={setDownloadPath}
+                  placeholder="~/Videos/Projacktor"
+                />
+                <Focusable
+                  noFocusRing
+                  onActivate={handlePasteDownloadPath}
+                  onClick={handlePasteDownloadPath}
+                  className="ds-btn ds-btn--compact"
+                  style={{
+                    padding: "6px 12px",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                    height: 36,
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    flexShrink: 0
+                  }}
+                  aria-label={t("paste")}
+                >
+                  <FaPaste style={{ fontSize: 11 }} /> {t("paste")}
+                </Focusable>
                 <Focusable
                   noFocusRing
                   onActivate={() => handleSaveDownloadPath()}

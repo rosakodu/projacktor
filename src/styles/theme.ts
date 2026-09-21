@@ -741,6 +741,39 @@ body.projacktor-magicblack-active [class*="_3FIjYetykQsFYR08l1v7Ls"] {
   outline-offset: 1px !important;
 }
 
+/* ───── GamepadTextField Component Styles ───── */
+.projacktor-gamepad-textfield {
+  outline: none !important;
+  border-radius: 6px !important;
+  transition: all 0.15s ease !important;
+}
+
+.projacktor-gamepad-textfield:focus,
+.projacktor-gamepad-textfield.gpfocus,
+.projacktor-gamepad-textfield:focus-within {
+  outline: 2px solid #1a9fff !important;
+  outline-offset: 1px !important;
+  box-shadow: 0 0 10px rgba(26, 159, 255, 0.5) !important;
+  border-radius: 6px !important;
+}
+
+.projacktor-search-view .projacktor-gamepad-textfield,
+.projacktor-search-bar-row .projacktor-gamepad-textfield {
+  border-radius: 0px !important;
+}
+
+.projacktor-search-view .projacktor-gamepad-textfield:focus,
+.projacktor-search-view .projacktor-gamepad-textfield.gpfocus,
+.projacktor-search-view .projacktor-gamepad-textfield:focus-within,
+.projacktor-search-bar-row .projacktor-gamepad-textfield:focus,
+.projacktor-search-bar-row .projacktor-gamepad-textfield.gpfocus,
+.projacktor-search-bar-row .projacktor-gamepad-textfield:focus-within {
+  outline: 2px solid #1a9fff !important;
+  outline-offset: 0px !important;
+  box-shadow: 0 0 10px rgba(26, 159, 255, 0.5) !important;
+  border-radius: 0px !important;
+}
+
 /* ───── Search View Input (Убираем обводку по углам, рамки и свечение у поиска) ───── */
 .projacktor-search-bar-row,
 .projacktor-search-bar-row:focus,

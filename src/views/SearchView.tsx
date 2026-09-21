@@ -1,8 +1,10 @@
 import { FC, useState, useCallback, useEffect, useRef, memo } from "react";
-import { Focusable, TextField } from "@decky/ui";
+import { Focusable } from "@decky/ui";
+import { FaPaste } from "react-icons/fa";
 import { MediaItem } from "../types";
 import { searchCatalog } from "../api";
 import { Shelf } from "../components/Shelf";
+import { GamepadTextField } from "../components";
 import { getActiveDocument } from "../runtime/activeDoc";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
 import { isModalOpen, isUserInTabs, isPlayerActive } from "../runtime/homeInputBus";
@@ -40,7 +42,7 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
       parentScroll.scrollTo({ top: 0, behavior: "smooth" });
     }
 
-    const input = root.querySelector<HTMLElement>("input, .DialogInput");
+    const input = root.querySelector<HTMLElement>(".projacktor-gamepad-textfield, input, .DialogInput");
     if (input) {
       try {
         doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
@@ -132,6 +134,20 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
       setSearchLoading(false);
     }
   }, [searchQuery, searchLoading]);
+
+  const handlePaste = useCallback(async () => {
+    try {
+      let text = "";
+      if (navigator.clipboard && typeof navigator.clipboard.readText === "function") {
+        text = await navigator.clipboard.readText();
+      }
+      if (text && typeof text === "string") {
+        setSearchQuery(text.trim());
+      }
+    } catch (err) {
+      console.warn("Не удалось прочитать буфер обмена:", err);
+    }
+  }, []);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -268,30 +284,46 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
           return undefined;
         }}
       >
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleSearch();
+        <GamepadTextField
+          className="projacktor-search-input"
+          value={searchQuery}
+          onChange={setSearchQuery}
+          onSubmit={handleSearch}
+          onFocus={() => setBackdropMovie(null)}
+          onKeyDown={handleKeyDown}
+          onGamepadDirection={(evt: any) => {
+            const btn = evt?.detail?.button;
+            if (btn === 10 && searchResults.length > 0) {
+              // DPAD_DOWN: переходим на карточки
+              try {
+                evt?.preventDefault?.();
+                evt?.stopPropagation?.();
+              } catch {}
+              focusFirstCard();
+              return false;
+            }
+            return undefined;
           }}
-          style={{ flex: 1, display: "flex" }}
-        >
-          <div style={{ flex: 1 }}>
-            <TextField
-              className="projacktor-search-input"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onFocus={() => setBackdropMovie(null)}
-              onKeyDown={handleKeyDown}
-              {...({ placeholder: t("enterMovieOrShowName") } as any)}
-            />
-          </div>
-        </form>
+          placeholder={t("enterMovieOrShowName")}
+        />
         <Focusable
-          className="ds-btn ds-btn--primary"
+          className="ds-btn ds-btn--compact"
           noFocusRing
           onFocus={() => setBackdropMovie(null)}
-          onActivate={handleSearch}
-          onClick={handleSearch}
+          onActivate={handlePaste}
+          onClick={handlePaste}
+          style={{
+            padding: "8px 14px",
+            fontSize: 12,
+            fontWeight: 600,
+            whiteSpace: "nowrap",
+            height: 38,
+            cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            flexShrink: 0,
+          }}
           onGamepadDirection={(evt: any) => {
             const btn = evt?.detail?.button;
             if (btn === 11) {
@@ -303,6 +335,41 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
               focusSearchInput();
               return false;
             } else if (btn === 10 && searchResults.length > 0) {
+              // DPAD_DOWN: переходим на карточки
+              try {
+                evt?.preventDefault?.();
+                evt?.stopPropagation?.();
+              } catch {}
+              focusFirstCard();
+              return false;
+            }
+            return undefined;
+          }}
+          aria-label={t("paste")}
+        >
+          <FaPaste style={{ fontSize: 11 }} /> {t("paste")}
+        </Focusable>
+        <Focusable
+          className="ds-btn ds-btn--primary"
+          noFocusRing
+          onFocus={() => setBackdropMovie(null)}
+          onActivate={handleSearch}
+          onClick={handleSearch}
+          style={{
+            padding: "8px 16px",
+            fontSize: 12,
+            fontWeight: 600,
+            whiteSpace: "nowrap",
+            height: 38,
+            cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+          onGamepadDirection={(evt: any) => {
+            const btn = evt?.detail?.button;
+            if (btn === 10 && searchResults.length > 0) {
               // DPAD_DOWN: переходим на карточки
               try {
                 evt?.preventDefault?.();

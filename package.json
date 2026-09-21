@@ -1,6 +1,6 @@
 {
   "name": "projacktor",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Self-contained media catalog plugin for Steam Deck — open-source Zona alternative",
   "type": "module",
   "scripts": {
