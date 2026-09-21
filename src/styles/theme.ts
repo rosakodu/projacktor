@@ -97,6 +97,7 @@ export const THEME_STYLES = `
 }
 
 /* ───── Projacktor Nav Bar (L1 / Tabs / R1) ───── */
+/* Базовые стили оптимизированы для компактных экранов (Steam Deck 854px и <= 1100px) */
 .projacktor-nav-bar {
   position: relative !important;
   z-index: 2 !important;
@@ -105,8 +106,8 @@ export const THEME_STYLES = `
   justify-content: space-between !important;
   width: 100% !important;
   padding: 0 !important;
-  gap: 16px !important;
-  height: 38px !important;
+  gap: 10px !important;
+  height: 34px !important;
   flex-shrink: 0 !important;
   user-select: none !important;
   outline: none !important;
@@ -124,12 +125,12 @@ export const THEME_STYLES = `
   background: #ffffff !important;
   color: #0b1016 !important;
   font-weight: 800 !important;
-  font-size: 13.5px !important;
-  letter-spacing: 0.3px !important;
-  padding: 0 10px !important;
-  height: 34px !important;
-  min-width: 44px !important;
-  line-height: 34px !important;
+  font-size: 12px !important;
+  letter-spacing: 0.2px !important;
+  padding: 0 8px !important;
+  height: 30px !important;
+  min-width: 38px !important;
+  line-height: 30px !important;
   border-radius: 4px !important;
   border: none !important;
   cursor: pointer !important;
@@ -161,8 +162,8 @@ export const THEME_STYLES = `
   display: flex !important;
   align-items: center !important;
   justify-content: space-between !important;
-  gap: 8px !important;
-  height: 38px !important;
+  gap: 4px !important;
+  height: 34px !important;
   min-width: 0 !important;
   outline: none !important;
   border-bottom: none !important;
@@ -171,21 +172,21 @@ export const THEME_STYLES = `
 }
 
 .projacktor-tab-item {
-  flex: 1 1 0 !important;
+  flex: 1 1 auto !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
   text-align: center !important;
-  height: 38px !important;
-  line-height: 34px !important;
-  padding: 0 6px !important;
-  font-size: 15px !important;
+  height: 34px !important;
+  line-height: 30px !important;
+  padding: 0 4px !important;
+  font-size: 11.5px !important;
   font-weight: 600 !important;
-  letter-spacing: 0.15px !important;
+  letter-spacing: -0.1px !important;
   color: #8b929a !important;
   background: transparent !important;
   border: none !important;
-  border-bottom: 3.5px solid transparent !important;
+  border-bottom: 3px solid transparent !important;
   border-radius: 0px !important;
   margin: 0 !important;
   cursor: pointer !important;
@@ -210,11 +211,46 @@ export const THEME_STYLES = `
   border-top: none !important;
   border-left: none !important;
   border-right: none !important;
-  border-bottom: 3.5px solid #1a9fff !important;
+  border-bottom: 3px solid #1a9fff !important;
   border-radius: 0px !important;
   margin: 0 !important;
   outline: none !important;
   box-shadow: none !important;
+}
+
+/* ───── Адаптивность для средних и больших экранов ПК (1080p) ───── */
+@media (min-width: 1101px) {
+  .projacktor-nav-bar {
+    height: 38px !important;
+    gap: 16px !important;
+  }
+
+  .projacktor-bumper-pill {
+    height: 34px !important;
+    min-width: 44px !important;
+    font-size: 13.5px !important;
+    padding: 0 10px !important;
+    line-height: 34px !important;
+  }
+
+  .projacktor-tabs-track {
+    height: 38px !important;
+    gap: 8px !important;
+  }
+
+  .projacktor-tab-item {
+    flex: 1 1 0 !important;
+    height: 38px !important;
+    line-height: 34px !important;
+    padding: 0 6px !important;
+    font-size: 15px !important;
+    letter-spacing: 0.15px !important;
+    border-bottom-width: 3.5px !important;
+  }
+
+  .projacktor-tab-item.active {
+    border-bottom-width: 3.5px !important;
+  }
 }
 
 /* ───── Дополнительный масштаб для сверхвысоких разрешений 4K ───── */
@@ -225,7 +261,7 @@ export const THEME_STYLES = `
 
   .projacktor-nav-bar {
     height: 48px !important;
-    gap: 14px !important;
+    gap: 18px !important;
   }
 
   .projacktor-bumper-pill {
@@ -243,10 +279,15 @@ export const THEME_STYLES = `
   }
 
   .projacktor-tab-item {
+    flex: 1 1 0 !important;
     height: 48px !important;
     line-height: 44px !important;
     padding: 0 18px !important;
     font-size: 19px !important;
+    border-bottom-width: 4px !important;
+  }
+
+  .projacktor-tab-item.active {
     border-bottom-width: 4px !important;
   }
 }
