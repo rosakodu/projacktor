@@ -57,7 +57,8 @@ export const SettingsView: FC = memo(() => {
       })
       .catch(() => {});
 
-    rpcGetStatus()
+    const statusTimeout = new Promise<any>((resolve) => setTimeout(() => resolve(null), 6000));
+    Promise.race([rpcGetStatus(), statusTimeout])
       .then((st: any) => {
         if (!isMounted) return;
         if (st) {
@@ -77,9 +78,28 @@ export const SettingsView: FC = memo(() => {
           if (st.download_path && !downloadPath) {
             setDownloadPath(st.download_path);
           }
+        } else {
+          if (cachedJacredOk === null) {
+            cachedJacredOk = false;
+            setJacredOk(false);
+          }
+          if (cachedTorrServerOk === null) {
+            cachedTorrServerOk = false;
+            setTorrServerOk(false);
+          }
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!isMounted) return;
+        if (cachedJacredOk === null) {
+          cachedJacredOk = false;
+          setJacredOk(false);
+        }
+        if (cachedTorrServerOk === null) {
+          cachedTorrServerOk = false;
+          setTorrServerOk(false);
+        }
+      });
 
     return () => {
       isMounted = false;
@@ -127,27 +147,42 @@ export const SettingsView: FC = memo(() => {
   }, []);
 
   const handleSaveSettings = useCallback(async () => {
+    if (settingsSaving) return;
     setSettingsSaving(true);
     try {
       let cleanUrl = jacredUrl.trim();
       if (cleanUrl) {
-        if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
-          cleanUrl = `https://${cleanUrl}`;
-        }
+        // Очищаем от путей API, если пользователь скопировал полную ссылку
+        cleanUrl = cleanUrl.replace(/\/api\/v2\.0\/.*$/i, "");
+        cleanUrl = cleanUrl.replace(/\/api\/.*$/i, "");
         cleanUrl = cleanUrl.replace(/\/+$/, "");
+
+        if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
+          const isLocal =
+            /^(localhost|127\.|192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/i.test(cleanUrl) ||
+            /:(9117|8090|8095|8080|80)\b/.test(cleanUrl);
+          cleanUrl = isLocal ? `http://${cleanUrl}` : `https://${cleanUrl}`;
+        }
         setJacredUrl(cleanUrl);
       }
-      const ok = cleanUrl ? await rpcCheckJacred(cleanUrl) : false;
+
+      // Защита от бесконечного ожидания ответа от бэкенда
+      const checkPromise = cleanUrl ? rpcCheckJacred(cleanUrl) : Promise.resolve(false);
+      const timeoutPromise = new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 7000));
+      const ok = await Promise.race([checkPromise, timeoutPromise]).catch(() => false);
+
       cachedJacredOk = ok;
       cachedJacredUrl = cleanUrl;
       setJacredOk(ok);
-      await rpcSaveSettings(JSON.stringify({ jacred_url: cleanUrl }));
+      await rpcSaveSettings(JSON.stringify({ jacred_url: cleanUrl })).catch(() => {});
     } catch (err) {
       console.error("Не удалось сохранить настройки:", err);
+      cachedJacredOk = false;
+      setJacredOk(false);
     } finally {
       setSettingsSaving(false);
     }
-  }, [jacredUrl]);
+  }, [jacredUrl, settingsSaving]);
 
   const handleSaveDownloadPath = useCallback(async (customPath?: string) => {
     const pathToSave = (customPath ?? downloadPath).trim();

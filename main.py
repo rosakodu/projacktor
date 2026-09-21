@@ -199,7 +199,13 @@ class Plugin:
             except Exception:
                 total, used, free = 0, 0, 0
             
-        j_ok = ping_jacred(sett.get('jacred_url') or '', timeout=4)
+        try:
+            j_ok = await asyncio.wait_for(
+                asyncio.to_thread(ping_jacred, sett.get('jacred_url') or '', timeout=3),
+                timeout=4.0
+            )
+        except Exception:
+            j_ok = False
         ts_ok = self.ts.ensure_running() if self.ts else False
         drives = get_available_storage_drives()
         
@@ -255,7 +261,14 @@ class Plugin:
         }
 
     async def check_jacred(self, url: str):
-        return ping_jacred(url, timeout=6)
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(ping_jacred, url, timeout=4),
+                timeout=5.0
+            )
+        except Exception as e:
+            logger.warning(f"check_jacred error or timeout for {url}: {e}")
+            return False
 
     async def get_steam_language(self):
         try:

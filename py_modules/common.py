@@ -48,15 +48,31 @@ def normalize_jacred_url(url: str) -> str:
     u = str(url).strip()
     if not u:
         return ""
+    # Очищаем от путей API, если пользователь скопировал полную ссылку
+    u = re.sub(r'/api/v2\.0/.*$', '', u, flags=re.IGNORECASE)
+    u = re.sub(r'/api/.*$', '', u, flags=re.IGNORECASE)
+    u = u.rstrip('/')
+
     if not (u.startswith("http://") or u.startswith("https://")):
-        u = f"https://{u}"
+        # Если это localhost, локальный IP или порт (например :9117, :8090), по умолчанию http://
+        is_local = bool(
+            re.search(r'^(localhost|127\.|192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)', u, re.IGNORECASE)
+            or re.search(r':(9117|8090|8095|8080|80)\b', u)
+        )
+        u = f"http://{u}" if is_local else f"https://{u}"
     return u.rstrip('/')
 
-def ping_jacred(url: str, timeout: int = 5) -> bool:
+def ping_jacred(url: str, timeout: int = 4) -> bool:
     url = normalize_jacred_url(url)
     if not url:
         return False
-    ctx = get_ssl_context()
+
+    contexts = [get_ssl_context()]
+    try:
+        contexts.append(ssl._create_unverified_context())
+    except Exception:
+        pass
+
     headers = {
         "User-Agent": "Mozilla/5.0 (X11; SteamOS; Linux x86_64) AppleWebKit/537.36",
         "Accept": "application/json"
@@ -65,18 +81,26 @@ def ping_jacred(url: str, timeout: int = 5) -> bool:
         "/api/v2.0/indexers",
         "/api/v2.0/indexers/all/results?apikey=1&Query=test"
     ]
-    for ep in endpoints:
-        try:
-            req = urllib.request.Request(f"{url}{ep}", headers=headers)
-            with urllib.request.urlopen(req, timeout=timeout, context=ctx) as response:
-                if response.status in (200, 204):
-                    return True
-        except urllib.error.HTTPError as e:
-            if e.code in (200, 401, 429):
-                return True
-        except Exception as e:
-            logger.debug(f"Jacred ping error for {url}{ep}: {e}")
-            continue
+
+    urls_to_try = [url]
+    if url.startswith("https://"):
+        urls_to_try.append("http://" + url[8:])
+
+    for test_url in urls_to_try:
+        for ep in endpoints:
+            for ctx in contexts:
+                try:
+                    req = urllib.request.Request(f"{test_url}{ep}", headers=headers)
+                    with urllib.request.urlopen(req, timeout=timeout, context=ctx) as response:
+                        if response.status in (200, 204):
+                            return True
+                except urllib.error.HTTPError as e:
+                    # 200, 401, 403, 429: сервер ответил, API Jackett/JacRed доступен
+                    if e.code in (200, 401, 403, 429):
+                        return True
+                except Exception as e:
+                    logger.debug(f"Jacred ping error for {test_url}{ep}: {e}")
+                    break
     return False
 
 def load_settings():
