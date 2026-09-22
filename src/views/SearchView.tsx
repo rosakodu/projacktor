@@ -41,7 +41,7 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
       parentScroll.scrollTo({ top: 0, behavior: "smooth" });
     }
 
-    const input = root.querySelector<HTMLElement>(".projacktor-gamepad-textfield, input, .DialogInput");
+    const input = root.querySelector<HTMLElement>("input, .DialogInput, .projacktor-gamepad-textfield");
     if (input) {
       try {
         doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));

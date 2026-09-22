@@ -751,6 +751,9 @@ body.projacktor-magicblack-active [class*="_3FIjYetykQsFYR08l1v7Ls"] {
   box-shadow: none !important;
 }
 
+.projacktor-settings-card input:focus,
+.projacktor-settings-card input.gpfocus,
+.projacktor-settings-card .DialogInput.gpfocus,
 .projacktor-settings-card .projacktor-gamepad-textfield.gpfocus input,
 .projacktor-settings-card .projacktor-gamepad-textfield.gpfocus .DialogInput,
 .projacktor-settings-card .projacktor-gamepad-textfield:focus-within input,

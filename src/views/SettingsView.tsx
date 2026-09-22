@@ -116,7 +116,7 @@ export const SettingsView: FC = memo(() => {
 
       const firstInteractive = root
         ? root.querySelector<HTMLElement>(
-            ".projacktor-gamepad-textfield, input, button, .DialogButton, [tabindex='0']"
+            "input, .DialogInput, button, .DialogButton, [tabindex='0']"
           )
         : null;
       if (firstInteractive) {
