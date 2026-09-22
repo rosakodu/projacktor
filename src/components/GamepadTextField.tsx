@@ -30,6 +30,8 @@ export const GamepadTextField: FC<GamepadTextFieldProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const fieldRef = useRef<any>(null);
+  const lastActivateTimeRef = useRef<number>(0);
+  const activateTimerRef = useRef<any>(null);
 
   const getInputElement = useCallback((): HTMLInputElement | null => {
     if (containerRef.current) {
@@ -46,17 +48,57 @@ export const GamepadTextField: FC<GamepadTextFieldProps> = ({
     return null;
   }, []);
 
-  const focusAndOpenKeyboard = useCallback(() => {
+  const handleActivate = useCallback(() => {
     if (disabled) return;
-    const input = getInputElement();
-    if (input) {
-      try {
-        input.scrollIntoView({ block: "center", behavior: "smooth" });
-      } catch {}
-      input.focus();
-      input.click();
+
+    const now = Date.now();
+    if (now - lastActivateTimeRef.current < 400) {
+      return;
     }
+    lastActivateTimeRef.current = now;
+
+    if (activateTimerRef.current) {
+      clearTimeout(activateTimerRef.current);
+    }
+
+    // Делаем небольшую задержку (50мс), чтобы обработчик кнопки 'A' в навигации SteamOS
+    // успел завершить свой цикл на контейнере Focusable и не перехватил фокус обратно с input
+    activateTimerRef.current = setTimeout(() => {
+      const input = getInputElement();
+      if (input) {
+        try {
+          input.scrollIntoView({ block: "center", behavior: "smooth" });
+        } catch {}
+        input.focus();
+        input.click();
+      }
+    }, 50);
   }, [disabled, getInputElement]);
+
+  const handleClick = useCallback(
+    (e: any) => {
+      if (disabled) return;
+      const input = getInputElement();
+      // Если клик пришёлся прямо на сам <input>, браузер и SteamOS уже открывают клавиатуру нативно!
+      // Повторный вызов input.click() приводит к мгновенному закрытию клавиатуры в SteamOS.
+      if (input && (e?.target === input || input.contains(e?.target as Node))) {
+        try {
+          input.scrollIntoView({ block: "center", behavior: "smooth" });
+        } catch {}
+        return;
+      }
+      handleActivate();
+    },
+    [disabled, getInputElement, handleActivate]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (activateTimerRef.current) {
+        clearTimeout(activateTimerRef.current);
+      }
+    };
+  }, []);
 
   // При закрытии виртуальной клавиатуры (OK или Cancel) возвращаем фокус на контейнер Focusable
   useEffect(() => {
@@ -109,8 +151,8 @@ export const GamepadTextField: FC<GamepadTextFieldProps> = ({
   return (
     <Focusable
       ref={containerRef}
-      onActivate={focusAndOpenKeyboard}
-      onClick={focusAndOpenKeyboard}
+      onActivate={handleActivate}
+      onClick={handleClick}
       onGamepadDirection={onGamepadDirection}
       noFocusRing
       className={`projacktor-gamepad-textfield ${className || ""}`}
@@ -129,6 +171,10 @@ export const GamepadTextField: FC<GamepadTextFieldProps> = ({
         onBlur={onBlur}
         onKeyDown={handleKeyDownInternal}
         disabled={disabled}
+        onClick={(e: any) => {
+          // Предотвращаем всплытие клика от input к контейнеру
+          e?.stopPropagation?.();
+        }}
         {...({
           placeholder,
           spellCheck: false,
