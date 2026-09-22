@@ -253,7 +253,7 @@ export const SettingsView: FC = memo(() => {
       }}
       style={{
         width: "100%",
-        padding: "12px 36px 24px 36px",
+        padding: "12px 36px 240px 36px",
         boxSizing: "border-box",
         overflowY: "auto",
       }}

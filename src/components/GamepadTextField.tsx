@@ -50,6 +50,9 @@ export const GamepadTextField: FC<GamepadTextFieldProps> = ({
     if (disabled) return;
     const input = getInputElement();
     if (input) {
+      try {
+        input.scrollIntoView({ block: "center", behavior: "smooth" });
+      } catch {}
       input.focus();
       input.click();
     }
