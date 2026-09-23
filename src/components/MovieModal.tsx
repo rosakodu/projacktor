@@ -2,6 +2,7 @@ import { FC, useState, useEffect, useRef, useCallback } from "react";
 import { ModalRoot, Focusable, Spinner } from "@decky/ui";
 import { FaPlay, FaDownload, FaList, FaSpinner, FaMoon, FaBookmark, FaCheck } from "react-icons/fa";
 import { PROJACKTOR_STYLES } from "../styles";
+import { MarqueeTitle } from "./MarqueeTitle";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
 import { getActiveDocument } from "../runtime/activeDoc";
 import { playNavSound } from "../runtime/navSound";
@@ -741,9 +742,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                     <div key={tId || `${tor.tracker}-${idx}`} className="projacktor-torrent-card">
                       <div className="projacktor-torrent-header-row">
                         <div className="projacktor-torrent-info">
-                          <div className="projacktor-torrent-title" title={tor.title}>
-                            {tor.title}
-                          </div>
+                          <MarqueeTitle title={tor.title} />
                           <div className="projacktor-torrent-meta">
                             {tor.quality && (
                               <span

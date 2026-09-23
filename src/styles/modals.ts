@@ -147,6 +147,31 @@ div:has(> .projacktor-modal-root) {
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.2;
+  position: relative;
+  width: 100%;
+}
+
+.projacktor-torrent-title-inner {
+  display: inline-block;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+.projacktor-torrent-title--marquee {
+  text-overflow: clip;
+}
+
+.projacktor-torrent-title--marquee .projacktor-torrent-title-inner {
+  animation: projacktor-marquee var(--marquee-dur, 8s) cubic-bezier(0.4, 0, 0.2, 1) infinite alternate;
+}
+
+@keyframes projacktor-marquee {
+  0%, 18% {
+    transform: translateX(0px);
+  }
+  82%, 100% {
+    transform: translateX(var(--marquee-dist, -40px));
+  }
 }
 
 .projacktor-torrent-meta {

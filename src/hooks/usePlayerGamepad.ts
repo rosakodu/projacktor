@@ -33,6 +33,7 @@ interface UsePlayerGamepadParams {
   startZoomLoop: () => void;
   stopZoomLoop: () => void;
   resetControlsTimer: () => void;
+  toggleControls?: () => void;
   handleMenuDirection: (dir: "up" | "down", menuKey: "sub" | "audio") => void;
   l2HeldRef: RefObject<boolean | null | undefined> | { current: boolean };
   r2HeldRef: RefObject<boolean | null | undefined> | { current: boolean };
@@ -71,6 +72,7 @@ export function usePlayerGamepad({
   startZoomLoop,
   stopZoomLoop,
   resetControlsTimer,
+  toggleControls,
   handleMenuDirection,
   l2HeldRef,
   r2HeldRef,
@@ -151,6 +153,22 @@ export function usePlayerGamepad({
       // Кнопка R3 (41): сброс зума до 100%
       if (e.button === RawButton.R3 || e.button === 41) {
         resetZoom();
+        return;
+      }
+
+      // Кнопка L3 (25): нажатие левого стика — мгновенное скрытие / переключение интерфейса плеера
+      if (e.button === RawButton.L3 || e.button === 25) {
+        triggerHaptic("click", "left");
+        if (toggleControls) {
+          toggleControls();
+        } else if (showControlsRef.current) {
+          setShowControls(false);
+          setShowAudioMenu(false);
+          setShowSubtitleMenu(false);
+        } else {
+          setShowControls(true);
+          resetControlsTimer();
+        }
         return;
       }
 
@@ -589,6 +607,21 @@ export function usePlayerGamepad({
         e.stopPropagation();
         (e as any).stopImmediatePropagation?.();
         resetZoom();
+      } else if (e.key === "h" || e.key === "H") {
+        e.preventDefault();
+        e.stopPropagation();
+        (e as any).stopImmediatePropagation?.();
+        triggerHaptic("click", "left");
+        if (toggleControls) {
+          toggleControls();
+        } else if (showControlsRef.current) {
+          setShowControls(false);
+          setShowAudioMenu(false);
+          setShowSubtitleMenu(false);
+        } else {
+          setShowControls(true);
+          resetControlsTimer();
+        }
       }
     };
 

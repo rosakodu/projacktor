@@ -31,13 +31,25 @@ else:
 
 _db_projacktor = os.path.join(CONFIG_DIR, "projacktor.db")
 _db_legacy = os.path.join(CONFIG_DIR, "projactor.db")
-if os.path.isfile(_db_legacy) and os.path.getsize(_db_legacy) > 0:
-    if not os.path.isfile(_db_projacktor) or os.path.getsize(_db_projacktor) == 0:
-        try:
-            shutil.copy2(_db_legacy, _db_projacktor)
-            logger.info(f"Migrated legacy database {_db_legacy} -> {_db_projacktor}")
-        except Exception as e:
-            logger.error(f"Failed to migrate legacy db: {e}")
+
+# Multi-location restoration check: if projacktor.db missing/empty, restore from backup or legacy paths
+if not os.path.isfile(_db_projacktor) or os.path.getsize(_db_projacktor) == 0:
+    for candidate in [
+        _db_projacktor + ".bak",
+        _db_legacy,
+        os.path.join(get_user_home(), ".config", "projactor", "projacktor.db"),
+        os.path.join(get_user_home(), ".config", "projecktor", "projacktor.db"),
+        os.path.join(get_user_home(), "homebrew", "data", "Projacktor", "projacktor.db"),
+        os.path.join(get_user_home(), "homebrew", "settings", "Projacktor", "projacktor.db"),
+    ]:
+        if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
+            try:
+                os.makedirs(CONFIG_DIR, exist_ok=True)
+                shutil.copy2(candidate, _db_projacktor)
+                logger.info(f"Restored database from {candidate} -> {_db_projacktor}")
+                break
+            except Exception as e:
+                logger.warning(f"Could not restore db from {candidate}: {e}")
 
 if os.path.isfile(_db_projacktor) and os.path.getsize(_db_projacktor) > 0:
     DB_PATH = _db_projacktor
@@ -110,6 +122,11 @@ def get_db():
 def init_db():
     with DB_LOCK:
         os.makedirs(CONFIG_DIR, exist_ok=True)
+        if os.path.isfile(DB_PATH) and os.path.getsize(DB_PATH) > 0:
+            try:
+                shutil.copy2(DB_PATH, DB_PATH + ".bak")
+            except Exception:
+                pass
         conn = sqlite3.connect(DB_PATH, timeout=20.0)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=5000")
@@ -333,4 +350,10 @@ def init_db():
 
         conn.commit()
         conn.close()
+        try:
+            os.chmod(CONFIG_DIR, 0o777)
+            if os.path.isfile(DB_PATH):
+                os.chmod(DB_PATH, 0o666)
+        except Exception:
+            pass
         logger.info("Database initialized with full modern schema and indexes")

@@ -377,7 +377,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     return undefined;
   }, [showAudioMenu, selectedAudio, audioTracks]);
 
-  // Auto-hide controls after 15 seconds of inactivity
+  // Auto-hide controls after 3 seconds of inactivity
   const resetControlsTimer = useCallback(() => {
     setShowControls(true);
     if (controlsTimeoutRef.current !== null) {
@@ -387,9 +387,29 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     if (isPlaying && !showAudioMenu && !showSubtitleMenu) {
       controlsTimeoutRef.current = window.setTimeout(() => {
         setShowControls(false);
-      }, 15000);
+      }, 3000);
     }
   }, [isPlaying, showAudioMenu, showSubtitleMenu]);
+
+  // Мгновенное скрытие интерфейса плеера (например, по нажатию левого стика L3)
+  const hideControls = useCallback(() => {
+    setShowControls(false);
+    setShowAudioMenu(false);
+    setShowSubtitleMenu(false);
+    if (controlsTimeoutRef.current !== null) {
+      window.clearTimeout(controlsTimeoutRef.current);
+      controlsTimeoutRef.current = null;
+    }
+  }, []);
+
+  const toggleControls = useCallback(() => {
+    if (showControlsRef.current) {
+      hideControls();
+    } else {
+      setShowControls(true);
+      resetControlsTimer();
+    }
+  }, [hideControls, resetControlsTimer]);
 
   const changeVolume = useCallback((delta: number) => {
     setVolume((prev) => {
@@ -969,6 +989,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     startZoomLoop,
     stopZoomLoop,
     resetControlsTimer,
+    toggleControls,
     handleMenuDirection,
     l2HeldRef,
     r2HeldRef,

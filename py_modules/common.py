@@ -105,6 +105,23 @@ def ping_jacred(url: str, timeout: int = 4) -> bool:
 
 def load_settings():
     if not os.path.exists(SETTINGS_PATH):
+        # Multi-location restoration check: if settings.json missing, check backup or legacy locations
+        for alt_path in [
+            SETTINGS_PATH + ".bak",
+            os.path.join(get_user_home(), ".config", "projactor", "settings.json"),
+            os.path.join(get_user_home(), ".config", "projecktor", "settings.json"),
+            os.path.join(get_user_home(), "homebrew", "settings", "Projacktor", "settings.json"),
+        ]:
+            if os.path.isfile(alt_path) and os.path.getsize(alt_path) > 0:
+                try:
+                    os.makedirs(CONFIG_DIR, exist_ok=True)
+                    shutil.copy2(alt_path, SETTINGS_PATH)
+                    logger.info(f"Restored settings from {alt_path} -> {SETTINGS_PATH}")
+                    break
+                except Exception as e:
+                    logger.warning(f"Could not restore settings from {alt_path}: {e}")
+
+    if not os.path.exists(SETTINGS_PATH):
         save_settings(DEFAULT_SETTINGS)
         return DEFAULT_SETTINGS.copy()
     try:
@@ -120,9 +137,20 @@ def load_settings():
                 if norm != merged["jacred_url"]:
                     merged["jacred_url"] = norm
                     save_settings(merged)
+            # Safe backup on every successful load
+            try:
+                shutil.copy2(SETTINGS_PATH, SETTINGS_PATH + ".bak")
+            except Exception:
+                pass
             return merged
     except Exception as e:
         logger.error(f"Error loading settings: {e}")
+        if os.path.exists(SETTINGS_PATH + ".bak"):
+            try:
+                with open(SETTINGS_PATH + ".bak", 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except Exception:
+                pass
         return DEFAULT_SETTINGS.copy()
 
 def save_settings(settings):
@@ -134,12 +162,30 @@ def save_settings(settings):
                 current.update(json.load(f))
         except Exception:
             pass
+    elif os.path.exists(SETTINGS_PATH + ".bak"):
+        try:
+            with open(SETTINGS_PATH + ".bak", 'r', encoding='utf-8') as f:
+                current.update(json.load(f))
+        except Exception:
+            pass
     if isinstance(settings, dict):
-        current.update(settings)
-    if "jacred_url" in current:
+        for k, v in settings.items():
+            if v is not None:
+                current[k] = v
+    if "jacred_url" in current and current["jacred_url"]:
         current["jacred_url"] = normalize_jacred_url(current.get("jacred_url"))
-    with open(SETTINGS_PATH, 'w', encoding='utf-8') as f:
+
+    tmp_path = SETTINGS_PATH + ".tmp"
+    with open(tmp_path, 'w', encoding='utf-8') as f:
         json.dump(current, f, indent=4)
+    os.replace(tmp_path, SETTINGS_PATH)
+
+    try:
+        shutil.copy2(SETTINGS_PATH, SETTINGS_PATH + ".bak")
+        os.chmod(SETTINGS_PATH, 0o666)
+        os.chmod(CONFIG_DIR, 0o777)
+    except Exception:
+        pass
 
 _vaapi_supported = None
 
