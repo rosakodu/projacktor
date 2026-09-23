@@ -59,6 +59,9 @@ else:
     DB_PATH = _db_projacktor
 SETTINGS_PATH = os.path.join(CONFIG_DIR, "settings.json")
 
+DECKY_SETTINGS_DIR = os.environ.get("DECKY_PLUGIN_SETTINGS_DIR") or os.path.join(get_user_home(), "homebrew", "settings", "Projacktor")
+DECKY_SETTINGS_PATH = os.path.join(DECKY_SETTINGS_DIR, "settings.json")
+
 # Default Video path: Projacktor (fall back to legacy paths if they exist)
 _legacy_video1 = os.path.join(get_user_home(), "Video", "Projactor")
 _legacy_video2 = os.path.join(get_user_home(), "Video", "Projecktor")
@@ -133,6 +136,12 @@ def init_db():
         conn.execute("PRAGMA foreign_keys = ON")
         cursor = conn.cursor()
         cursor.executescript('''
+        CREATE TABLE IF NOT EXISTS plugin_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
         CREATE TABLE IF NOT EXISTS media (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             tmdb_id INTEGER UNIQUE,
@@ -357,3 +366,48 @@ def init_db():
         except Exception:
             pass
         logger.info("Database initialized with full modern schema and indexes")
+
+def db_get_setting(key: str, default: str = "") -> str:
+    try:
+        with DB_LOCK:
+            conn = sqlite3.connect(DB_PATH, timeout=5.0)
+            cursor = conn.cursor()
+            cursor.execute("CREATE TABLE IF NOT EXISTS plugin_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+            row = cursor.execute("SELECT value FROM plugin_settings WHERE key = ?", (key,)).fetchone()
+            conn.close()
+            if row and row[0] is not None:
+                return str(row[0])
+    except Exception as e:
+        logger.debug(f"db_get_setting error for {key}: {e}")
+    return default
+
+def db_set_setting(key: str, value: str):
+    try:
+        with DB_LOCK:
+            conn = sqlite3.connect(DB_PATH, timeout=5.0)
+            cursor = conn.cursor()
+            cursor.execute("CREATE TABLE IF NOT EXISTS plugin_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+            cursor.execute(
+                "INSERT INTO plugin_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
+                (key, str(value) if value is not None else "")
+            )
+            conn.commit()
+            conn.close()
+    except Exception as e:
+        logger.debug(f"db_set_setting error for {key}: {e}")
+
+def db_get_all_settings() -> dict:
+    res = {}
+    try:
+        with DB_LOCK:
+            conn = sqlite3.connect(DB_PATH, timeout=5.0)
+            cursor = conn.cursor()
+            cursor.execute("CREATE TABLE IF NOT EXISTS plugin_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+            for row in cursor.execute("SELECT key, value FROM plugin_settings").fetchall():
+                if row and row[0]:
+                    res[row[0]] = row[1]
+            conn.close()
+    except Exception as e:
+        logger.debug(f"db_get_all_settings error: {e}")
+    return res

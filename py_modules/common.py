@@ -24,10 +24,15 @@ except ImportError:
 from .db import (
     CONFIG_DIR,
     SETTINGS_PATH,
+    DECKY_SETTINGS_DIR,
+    DECKY_SETTINGS_PATH,
     DEFAULT_SETTINGS,
     get_user_home,
     get_db,
-    DB_LOCK
+    DB_LOCK,
+    db_get_setting,
+    db_set_setting,
+    db_get_all_settings
 )
 
 def get_ssl_context():
@@ -103,89 +108,176 @@ def ping_jacred(url: str, timeout: int = 4) -> bool:
                     break
     return False
 
-def load_settings():
-    if not os.path.exists(SETTINGS_PATH):
-        # Multi-location restoration check: if settings.json missing, check backup or legacy locations
-        for alt_path in [
-            SETTINGS_PATH + ".bak",
-            os.path.join(get_user_home(), ".config", "projactor", "settings.json"),
-            os.path.join(get_user_home(), ".config", "projecktor", "settings.json"),
-            os.path.join(get_user_home(), "homebrew", "settings", "Projacktor", "settings.json"),
-        ]:
-            if os.path.isfile(alt_path) and os.path.getsize(alt_path) > 0:
-                try:
-                    os.makedirs(CONFIG_DIR, exist_ok=True)
-                    shutil.copy2(alt_path, SETTINGS_PATH)
-                    logger.info(f"Restored settings from {alt_path} -> {SETTINGS_PATH}")
-                    break
-                except Exception as e:
-                    logger.warning(f"Could not restore settings from {alt_path}: {e}")
+def _get_all_settings_candidates():
+    candidates = [
+        SETTINGS_PATH,
+        SETTINGS_PATH + ".bak",
+        DECKY_SETTINGS_PATH,
+        DECKY_SETTINGS_PATH + ".bak",
+        os.path.join(get_user_home(), ".config", "projactor", "settings.json"),
+        os.path.join(get_user_home(), ".config", "projecktor", "settings.json"),
+        os.path.join(get_user_home(), "homebrew", "settings", "projactor", "settings.json"),
+        os.path.join(get_user_home(), "homebrew", "data", "Projacktor", "settings.json"),
+    ]
+    seen = set()
+    res = []
+    for c in candidates:
+        if c and c not in seen:
+            seen.add(c)
+            res.append(c)
+    return res
 
-    if not os.path.exists(SETTINGS_PATH):
-        save_settings(DEFAULT_SETTINGS)
-        return DEFAULT_SETTINGS.copy()
+def _read_settings_file(path):
+    if not path or not os.path.isfile(path) or os.path.getsize(path) == 0:
+        return None
     try:
-        with open(SETTINGS_PATH, 'r', encoding='utf-8') as f:
-            settings = json.load(f)
-            merged = DEFAULT_SETTINGS.copy()
-            merged.update(settings)
-            if merged.get("tmdb_api_key") == "aa86d1a6876222de71c258408e1a4ed3":
-                merged["tmdb_api_key"] = DEFAULT_SETTINGS["tmdb_api_key"]
-                save_settings(merged)
-            if merged.get("jacred_url"):
-                norm = normalize_jacred_url(merged["jacred_url"])
-                if norm != merged["jacred_url"]:
-                    merged["jacred_url"] = norm
-                    save_settings(merged)
-            # Safe backup on every successful load
-            try:
-                shutil.copy2(SETTINGS_PATH, SETTINGS_PATH + ".bak")
-            except Exception:
-                pass
-            return merged
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            if isinstance(data, dict):
+                return data
     except Exception as e:
-        logger.error(f"Error loading settings: {e}")
-        if os.path.exists(SETTINGS_PATH + ".bak"):
+        logger.debug(f"Could not read settings from {path}: {e}")
+    return None
+
+def load_settings():
+    merged = DEFAULT_SETTINGS.copy()
+    loaded_any = False
+
+    # 1. Читаем основной файл settings.json
+    primary_data = _read_settings_file(SETTINGS_PATH)
+    if primary_data:
+        merged.update(primary_data)
+        loaded_any = True
+
+    # 2. Если файл отсутствует или ссылка на парсер пустая — ищем по резервным и официальным копиям
+    candidates = _get_all_settings_candidates()
+    if not merged.get("jacred_url"):
+        for cand in candidates:
+            if cand == SETTINGS_PATH:
+                continue
+            cand_data = _read_settings_file(cand)
+            if cand_data and cand_data.get("jacred_url"):
+                norm = normalize_jacred_url(cand_data["jacred_url"])
+                if norm:
+                    merged["jacred_url"] = norm
+                    logger.info(f"Restored jacred_url from {cand} -> {norm}")
+                    break
+
+    # 3. Если ссылка всё ещё не найдена — проверяем таблицу настроек внутри SQLite базы данных
+    if not merged.get("jacred_url"):
+        try:
+            db_url = db_get_setting("jacred_url", "")
+            if db_url:
+                norm = normalize_jacred_url(db_url)
+                if norm:
+                    merged["jacred_url"] = norm
+                    logger.info(f"Restored jacred_url from SQLite DB -> {norm}")
+        except Exception as e:
+            logger.debug(f"Error querying db for jacred_url: {e}")
+
+    # 4. Проверяем путь загрузок (при необходимости восстанавливаем из альтернативных мест)
+    if not loaded_any or not merged.get("download_path") or merged.get("download_path") == DEFAULT_SETTINGS.get("download_path"):
+        for cand in candidates:
+            cand_data = _read_settings_file(cand)
+            if cand_data and cand_data.get("download_path"):
+                merged["download_path"] = cand_data["download_path"]
+                break
+        if not merged.get("download_path") or merged.get("download_path") == DEFAULT_SETTINGS.get("download_path"):
             try:
-                with open(SETTINGS_PATH + ".bak", 'r', encoding='utf-8') as f:
-                    return json.load(f)
+                db_dp = db_get_setting("download_path", "")
+                if db_dp:
+                    merged["download_path"] = db_dp
             except Exception:
                 pass
-        return DEFAULT_SETTINGS.copy()
+
+    if merged.get("tmdb_api_key") == "aa86d1a6876222de71c258408e1a4ed3":
+        merged["tmdb_api_key"] = DEFAULT_SETTINGS["tmdb_api_key"]
+
+    if merged.get("jacred_url"):
+        merged["jacred_url"] = normalize_jacred_url(merged["jacred_url"])
+
+    # Синхронизируем настройки во все хранилища (включая Decky dir и SQLite)
+    save_settings(merged)
+    return merged
 
 def save_settings(settings):
     os.makedirs(CONFIG_DIR, exist_ok=True)
+    try:
+        os.makedirs(DECKY_SETTINGS_DIR, exist_ok=True)
+    except Exception:
+        pass
+
     current = DEFAULT_SETTINGS.copy()
-    if os.path.exists(SETTINGS_PATH):
+
+    # Считываем текущее состояние из существующих файлов
+    for p in [SETTINGS_PATH, SETTINGS_PATH + ".bak", DECKY_SETTINGS_PATH, DECKY_SETTINGS_PATH + ".bak"]:
+        data = _read_settings_file(p)
+        if data:
+            current.update(data)
+            break
+
+    # Если в файлах не было ссылки на парсер, подтягиваем из базы данных
+    if not current.get("jacred_url"):
         try:
-            with open(SETTINGS_PATH, 'r', encoding='utf-8') as f:
-                current.update(json.load(f))
+            db_url = db_get_setting("jacred_url", "")
+            if db_url:
+                current["jacred_url"] = db_url
         except Exception:
             pass
-    elif os.path.exists(SETTINGS_PATH + ".bak"):
-        try:
-            with open(SETTINGS_PATH + ".bak", 'r', encoding='utf-8') as f:
-                current.update(json.load(f))
-        except Exception:
-            pass
+
     if isinstance(settings, dict):
         for k, v in settings.items():
             if v is not None:
+                # Критически важная защита: если передана пустая ссылка на парсер,
+                # но у нас уже есть сохраненная валидная ссылка — НЕ затираем её
+                # пустым значением (защита от дефолтных перезаписей и гонок)
+                if k == "jacred_url" and not str(v).strip() and current.get("jacred_url") and not settings.get("_force_clear"):
+                    continue
                 current[k] = v
+
     if "jacred_url" in current and current["jacred_url"]:
         current["jacred_url"] = normalize_jacred_url(current.get("jacred_url"))
 
-    tmp_path = SETTINGS_PATH + ".tmp"
-    with open(tmp_path, 'w', encoding='utf-8') as f:
-        json.dump(current, f, indent=4)
-    os.replace(tmp_path, SETTINGS_PATH)
+    def _write_atomic(target_path):
+        try:
+            d = os.path.dirname(target_path)
+            os.makedirs(d, exist_ok=True)
+            tmp_path = target_path + ".tmp"
+            with open(tmp_path, 'w', encoding='utf-8') as f:
+                json.dump(current, f, indent=4)
+            os.replace(tmp_path, target_path)
+            try:
+                # Обновляем .bak, только если текущий конфиг содержит данные
+                if current.get("jacred_url") or not os.path.exists(target_path + ".bak"):
+                    shutil.copy2(target_path, target_path + ".bak")
+            except Exception:
+                pass
+            try:
+                os.chmod(target_path, 0o666)
+                if os.path.exists(target_path + ".bak"):
+                    os.chmod(target_path + ".bak", 0o666)
+                os.chmod(d, 0o777)
+            except Exception:
+                pass
+        except Exception as e:
+            logger.warning(f"Failed to write settings to {target_path}: {e}")
 
+    # 1. Запись в основной путь ~/.config/projacktor/settings.json
+    _write_atomic(SETTINGS_PATH)
+
+    # 2. Зеркалирование в официальную папку настроек Decky ~/homebrew/settings/Projacktor/settings.json
+    if DECKY_SETTINGS_PATH != SETTINGS_PATH:
+        _write_atomic(DECKY_SETTINGS_PATH)
+
+    # 3. Дублирование в SQLite базу данных
     try:
-        shutil.copy2(SETTINGS_PATH, SETTINGS_PATH + ".bak")
-        os.chmod(SETTINGS_PATH, 0o666)
-        os.chmod(CONFIG_DIR, 0o777)
-    except Exception:
-        pass
+        if current.get("jacred_url"):
+            db_set_setting("jacred_url", current["jacred_url"])
+        if current.get("download_path"):
+            db_set_setting("download_path", current["download_path"])
+        db_set_setting("all_settings", json.dumps(current))
+    except Exception as e:
+        logger.debug(f"Failed to mirror settings to DB: {e}")
 
 _vaapi_supported = None
 

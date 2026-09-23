@@ -25,10 +25,19 @@ let cachedJacredOk: boolean | null = null;
 let cachedTorrServerOk: boolean | null = null;
 let cachedTorrServerPort: number = 8095;
 
+const LOCAL_STORAGE_JACRED_KEY = "projacktor_jacred_url";
+
 export const SettingsView: FC = memo(() => {
   const rootRef = useRef<HTMLDivElement>(null);
   const { t } = useI18n();
-  const [jacredUrl, setJacredUrl] = useState<string>(() => cachedJacredUrl ?? "");
+  const [jacredUrl, setJacredUrl] = useState<string>(() => {
+    if (cachedJacredUrl) return cachedJacredUrl;
+    try {
+      const local = localStorage.getItem(LOCAL_STORAGE_JACRED_KEY);
+      if (local && local.trim()) return local.trim();
+    } catch {}
+    return "";
+  });
   const [jacredOk, setJacredOk] = useState<boolean | null>(() => cachedJacredOk);
   const [torrServerOk, setTorrServerOk] = useState<boolean | null>(() => cachedTorrServerOk);
   const [torrServerPort, setTorrServerPort] = useState<number>(() => cachedTorrServerPort);
@@ -46,10 +55,23 @@ export const SettingsView: FC = memo(() => {
     rpcGetSettings()
       .then((sett) => {
         if (!isMounted) return;
-        if (sett && sett.jacred_url) {
-          const url = sett.jacred_url.trim();
+        let url = sett && sett.jacred_url ? sett.jacred_url.trim() : "";
+        if (!url) {
+          // Если на бэкенде ссылка пустая, проверяем localStorage
+          try {
+            const local = localStorage.getItem(LOCAL_STORAGE_JACRED_KEY);
+            if (local && local.trim()) {
+              url = local.trim();
+              rpcSaveSettings(JSON.stringify({ jacred_url: url })).catch(() => {});
+            }
+          } catch {}
+        }
+        if (url) {
           cachedJacredUrl = url;
           setJacredUrl(url);
+          try {
+            localStorage.setItem(LOCAL_STORAGE_JACRED_KEY, url);
+          } catch {}
         }
         if (sett && sett.download_path) {
           setDownloadPath(sett.download_path);
@@ -174,6 +196,11 @@ export const SettingsView: FC = memo(() => {
       cachedJacredOk = ok;
       cachedJacredUrl = cleanUrl;
       setJacredOk(ok);
+      try {
+        if (cleanUrl) {
+          localStorage.setItem(LOCAL_STORAGE_JACRED_KEY, cleanUrl);
+        }
+      } catch {}
       await rpcSaveSettings(JSON.stringify({ jacred_url: cleanUrl })).catch(() => {});
     } catch (err) {
       console.error("Не удалось сохранить настройки:", err);
@@ -289,6 +316,8 @@ export const SettingsView: FC = memo(() => {
                 <GamepadTextField
                   value={jacredUrl}
                   onChange={setJacredUrl}
+                  onSubmit={handleSaveSettings}
+                  onBlur={handleSaveSettings}
                   placeholder={t("enterParserUrl")}
                 />
                 <Focusable

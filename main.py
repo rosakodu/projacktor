@@ -139,11 +139,15 @@ class Plugin:
         logger.info(f"Projacktor: Unload finished cleanly in {time.time() - t_start:.2f}s")
 
     async def _uninstall(self):
-        logger.info("Projacktor: Uninstalling plugin")
+        logger.info("Projacktor: Uninstall hook called (user settings and database safely preserved)")
+
+    async def _migration(self):
+        logger.info("Projacktor: Migration hook called")
         try:
-            shutil.rmtree(CONFIG_DIR)
+            init_db()
+            load_settings()
         except Exception as e:
-            logger.error(f"Error during uninstall cleanup: {e}")
+            logger.warning(f"Projacktor: Migration warning: {e}")
 
     # Методы RPC (вызываются из JS-фронтенда)
     async def inhibit_sleep(self):
