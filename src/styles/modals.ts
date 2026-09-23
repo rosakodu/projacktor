@@ -154,14 +154,28 @@ div:has(> .projacktor-modal-root) {
 .projacktor-torrent-title-inner {
   display: inline-block;
   white-space: nowrap;
-  will-change: transform;
+  transform: translateX(0px);
 }
 
 .projacktor-torrent-title--marquee {
+  text-overflow: ellipsis;
+}
+
+/* ONLY run marquee when the torrent card has focus or is hovered */
+.projacktor-torrent-card:focus-within .projacktor-torrent-title--marquee,
+.projacktor-torrent-card.gpfocus .projacktor-torrent-title--marquee,
+.projacktor-torrent-card--focused .projacktor-torrent-title--marquee,
+.projacktor-torrent-card:hover .projacktor-torrent-title--marquee,
+.projacktor-torrent-title--active.projacktor-torrent-title--marquee {
   text-overflow: clip;
 }
 
-.projacktor-torrent-title--marquee .projacktor-torrent-title-inner {
+.projacktor-torrent-card:focus-within .projacktor-torrent-title--marquee .projacktor-torrent-title-inner,
+.projacktor-torrent-card.gpfocus .projacktor-torrent-title--marquee .projacktor-torrent-title-inner,
+.projacktor-torrent-card--focused .projacktor-torrent-title--marquee .projacktor-torrent-title-inner,
+.projacktor-torrent-card:hover .projacktor-torrent-title--marquee .projacktor-torrent-title-inner,
+.projacktor-torrent-title--active.projacktor-torrent-title--marquee .projacktor-torrent-title-inner {
+  will-change: transform;
   animation: projacktor-marquee var(--marquee-dur, 8s) cubic-bezier(0.4, 0, 0.2, 1) infinite alternate;
 }
 

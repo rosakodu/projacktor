@@ -2,10 +2,11 @@ import { FC, useRef, useState, useEffect } from "react";
 
 interface MarqueeTitleProps {
   title: string;
+  isFocused?: boolean;
   className?: string;
 }
 
-export const MarqueeTitle: FC<MarqueeTitleProps> = ({ title, className }) => {
+export const MarqueeTitle: FC<MarqueeTitleProps> = ({ title, isFocused, className }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
   const [overflowPx, setOverflowPx] = useState<number>(0);
@@ -41,7 +42,7 @@ export const MarqueeTitle: FC<MarqueeTitleProps> = ({ title, className }) => {
   return (
     <div
       ref={containerRef}
-      className={`projacktor-torrent-title ${hasOverflow ? "projacktor-torrent-title--marquee" : ""} ${className || ""}`}
+      className={`projacktor-torrent-title ${hasOverflow ? "projacktor-torrent-title--marquee" : ""} ${isFocused ? "projacktor-torrent-title--active" : ""} ${className || ""}`}
       title={title}
       style={{
         ["--marquee-dist" as any]: `-${overflowPx + 10}px`,

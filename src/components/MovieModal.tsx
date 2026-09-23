@@ -47,6 +47,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
   // States for fixed-size action icons
   const [streamingTorrentId, setStreamingTorrentId] = useState<string | null>(null);
   const [downloadingTorrentId, setDownloadingTorrentId] = useState<string | null>(null);
+  const [focusedTorrentId, setFocusedTorrentId] = useState<string | null>(null);
 
   // Series inline episodes state
   const isTv = movie.media_type === "tv";
@@ -738,11 +739,18 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                       tor.quality.startsWith("CAM") ||
                       tor.quality.startsWith("TC"));
 
+                  const isFocused = focusedTorrentId === tId;
+
                   return (
-                    <div key={tId || `${tor.tracker}-${idx}`} className="projacktor-torrent-card">
+                    <div
+                      key={tId || `${tor.tracker}-${idx}`}
+                      className={`projacktor-torrent-card ${isFocused ? "projacktor-torrent-card--focused" : ""}`}
+                      onFocusCapture={() => setFocusedTorrentId(tId)}
+                      onMouseEnter={() => setFocusedTorrentId(tId)}
+                    >
                       <div className="projacktor-torrent-header-row">
                         <div className="projacktor-torrent-info">
-                          <MarqueeTitle title={tor.title} />
+                          <MarqueeTitle title={tor.title} isFocused={isFocused} />
                           <div className="projacktor-torrent-meta">
                             {tor.quality && (
                               <span
