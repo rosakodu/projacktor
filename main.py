@@ -37,6 +37,7 @@ from datetime import datetime
 from py_modules import (
     get_user_home,
     init_db,
+    rescan_library_from_disk,
     get_db,
     SafeRow,
     DB_LOCK,
@@ -146,6 +147,7 @@ class Plugin:
         try:
             init_db()
             load_settings()
+            rescan_library_from_disk()
         except Exception as e:
             logger.warning(f"Projacktor: Migration warning: {e}")
 

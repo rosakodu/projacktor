@@ -948,6 +948,30 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 return
 
+            # Ensure TorrServer is running and torrent is present
+            if 'link=' in parsed.query and plugin_instance and plugin_instance.ts:
+                try:
+                    plugin_instance.ts.ensure_running()
+                    qs = urllib.parse.parse_qs(parsed.query)
+                    thash = (qs.get('link', [''])[0] or '').lower()
+                    if thash:
+                        t_info = plugin_instance.ts.get_torrent(thash)
+                        if not t_info or not t_info.get('data'):
+                            db = get_db()
+                            try:
+                                row = db.execute("SELECT magnet_uri, title, poster_path FROM media WHERE magnet_uri LIKE ? LIMIT 1", (f"%{thash}%",)).fetchone()
+                                if not row:
+                                    row = db.execute("SELECT magnet_uri, torrent_title as title, '' as poster_path FROM downloads WHERE magnet_uri LIKE ? LIMIT 1", (f"%{thash}%",)).fetchone()
+                                mag = row['magnet_uri'] if (row and row['magnet_uri']) else f"magnet:?xt=urn:btih:{thash}"
+                                ttl = row['title'] if (row and row['title']) else ""
+                                pst = row['poster_path'] if (row and row['poster_path']) else ""
+                                logger.info(f"[Stream] Auto-restoring torrent {thash} in TorrServer before playback...")
+                                plugin_instance.ts.add_torrent(mag, title=ttl, poster=pst)
+                            finally:
+                                db.close()
+                except Exception as e:
+                    logger.debug(f"[Stream] Auto-heal TorrServer error: {e}")
+
         transcode_mode = query.get('transcode', ['auto'])[0]
         start_time = query.get('start', ['0'])[0]
         audio_idx = query.get('audio', [''])[0]
@@ -1015,16 +1039,43 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             )
 
             env = _clean_env()
-            # Note: stderr=subprocess.DEVNULL is required to prevent deadlocks from full stderr pipe buffer
+            logger.info(f"[Stream] FFmpeg cmd: {' '.join(cmd[:6])}... source={source[:80]}")
             proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
                 env=env,
                 bufsize=1024*1024
             )
+
+            # Drain stderr in a background thread to prevent pipe buffer deadlock
+            stderr_lines = []
+            import threading
+            def _drain_stderr():
+                try:
+                    for line in proc.stderr:
+                        try:
+                            txt = line.decode('utf-8', errors='replace').rstrip()
+                            if txt:
+                                stderr_lines.append(txt)
+                                logger.warning(f"[FFmpeg] {txt}")
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+            stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
+            stderr_thread.start()
+
             try:
                 chunk_size = 128 * 1024
+                # Wait for first chunk with a timeout to detect dead streams early
+                import select
+                ready = select.select([proc.stdout], [], [], 15.0)
+                if not ready[0]:
+                    logger.error(f"[Stream] FFmpeg produced no output in 15s, killing. stderr: {'; '.join(stderr_lines[-5:])}")
+                    proc.kill()
+                    proc.wait(timeout=2)
+                    return
                 while True:
                     data = proc.stdout.read(chunk_size)
                     if not data:
@@ -1047,6 +1098,13 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                         proc.stdout.close()
                     except Exception:
                         pass
+                    try:
+                        proc.stderr.close()
+                    except Exception:
+                        pass
+                    stderr_thread.join(timeout=1.0)
+                    if stderr_lines:
+                        logger.info(f"[Stream] FFmpeg stderr summary ({len(stderr_lines)} lines): {'; '.join(stderr_lines[-3:])}")
             return
         else:
             if not must_transcode and is_http:

@@ -225,6 +225,27 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     };
   }, []);
 
+  // Защита от «фантомного» нажатия B при закрытии Steam overlay (шторки).
+  // Когда шторка закрывается кнопкой B, событие может «протечь» в плеер.
+  // Игнорируем B в течение 500ms после возврата фокуса в окно.
+  const overlayReturnCooldownRef = useRef<number>(0);
+  useEffect(() => {
+    const onFocus = () => {
+      overlayReturnCooldownRef.current = Date.now();
+    };
+    const onVisChange = () => {
+      if (!document.hidden) {
+        overlayReturnCooldownRef.current = Date.now();
+      }
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisChange);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisChange);
+    };
+  }, []);
+
   const playBtnRef = useRef<HTMLDivElement>(null);
   const subtitleBtnRef = useRef<HTMLDivElement>(null);
   const audioBtnRef = useRef<HTMLDivElement>(null);
@@ -997,6 +1018,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     r2PressStartRef,
     zoomAnimFrameRef,
     zoomHudTimerRef,
+    overlayReturnCooldownRef,
   });
 
   // Request fullscreen on mount to overlay all Steam UI
@@ -1238,9 +1260,28 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     return () => clearTimeout(t);
   }, [selectedSubtitle]);
 
-  const handleVideoError = () => {
-    setErrorMsg(t("streamPlaybackError"));
-  };
+  const handleVideoError = useCallback(() => {
+    const video = videoRef.current;
+    const err = video?.error;
+    if (err) {
+      const codeMap: Record<number, string> = {
+        1: "MEDIA_ERR_ABORTED",
+        2: "MEDIA_ERR_NETWORK",
+        3: "MEDIA_ERR_DECODE",
+        4: "MEDIA_ERR_SRC_NOT_SUPPORTED",
+      };
+      const codeName = codeMap[err.code] || `ERR_${err.code}`;
+      console.error(`[PlayerModal] Video error: ${codeName} - ${err.message || "no details"}`);
+      if (err.code === 2) {
+        // Сетевая ошибка — поток не доступен или TorrServer не отдаёт данные
+        setErrorMsg(t("streamPlaybackError") + ` (${codeName})`);
+      } else {
+        setErrorMsg(t("streamPlaybackError") + ` (${codeName})`);
+      }
+    } else {
+      setErrorMsg(t("streamPlaybackError"));
+    }
+  }, [t]);
 
   useEffect(() => {
     setErrorMsg(null);
@@ -1347,11 +1388,22 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   const progressPercent = duration > 0 ? Math.min(100, Math.max(0, (currentPlayhead / duration) * 100)) : 0;
 
   return (
-    <ModalRoot onCancel={closeModal} closeModal={closeModal} bAllowFullSize={true} bHideCloseIcon={true}>
+    <ModalRoot
+      onCancel={() => {
+        // Игнорируем B-нажатие в течение 500ms после возврата из Steam overlay
+        if (Date.now() - overlayReturnCooldownRef.current < 500) return;
+        closeModal?.();
+      }}
+      closeModal={closeModal}
+      bAllowFullSize={true}
+      bHideCloseIcon={true}
+    >
       <Focusable
         ref={containerRef}
         className="projacktor-player-fullscreen"
         onCancelButton={() => {
+          // Игнорируем B-нажатие в течение 500ms после возврата из Steam overlay
+          if (Date.now() - overlayReturnCooldownRef.current < 500) return;
           if (showAudioMenuRef.current) {
             setShowAudioMenu(false);
           } else if (showSubtitleMenuRef.current) {

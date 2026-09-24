@@ -15,7 +15,8 @@ from .db import (
     logger,
     db_get_setting,
     db_set_setting,
-    db_get_all_settings
+    db_get_all_settings,
+    rescan_library_from_disk
 )
 from .common import (
     get_ssl_context,

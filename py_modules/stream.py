@@ -128,11 +128,25 @@ def _parse_ffprobe_data(data):
             })
     return vcodec, acodec, duration, audio_tracks, subtitle_tracks, width, height
 
+def _normalize_probe_key(filepath):
+    unwrapped = unwrap_stream_source(filepath)
+    try:
+        parsed = urllib.parse.urlparse(unwrapped)
+        if parsed.query:
+            qs = urllib.parse.parse_qs(parsed.query)
+            filtered = {k: v for k, v in qs.items() if k in ['link', 'index', 'file', 'url']}
+            new_query = urllib.parse.urlencode(filtered, doseq=True)
+            return urllib.parse.urlunparse(parsed._replace(query=new_query))
+    except Exception:
+        pass
+    return unwrapped
+
 def probe_media_file(filepath):
-    filepath = unwrap_stream_source(filepath)
-    if filepath in PROBE_CACHE:
-        return PROBE_CACHE[filepath]
+    cache_key = _normalize_probe_key(filepath)
+    if cache_key in PROBE_CACHE:
+        return PROBE_CACHE[cache_key]
     
+    filepath = unwrap_stream_source(filepath)
     is_http = filepath.startswith("http://") or filepath.startswith("https://")
     if not is_http:
         if not os.path.exists(filepath):
@@ -169,7 +183,7 @@ def probe_media_file(filepath):
         out = subprocess.check_output(cmd, env=env, timeout=timeout).decode('utf-8')
         return json.loads(out)
 
-    probe_timeout = 4.0 if is_http else 3.0
+    probe_timeout = 6.0 if is_http else 3.5
     try:
         data = run_ffprobe(probesize, analyzeduration, probe_timeout)
         vcodec, acodec, duration, audio_tracks, subtitle_tracks, width, height = _parse_ffprobe_data(data)

@@ -130,13 +130,13 @@ class TorrServerManager:
             bt_settings = {
                 "CacheSize": 268435456,        # 256MB RAM cache
                 "ReaderReadAHead": 95,          # Buffer ahead percentage
-                "PreloadCache": 30,             # Preload buffer
+                "PreloadCache": 15,             # 15% preload buffer for faster start
                 "UseDisk": False,               # RAM only, zero disk writes
                 "TorrentsSavePath": "",
-                "RemoveCacheOnDrop": True,
+                "RemoveCacheOnDrop": False,     # Keep cache across seeks and probe reconnects
                 "ForceEncrypt": False,
                 "RetrackersMode": 1,
-                "TorrentDisconnectTimeout": 0,  # Keep BT client permanently connected
+                "TorrentDisconnectTimeout": 120, # Keep BT client connected for 2 mins between requests
                 "ConnectionsLimit": 120,
                 "PeersListenPort": 0,
                 "DisableUPNP": True,           # Disable UPnP to avoid router NAT discovery delay

@@ -190,6 +190,21 @@ def load_settings():
             except Exception:
                 pass
 
+    # Если текущий download_path пустой или не существует, но существует альтернативный каталог с медиафайлами — переключаемся на него
+    cur_dp = os.path.realpath(os.path.expanduser(merged.get("download_path", "")))
+    has_files = os.path.isdir(cur_dp) and bool(os.listdir(cur_dp))
+    if not has_files:
+        for alt_cand in [
+            os.path.join(get_user_home(), "Movies", "Projacktor"),
+            os.path.join(get_user_home(), "Videos", "Projacktor"),
+            os.path.join(get_user_home(), "Video", "Projactor"),
+        ]:
+            real_alt = os.path.realpath(alt_cand)
+            if os.path.isdir(real_alt) and bool(os.listdir(real_alt)):
+                merged["download_path"] = real_alt
+                logger.info(f"Auto-selected existing download_path with media: {real_alt}")
+                break
+
     if merged.get("tmdb_api_key") == "aa86d1a6876222de71c258408e1a4ed3":
         merged["tmdb_api_key"] = DEFAULT_SETTINGS["tmdb_api_key"]
 
