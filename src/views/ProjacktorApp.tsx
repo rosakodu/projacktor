@@ -533,6 +533,7 @@ export const ProjacktorApp: FC = () => {
         display: "flex",
         flexDirection: "column",
         color: "var(--ds-text, #fff)",
+        ...(isPlayerOpen ? { zIndex: 99999, contain: "none" } : {}),
       }}
     >
       <style>{PROJACKTOR_STYLES}</style>

@@ -64,6 +64,24 @@ export const THEME_STYLES = `
   z-index: 10;
 }
 
+.projacktor-app-root.projacktor-app-playing,
+.projacktor-app-root:has(.projacktor-player-fullscreen) {
+  z-index: 99999 !important;
+  contain: none !important;
+}
+
+/* Hide SteamOS Big Picture top status bar (battery/clock/Wi-Fi) and footer legend while playing video */
+body:has(.projacktor-player-fullscreen) #header,
+body:has(.projacktor-player-fullscreen) #Footer,
+body:has(.projacktor-app-playing) #header,
+body:has(.projacktor-app-playing) #Footer,
+#MainNavMenu-Rest:has(.projacktor-player-fullscreen) #Footer,
+#GamepadUI_Full_Root:has(.projacktor-player-fullscreen) #header {
+  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 /* ───── Projacktor Header Container & Top Header ───── */
 .projacktor-header-container {
   width: 100% !important;
