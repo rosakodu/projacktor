@@ -80,8 +80,8 @@ function dispatch(ev: ControllerEvent): void {
     return;
   }
 
-  // Drop B-button events if QuickAccess or MainMenu overlay was active within the last 800ms
-  if ((ev.button === RawButton.B || ev.button === 1) && isOverlayActiveOrRecent(800)) {
+  // Drop B-button events if QuickAccess or MainMenu overlay was active within the last 1200ms
+  if ((ev.button === RawButton.B || ev.button === 1) && isOverlayActiveOrRecent(1200)) {
     return;
   }
 

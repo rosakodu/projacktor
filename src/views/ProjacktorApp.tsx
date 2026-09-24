@@ -29,6 +29,15 @@ const TAB_IDS = [
   "settings",
 ];
 
+interface PlayerConfig {
+  filePath: string;
+  title: string;
+  isOnline: boolean;
+  torrentHash?: string;
+  mediaInfo?: PlayerMediaInfo;
+  initialTime?: number;
+}
+
 export const ProjacktorApp: FC = () => {
   const rootRef = useRef<HTMLDivElement>(null);
   const fallbackRef = useRef<HTMLDivElement>(null);
@@ -36,6 +45,7 @@ export const ProjacktorApp: FC = () => {
   const [activeTab, setActiveTab] = useState<string>("movies");
   const [ready, setReady] = useState(false);
   const [isPlayerOpen, setIsPlayerOpen] = useState<boolean>(false);
+  const [playerConfig, setPlayerConfig] = useState<PlayerConfig | null>(null);
   const { t } = useI18n();
 
   useEffect(() => {
@@ -76,6 +86,15 @@ export const ProjacktorApp: FC = () => {
     }
   };
 
+  const closePlayer = useCallback(() => {
+    setIsPlayerOpen(false);
+    setPlayerActive(false);
+    setPlayerConfig(null);
+    setTimeout(() => {
+      ensureContentFocusRef.current?.(false);
+    }, 80);
+  }, []);
+
   const handlePlayVideo = useCallback(
     (
       filePath: string,
@@ -85,34 +104,16 @@ export const ProjacktorApp: FC = () => {
       mediaInfo?: PlayerMediaInfo,
       initialTime?: number
     ) => {
-      let playerInstance: any = null;
+      setPlayerConfig({
+        filePath,
+        title,
+        isOnline,
+        torrentHash,
+        mediaInfo,
+        initialTime,
+      });
       setIsPlayerOpen(true);
       setPlayerActive(true);
-
-      const closePlayer = () => {
-        setIsPlayerOpen(false);
-        setPlayerActive(false);
-        if (playerInstance && typeof playerInstance.Close === "function") {
-          playerInstance.Close();
-        }
-        setTimeout(() => {
-          ensureContentFocusRef.current?.(false);
-        }, 80);
-      };
-
-      playerInstance = showModal(
-        <PlayerModal
-          filePath={filePath}
-          title={title}
-          isOnline={isOnline}
-          torrentHash={torrentHash}
-          mediaInfo={mediaInfo}
-          initialTime={initialTime}
-          closeModal={closePlayer}
-        />,
-        getParentWindow(),
-        { bHideActionIcons: true, strTitle: title }
-      );
     },
     []
   );
@@ -465,10 +466,9 @@ export const ProjacktorApp: FC = () => {
   return (
     <Focusable
       ref={rootRef}
-      className={`projacktor-app-root ${isPlayerOpen ? "projacktor-app-inert" : ""}`}
+      className={`projacktor-app-root ${isPlayerOpen ? "projacktor-app-playing" : ""}`}
       flow-children="vertical"
       onCancelButton={isPlayerOpen ? () => false : handleBack}
-      inert={isPlayerOpen ? true : undefined}
       onButtonDown={(e: any) => {
         if (isPlayerOpen || isPlayerActive()) return false;
         if (isModalOpen()) return false;
@@ -533,7 +533,6 @@ export const ProjacktorApp: FC = () => {
         display: "flex",
         flexDirection: "column",
         color: "var(--ds-text, #fff)",
-        ...(isPlayerOpen ? { pointerEvents: "none" as const, visibility: "hidden" as const } : {}),
       }}
     >
       <style>{PROJACKTOR_STYLES}</style>
@@ -558,32 +557,35 @@ export const ProjacktorApp: FC = () => {
         <span />
       </Focusable>
 
-      {/* Динамический кинематографичный бэкдроп выбранного фильма в стиле Steam Deck (кроме настроек) */}
-      {activeTab !== "settings" && <HeroBackdrop />}
+      {/* Динамический кинематографичный бэкдроп выбранного фильма в стиле Steam Deck (кроме настроек и режима плеера) */}
+      {activeTab !== "settings" && !isPlayerOpen && <HeroBackdrop />}
 
-      {/* Шапка: Заголовок Projacktor и панель вкладок */}
-      <div className="projacktor-header-container">
-        <Header />
-        <TabBar
-          tabs={tabsConfig}
-          activeTab={activeTab}
-          onSelectTab={handleSelectTab}
-          onPrevTab={prevTab}
-          onNextTab={nextTab}
-        />
-      </div>
+      {/* Шапка: Заголовок Projacktor и панель вкладок (скрыта в режиме плеера) */}
+      {!isPlayerOpen && (
+        <div className="projacktor-header-container">
+          <Header />
+          <TabBar
+            tabs={tabsConfig}
+            activeTab={activeTab}
+            onSelectTab={handleSelectTab}
+            onPrevTab={prevTab}
+            onNextTab={nextTab}
+          />
+        </div>
+      )}
 
-      {/* Контент текущей вкладки */}
+      {/* Контент текущей вкладки (скрыт и инертен в режиме плеера для сохранения состояния и скролла) */}
       <Focusable
         flow-children="vertical"
         noFocusRing
         className="projacktor-view-container"
+        inert={isPlayerOpen ? true : undefined}
         style={{
           position: "relative",
           zIndex: 1,
           flex: 1,
           minHeight: 0,
-          display: "flex",
+          display: isPlayerOpen ? "none" : "flex",
           flexDirection: "column",
           overflow: "hidden",
         }}
@@ -621,6 +623,19 @@ export const ProjacktorApp: FC = () => {
           <SettingsView />
         )}
       </Focusable>
+
+      {/* Полноэкранный видеоплеер (рендерится напрямую в DOM без модального менеджера Steam) */}
+      {isPlayerOpen && playerConfig && (
+        <PlayerModal
+          filePath={playerConfig.filePath}
+          title={playerConfig.title}
+          isOnline={playerConfig.isOnline}
+          torrentHash={playerConfig.torrentHash}
+          mediaInfo={playerConfig.mediaInfo}
+          initialTime={playerConfig.initialTime}
+          closeModal={closePlayer}
+        />
+      )}
     </Focusable>
   );
 };

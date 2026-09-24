@@ -40,14 +40,83 @@ export function getActiveDocument(node?: Node | null): Document {
   return typeof document !== "undefined" ? document : (null as any);
 }
 
-let lastOverlayActiveTime = 0;
-
-export function markOverlayActive(): void {
-  lastOverlayActiveTime = Date.now();
+export function getSteamUIStore(): any {
+  const g = globalThis as any;
+  if (g.SteamUIStore) return g.SteamUIStore;
+  if (g.opener?.SteamUIStore) return g.opener.SteamUIStore;
+  try {
+    const docView = (typeof document !== "undefined" ? document.defaultView : null) as any;
+    if (docView?.SteamUIStore) return docView.SteamUIStore;
+    if (docView?.opener?.SteamUIStore) return docView.opener.SteamUIStore;
+  } catch {}
+  return null;
 }
 
-export function isOverlayActiveOrRecent(windowMs: number = 800): boolean {
-  if (Date.now() - lastOverlayActiveTime < windowMs) {
+const g = globalThis as any;
+
+export function markOverlayActive(): void {
+  const now = Date.now();
+  g.__projacktor_last_overlay_time = now;
+  try {
+    if (g.opener) g.opener.__projacktor_last_overlay_time = now;
+  } catch {}
+  try {
+    const bp = g.__projacktor_input_bp_view;
+    if (bp) bp.__projacktor_last_overlay_time = now;
+  } catch {}
+}
+
+export function isOverlayActive(): boolean {
+  try {
+    const store = getSteamUIStore();
+    if (!store) return false;
+    const win =
+      store.GetFocusedWindowInstance?.() ||
+      store.WindowStore?.GamepadUIMainWindowInstance ||
+      store.WindowStore?.SteamUIWindows?.[0];
+    const ms = win?.MenuStore;
+    if (ms) {
+      if (ms.IsAnySideMenuVisible?.() || (ms.GetOpenSideMenu?.() ?? 0) !== 0 || (ms.m_eOpenSideMenu ?? 0) !== 0) {
+        markOverlayActive();
+        return true;
+      }
+    }
+    const nm = store.m_GamepadNavigationManager;
+    const activeTree = nm?.GetActiveNavTree?.()?.m_ID;
+    if (
+      activeTree &&
+      (activeTree.includes("QuickAccess") ||
+        activeTree.includes("MainNav") ||
+        activeTree.includes("SideMenu") ||
+        activeTree.includes("virtual keyboard"))
+    ) {
+      markOverlayActive();
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+// Continuous background polling to ensure markOverlayActive is refreshed continuously while overlay is open
+if (typeof setInterval !== "undefined") {
+  setInterval(() => {
+    if (isOverlayActive()) {
+      markOverlayActive();
+    }
+  }, 30);
+}
+
+export function isOverlayActiveOrRecent(windowMs: number = 1200): boolean {
+  if (isOverlayActive()) {
+    markOverlayActive();
+    return true;
+  }
+  const lastTime = Math.max(
+    g.__projacktor_last_overlay_time || 0,
+    g.opener?.__projacktor_last_overlay_time || 0,
+    g.__projacktor_input_bp_view?.__projacktor_last_overlay_time || 0
+  );
+  if (Date.now() - lastTime < windowMs) {
     return true;
   }
   return false;
@@ -55,16 +124,8 @@ export function isOverlayActiveOrRecent(windowMs: number = 800): boolean {
 
 export function isProjacktorActive(): boolean {
   try {
-    const g = globalThis as any;
-    const uiStore = g.SteamUIStore || (g.opener && g.opener.SteamUIStore);
-    if (uiStore) {
-      const focused = uiStore.GetFocusedWindowInstance?.();
-      const main = uiStore.WindowStore?.GamepadUIMainWindowInstance;
-      if (focused && main && focused !== main) {
-        // QuickAccess, MainMenu or another overlay window is focused
-        markOverlayActive();
-        return false;
-      }
+    if (isOverlayActiveOrRecent(800)) {
+      return false;
     }
 
     const doc = getActiveDocument();
@@ -107,4 +168,5 @@ export function isProjacktorActive(): boolean {
     return false;
   }
 }
+
 

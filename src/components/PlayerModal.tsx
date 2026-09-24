@@ -1,6 +1,5 @@
 import { FC, useState, useRef, useEffect, useCallback } from "react";
-import { ModalRoot, Focusable, GamepadButton } from "@decky/ui";
-import { useQuickAccessVisible } from "@decky/api";
+import { Focusable, GamepadButton } from "@decky/ui";
 import {
   rpcResumeAllDownloads,
   rpcDropStream,
@@ -8,7 +7,7 @@ import {
   fetchMovieLogo,
 } from "../api";
 import { PlayerMediaInfo } from "../types";
-import { getActiveDocument, isOverlayActiveOrRecent, markOverlayActive } from "../runtime/activeDoc";
+import { getActiveDocument, isOverlayActiveOrRecent } from "../runtime/activeDoc";
 import { playNavSound } from "../runtime/navSound";
 import { AudioTrack, SubtitleTrack } from "./player/types";
 import { PlayerHUD } from "./player/PlayerHUD";
@@ -226,30 +225,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     };
   }, []);
 
-  // Точное отслеживание системных оверлеев Steam (шторка QuickAccess "..." и MainMenu "STEAM")
-  const isQAMOpen = useQuickAccessVisible?.() ?? false;
-  useEffect(() => {
-    if (isQAMOpen) {
-      markOverlayActive();
-    }
-  }, [isQAMOpen]);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      try {
-        const g = globalThis as any;
-        const uiStore = g.SteamUIStore || (g.opener && g.opener.SteamUIStore);
-        if (uiStore) {
-          const focused = uiStore.GetFocusedWindowInstance?.();
-          const main = uiStore.WindowStore?.GamepadUIMainWindowInstance;
-          if (focused && main && focused !== main) {
-            markOverlayActive();
-          }
-        }
-      } catch {}
-    }, 40);
-    return () => clearInterval(timer);
-  }, []);
+  // Точное отслеживание системных оверлеев Steam выполняется централизованно в activeDoc.ts
 
   const playBtnRef = useRef<HTMLDivElement>(null);
   const subtitleBtnRef = useRef<HTMLDivElement>(null);
@@ -1392,31 +1368,24 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   const progressPercent = duration > 0 ? Math.min(100, Math.max(0, (currentPlayhead / duration) * 100)) : 0;
 
   return (
-    <ModalRoot
-      bCancelDisabled={true}
-      bDisableBackgroundDismiss={true}
-      bAllowFullSize={true}
-      bHideCloseIcon={true}
-      onCancel={() => {}}
-      closeModal={() => {}}
-    >
-      <Focusable
-        ref={containerRef}
-        className="projacktor-player-fullscreen"
-        onCancelButton={() => {
-          if (isOverlayActiveOrRecent(1000)) {
-            return true;
-          }
-          if (showAudioMenuRef.current) {
-            setShowAudioMenu(false);
-            return true;
-          }
-          if (showSubtitleMenuRef.current) {
-            setShowSubtitleMenu(false);
-            return true;
-          }
-          return true;
-        }}
+    <Focusable
+      ref={containerRef}
+      className="projacktor-player-fullscreen"
+      onCancelButton={() => {
+        if (isOverlayActiveOrRecent(1200)) {
+          return false;
+        }
+        if (showAudioMenuRef.current) {
+          setShowAudioMenu(false);
+          return false;
+        }
+        if (showSubtitleMenuRef.current) {
+          setShowSubtitleMenu(false);
+          return false;
+        }
+        closeModalRef.current?.();
+        return false;
+      }}
         onGamepadDirection={(evt: any) => {
           if (showAudioMenuRef.current || showSubtitleMenuRef.current) {
             try {
@@ -1615,6 +1584,5 @@ export const PlayerModal: FC<PlayerModalProps> = ({
           onChangeVolume={changeVolume}
         />
       </Focusable>
-    </ModalRoot>
   );
 };

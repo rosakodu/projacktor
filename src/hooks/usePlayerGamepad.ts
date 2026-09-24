@@ -249,8 +249,8 @@ export function usePlayerGamepad({
 
       // Кнопка B (1): Закрыть меню аудио/субтитров или выйти из плеера
       if (e.button === RawButton.B || e.button === 1) {
-        // Игнорируем B, если оверлей Steam (шторка "..." или меню STEAM) был открыт или закрылся менее 1000ms назад
-        if (isOverlayActiveOrRecent(1000)) return;
+        // Игнорируем B, если оверлей Steam (шторка "..." или меню STEAM) был открыт или закрылся менее 1200ms назад
+        if (isOverlayActiveOrRecent(1200)) return;
         if (showAudioMenuRef.current) {
           setShowAudioMenu(false);
           setShowControls(true);
@@ -431,8 +431,8 @@ export function usePlayerGamepad({
         e.preventDefault();
         e.stopPropagation();
         (e as any).stopImmediatePropagation?.();
-        // Игнорируем, если оверлей Steam был открыт или закрылся менее 1000ms назад
-        if (isOverlayActiveOrRecent(1000)) return;
+        // Игнорируем, если оверлей Steam был открыт или закрылся менее 1200ms назад
+        if (isOverlayActiveOrRecent(1200)) return;
         if (showAudioMenuRef.current) {
           setShowAudioMenu(false);
           setShowControls(true);
