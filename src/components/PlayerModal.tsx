@@ -1,5 +1,6 @@
 import { FC, useState, useRef, useEffect, useCallback } from "react";
 import { ModalRoot, Focusable, GamepadButton } from "@decky/ui";
+import { useQuickAccessVisible } from "@decky/api";
 import {
   rpcResumeAllDownloads,
   rpcDropStream,
@@ -7,7 +8,7 @@ import {
   fetchMovieLogo,
 } from "../api";
 import { PlayerMediaInfo } from "../types";
-import { getActiveDocument } from "../runtime/activeDoc";
+import { getActiveDocument, isOverlayActiveOrRecent, markOverlayActive } from "../runtime/activeDoc";
 import { playNavSound } from "../runtime/navSound";
 import { AudioTrack, SubtitleTrack } from "./player/types";
 import { PlayerHUD } from "./player/PlayerHUD";
@@ -225,25 +226,29 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     };
   }, []);
 
-  // Защита от «фантомного» нажатия B при закрытии Steam overlay (шторки).
-  // Когда шторка закрывается кнопкой B, событие может «протечь» в плеер.
-  // Игнорируем B в течение 500ms после возврата фокуса в окно.
-  const overlayReturnCooldownRef = useRef<number>(0);
+  // Точное отслеживание системных оверлеев Steam (шторка QuickAccess "..." и MainMenu "STEAM")
+  const isQAMOpen = useQuickAccessVisible?.() ?? false;
   useEffect(() => {
-    const onFocus = () => {
-      overlayReturnCooldownRef.current = Date.now();
-    };
-    const onVisChange = () => {
-      if (!document.hidden) {
-        overlayReturnCooldownRef.current = Date.now();
-      }
-    };
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisChange);
-    return () => {
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisChange);
-    };
+    if (isQAMOpen) {
+      markOverlayActive();
+    }
+  }, [isQAMOpen]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      try {
+        const g = globalThis as any;
+        const uiStore = g.SteamUIStore || (g.opener && g.opener.SteamUIStore);
+        if (uiStore) {
+          const focused = uiStore.GetFocusedWindowInstance?.();
+          const main = uiStore.WindowStore?.GamepadUIMainWindowInstance;
+          if (focused && main && focused !== main) {
+            markOverlayActive();
+          }
+        }
+      } catch {}
+    }, 40);
+    return () => clearInterval(timer);
   }, []);
 
   const playBtnRef = useRef<HTMLDivElement>(null);
@@ -1018,7 +1023,6 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     r2PressStartRef,
     zoomAnimFrameRef,
     zoomHudTimerRef,
-    overlayReturnCooldownRef,
   });
 
   // Request fullscreen on mount to overlay all Steam UI
@@ -1389,28 +1393,29 @@ export const PlayerModal: FC<PlayerModalProps> = ({
 
   return (
     <ModalRoot
-      onCancel={() => {
-        // Игнорируем B-нажатие в течение 500ms после возврата из Steam overlay
-        if (Date.now() - overlayReturnCooldownRef.current < 500) return;
-        closeModal?.();
-      }}
-      closeModal={closeModal}
+      bCancelDisabled={true}
+      bDisableBackgroundDismiss={true}
       bAllowFullSize={true}
       bHideCloseIcon={true}
+      onCancel={() => {}}
+      closeModal={() => {}}
     >
       <Focusable
         ref={containerRef}
         className="projacktor-player-fullscreen"
         onCancelButton={() => {
-          // Игнорируем B-нажатие в течение 500ms после возврата из Steam overlay
-          if (Date.now() - overlayReturnCooldownRef.current < 500) return;
+          if (isOverlayActiveOrRecent(1000)) {
+            return true;
+          }
           if (showAudioMenuRef.current) {
             setShowAudioMenu(false);
-          } else if (showSubtitleMenuRef.current) {
-            setShowSubtitleMenu(false);
-          } else if (closeModalRef.current) {
-            closeModalRef.current();
+            return true;
           }
+          if (showSubtitleMenuRef.current) {
+            setShowSubtitleMenu(false);
+            return true;
+          }
+          return true;
         }}
         onGamepadDirection={(evt: any) => {
           if (showAudioMenuRef.current || showSubtitleMenuRef.current) {

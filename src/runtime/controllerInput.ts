@@ -5,7 +5,7 @@
    Adapted from Deck-Shelves architecture. */
 
 import { dispatchHomeKey } from "./homeInputBus";
-import { isProjacktorActive } from "./activeDoc";
+import { isProjacktorActive, isOverlayActiveOrRecent } from "./activeDoc";
 
 export const RawButton = {
   A: 0,
@@ -77,6 +77,11 @@ function dispatch(ev: ControllerEvent): void {
 
   // Ignore events if Projacktor is not the active focused window (e.g. QuickAccess '...' or MainMenu is open)
   if (!isProjacktorActive()) {
+    return;
+  }
+
+  // Drop B-button events if QuickAccess or MainMenu overlay was active within the last 800ms
+  if ((ev.button === RawButton.B || ev.button === 1) && isOverlayActiveOrRecent(800)) {
     return;
   }
 

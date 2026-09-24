@@ -1,6 +1,6 @@
 import { useEffect, RefObject } from "react";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
-import { getActiveDocument, getActiveWindow } from "../runtime/activeDoc";
+import { getActiveDocument, getActiveWindow, isOverlayActiveOrRecent } from "../runtime/activeDoc";
 import { AudioTrack, SubtitleTrack } from "../components/player/types";
 import { triggerHaptic } from "../runtime/haptics";
 
@@ -41,7 +41,7 @@ interface UsePlayerGamepadParams {
   r2PressStartRef: RefObject<number | null | undefined> | { current: number };
   zoomAnimFrameRef: RefObject<number | null>;
   zoomHudTimerRef: RefObject<number | null>;
-  overlayReturnCooldownRef: RefObject<number> | { current: number };
+  overlayReturnCooldownRef?: any;
 }
 
 export function usePlayerGamepad({
@@ -81,7 +81,6 @@ export function usePlayerGamepad({
   r2PressStartRef,
   zoomAnimFrameRef,
   zoomHudTimerRef,
-  overlayReturnCooldownRef,
 }: UsePlayerGamepadParams) {
   useEffect(() => {
     const handleActivity = () => {
@@ -250,8 +249,8 @@ export function usePlayerGamepad({
 
       // Кнопка B (1): Закрыть меню аудио/субтитров или выйти из плеера
       if (e.button === RawButton.B || e.button === 1) {
-        // Игнорируем B в течение 500ms после возврата из Steam overlay
-        if (Date.now() - (overlayReturnCooldownRef.current || 0) < 500) return;
+        // Игнорируем B, если оверлей Steam (шторка "..." или меню STEAM) был открыт или закрылся менее 1000ms назад
+        if (isOverlayActiveOrRecent(1000)) return;
         if (showAudioMenuRef.current) {
           setShowAudioMenu(false);
           setShowControls(true);
@@ -432,8 +431,8 @@ export function usePlayerGamepad({
         e.preventDefault();
         e.stopPropagation();
         (e as any).stopImmediatePropagation?.();
-        // Игнорируем в течение 500ms после возврата из Steam overlay
-        if (Date.now() - (overlayReturnCooldownRef.current || 0) < 500) return;
+        // Игнорируем, если оверлей Steam был открыт или закрылся менее 1000ms назад
+        if (isOverlayActiveOrRecent(1000)) return;
         if (showAudioMenuRef.current) {
           setShowAudioMenu(false);
           setShowControls(true);

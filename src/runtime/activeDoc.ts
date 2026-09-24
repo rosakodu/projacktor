@@ -40,13 +40,41 @@ export function getActiveDocument(node?: Node | null): Document {
   return typeof document !== "undefined" ? document : (null as any);
 }
 
+let lastOverlayActiveTime = 0;
+
+export function markOverlayActive(): void {
+  lastOverlayActiveTime = Date.now();
+}
+
+export function isOverlayActiveOrRecent(windowMs: number = 800): boolean {
+  if (Date.now() - lastOverlayActiveTime < windowMs) {
+    return true;
+  }
+  return false;
+}
+
 export function isProjacktorActive(): boolean {
   try {
+    const g = globalThis as any;
+    const uiStore = g.SteamUIStore || (g.opener && g.opener.SteamUIStore);
+    if (uiStore) {
+      const focused = uiStore.GetFocusedWindowInstance?.();
+      const main = uiStore.WindowStore?.GamepadUIMainWindowInstance;
+      if (focused && main && focused !== main) {
+        // QuickAccess, MainMenu or another overlay window is focused
+        markOverlayActive();
+        return false;
+      }
+    }
+
     const doc = getActiveDocument();
     if (!doc) return false;
 
     // If the document is hidden (e.g. Steam is suspended or minimized)
-    if (doc.hidden) return false;
+    if (doc.hidden) {
+      markOverlayActive();
+      return false;
+    }
 
     const roots = Array.from(
       doc.querySelectorAll<HTMLElement>(
@@ -63,12 +91,14 @@ export function isProjacktorActive(): boolean {
     // Check if virtual gamepad focus is active outside Projacktor
     const gpfocus = doc.querySelector(".gpfocus");
     if (gpfocus && !isInsideProjacktor(gpfocus)) {
+      markOverlayActive();
       return false;
     }
 
     // Check if DOM focus is on an external Steam element (e.g. Steam header / tray)
     const active = doc.activeElement;
     if (active && !isInsideProjacktor(active)) {
+      markOverlayActive();
       return false;
     }
 
