@@ -23,6 +23,7 @@ import {
   rpcIsInWatchlist,
   formatBytes,
   sortEpisodes,
+  isExecutableRelease,
 } from "../api";
 import { useI18n } from "../i18n";
 
@@ -190,7 +191,8 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
     searchTorrents(title, year, movie.media_type || "movie", origTitle)
       .then((results) => {
         if (active) {
-          setTorrents(results);
+          const safeResults = results.filter((r) => !isExecutableRelease(r.title, r.magnet));
+          setTorrents(safeResults);
           setLoading(false);
         }
       })

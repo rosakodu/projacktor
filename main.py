@@ -60,6 +60,7 @@ from py_modules import (
     get_steam_language,
     get_available_storage_drives,
     has_vaapi_support,
+    is_executable_release,
     DownloadManager,
     TorrServerManager,
     extract_hash_from_magnet,
@@ -639,7 +640,10 @@ class Plugin:
                     logger.warning(f"Failed to resolve episode file index for history item {history_id}: {e}")
 
             # Запускаем загрузку
-            res = await self.start_download(mid, file_idx_str)
+            if file_idx_str:
+                res = await self.download_episode(mid, int(file_idx_str))
+            else:
+                res = await self.start_download(mid)
             if self.dm:
                 self.dm.sync_once()
             return {"success": True, "media_id": mid, "result": res}
@@ -778,6 +782,10 @@ class Plugin:
             quality = data.get('quality', '')
             torrent_title = data.get('torrent_title', '')
             poster_path = data.get('poster_path', '')
+
+            if is_executable_release(torrent_title, magnet):
+                logger.warning(f"add_to_library blocked executable/suspicious release: {torrent_title}")
+                return {"success": False, "error": "Раздачи с исполняемыми файлами (.exe) запрещены"}
             backdrop_path = data.get('backdrop_path', '')
             overview = data.get('overview', '')
             in_lib = 1 if data.get('in_library', True) else 0
@@ -874,6 +882,10 @@ class Plugin:
                 ddir = m['download_dir']
                 if not magnet or not ddir:
                     return {"success": False, "error": "Magnet link missing"}
+
+                if is_executable_release(m.get('torrent_title', ''), magnet):
+                    logger.warning(f"start_download blocked executable release: {m.get('torrent_title')}")
+                    return {"success": False, "error": "Раздачи с исполняемыми файлами (.exe) запрещены"}
                     
                 os.makedirs(ddir, exist_ok=True)
                 dl = cursor.execute("SELECT * FROM downloads WHERE media_id=?", (mid,)).fetchone()
@@ -1269,6 +1281,10 @@ class Plugin:
                 if st and st.get('followedBy') and len(st['followedBy']) > 0:
                     gid = st['followedBy'][0]
                     try:
+                        self.dm.pause(gid)
+                    except Exception:
+                        pass
+                    try:
                         db = get_db()
                         db.execute("UPDATE downloads SET aria2_gid=? WHERE media_id=?", (gid, mid))
                         db.commit()
@@ -1283,7 +1299,11 @@ class Plugin:
 
             if not af_list or not any(af.get('path') and not af.get('path').startswith('[METADATA]') for af in af_list):
                 logger.warning(f"download_episode: aria2 has no real file list yet for gid {gid}")
-                return {"success": True, "gid": gid}
+                try:
+                    self.dm.pause(gid)
+                except Exception:
+                    pass
+                return {"success": False, "error": "Не удалось получить список файлов раздачи"}
 
             matched_af = None
             # 1. Exact basename match
@@ -1350,16 +1370,43 @@ class Plugin:
                 if needs_restart:
                     selected_str = ",".join(sorted(current_selected, key=int))
                     # aria2 does not apply dynamic select-file on active tasks via changeOption.
-                    # Cleanly restart task with updated select-file option, preserving all disk data.
+                    # Cleanly restart task using saved .torrent file with select-file option!
                     self.dm._rpc_call("aria2.forceRemove", [gid])
                     self.dm._rpc_call("aria2.removeDownloadResult", [gid])
-                    opt = {
-                        "dir": m['download_dir'],
-                        "file-allocation": "none",
-                        "bt-prioritize-piece": "head=50M,tail=15M",
-                        "select-file": selected_str
-                    }
-                    new_gid = self.dm.add_download(m['magnet_uri'], m['download_dir'], opt)
+                    
+                    target_hash = ""
+                    if "xt=urn:btih:" in (m.get('magnet_uri') or "").lower():
+                        try:
+                            target_hash = m['magnet_uri'].lower().split("xt=urn:btih:")[1].split("&")[0].strip()
+                        except: pass
+
+                    torrent_path = os.path.join(m['download_dir'], f"{target_hash}.torrent") if target_hash else ""
+                    new_gid = None
+                    if torrent_path and os.path.isfile(torrent_path):
+                        try:
+                            import base64
+                            with open(torrent_path, "rb") as tf:
+                                b64 = base64.b64encode(tf.read()).decode('utf-8')
+                            opt = {
+                                "dir": m['download_dir'],
+                                "file-allocation": "none",
+                                "bt-prioritize-piece": "head=50M,tail=15M",
+                                "select-file": selected_str
+                            }
+                            new_gid = self.dm.add_torrent(b64, m['download_dir'], opt)
+                            logger.info(f"download_episode: added torrent with select-file {selected_str}, new gid {new_gid}")
+                        except Exception as te:
+                            logger.warning(f"download_episode: failed to add_torrent: {te}")
+
+                    if not new_gid:
+                        opt = {
+                            "dir": m['download_dir'],
+                            "file-allocation": "none",
+                            "bt-prioritize-piece": "head=50M,tail=15M",
+                            "select-file": selected_str
+                        }
+                        new_gid = self.dm.add_download(m['magnet_uri'], m['download_dir'], opt)
+
                     db = get_db()
                     db.execute("UPDATE downloads SET aria2_gid=?, status='downloading' WHERE media_id=?", (new_gid, mid))
                     db.commit()
@@ -1371,7 +1418,11 @@ class Plugin:
                 return {"success": True, "gid": gid, "aria2_index": target_aria2_idx}
             else:
                 logger.warning(f"download_episode: could not match aria2 file for {target_name}")
-                return {"success": True, "gid": gid}
+                try:
+                    self.dm.pause(gid)
+                except Exception:
+                    pass
+                return {"success": False, "error": f"Не удалось найти файл серии: {target_name}"}
         except Exception as e:
             logger.error(f"Plugin download_episode error: {e}")
             return {"success": False, "error": str(e)}
@@ -1547,9 +1598,12 @@ class Plugin:
                 }
 
             all_files = files
-            video_files = [f for f in all_files if os.path.splitext(f.get('path', ''))[1].lower() in video_exts]
+            video_files = [f for f in all_files if os.path.splitext(f.get('path', ''))[1].lower() in video_exts and not is_executable_release(f.get('path', ''))]
             if not video_files:
-                video_files = all_files
+                has_exe = any(is_executable_release(f.get('path', '')) for f in all_files)
+                err_msg = "В раздаче не найдено видеофайлов (обнаружены нежелательные/исполняемые файлы .exe)" if has_exe else "В раздаче не найдено поддерживаемых видеофайлов"
+                logger.warning(f"prepare_stream rejected release with no video files: {err_msg}")
+                return {"success": False, "error": err_msg}
 
             target_f = None
             if file_idx > 0:

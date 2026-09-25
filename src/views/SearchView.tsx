@@ -1,5 +1,5 @@
 import { FC, useState, useCallback, useEffect, useRef, memo } from "react";
-import { Focusable } from "@decky/ui";
+import { Focusable, GamepadButton } from "@decky/ui";
 import { MediaItem } from "../types";
 import { searchCatalog } from "../api";
 import { Shelf } from "../components/Shelf";
@@ -41,12 +41,14 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
       parentScroll.scrollTo({ top: 0, behavior: "smooth" });
     }
 
-    const input = root.querySelector<HTMLElement>("input, .DialogInput, .projacktor-gamepad-textfield");
+    const input = root.querySelector<HTMLInputElement>("input.DialogInput, input");
     if (input) {
       try {
         doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
         input.focus();
         input.classList.add("gpfocus");
+        input.classList.add("gpfocuswithin");
+        input.closest(".DialogInput_Wrapper")?.classList.add("gpfocuswithin");
         playCardNavSound();
       } catch {}
     }
@@ -122,17 +124,28 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
     };
   }, []);
 
-  const handleSearch = useCallback(async () => {
-    if (!searchQuery.trim() || searchLoading) return;
-    setSearchLoading(true);
-    setBackdropMovie(null);
-    try {
-      const results = await searchCatalog(searchQuery);
-      setSearchResults(results);
-    } finally {
-      setSearchLoading(false);
-    }
-  }, [searchQuery, searchLoading]);
+  const handleSearch = useCallback(
+    async (queryOverride?: string | any) => {
+      const root = rootRef.current;
+      const input = root?.querySelector<HTMLInputElement>("input.DialogInput, input");
+      const text = typeof queryOverride === "string" ? queryOverride : (input?.value || searchQuery);
+      const query = text.trim();
+      if (!query || searchLoading) return;
+      setSearchQuery(query);
+      setSearchLoading(true);
+      setBackdropMovie(null);
+      try {
+        input?.blur?.();
+      } catch {}
+      try {
+        const results = await searchCatalog(query);
+        setSearchResults(results);
+      } finally {
+        setSearchLoading(false);
+      }
+    },
+    [searchQuery, searchLoading]
+  );
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -166,6 +179,18 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
       const searchBar = root.querySelector(".projacktor-search-bar-row, form");
       const isInsideSearchBar = !!(searchBar && (searchBar === active || searchBar.contains(active as Node)));
 
+      const isLeft =
+        e.button === RawButton.DPAD_LEFT ||
+        e.button === RawButton.LEFTSTICK_LEFT ||
+        e.button === RawButton.LEFTPAD_LEFT ||
+        e.button === 7 ||
+        e.button === 22 ||
+        e.button === 12;
+
+      const isL2 =
+        e.button === RawButton.L2 ||
+        e.button === 28;
+
       const isUp =
         e.button === RawButton.DPAD_UP ||
         e.button === RawButton.LEFTSTICK_UP ||
@@ -180,7 +205,20 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
         e.button === 6 ||
         e.button === 21;
 
-      if (isUp) {
+      if (isLeft) {
+        const isSearchBtn = !!(active && (active.classList?.contains("ds-btn") || (active as HTMLElement)?.closest?.(".ds-btn")));
+        if (isSearchBtn) {
+          focusSearchInput();
+        }
+      } else if (isL2) {
+        if (isInsideSearchBar) {
+          const input = root.querySelector<HTMLInputElement>("input.DialogInput, input");
+          const val = (input?.value || searchQuery).trim();
+          if (val) {
+            handleSearch(val);
+          }
+        }
+      } else if (isUp) {
         if (!isInsideSearchBar) {
           // С карточки возвращаемся на поиск
           focusSearchInput();
@@ -193,7 +231,7 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
     });
 
     return un;
-  }, [searchResults.length, focusSearchInput, focusFirstCard]);
+  }, [searchResults.length, searchQuery, handleSearch, focusSearchInput, focusFirstCard]);
 
   return (
     <Focusable
@@ -250,6 +288,30 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
         style={{ display: "flex", gap: 12, marginBottom: 20, alignItems: "center", padding: "0 52px" }}
         onGamepadDirection={(evt: any) => {
           const btn = evt?.detail?.button;
+          if (btn === 11 || btn === GamepadButton.DIR_LEFT) {
+            const active = getActiveDocument(rootRef.current)?.activeElement;
+            if (active && (active.classList?.contains("ds-btn") || (active as HTMLElement)?.closest?.(".ds-btn"))) {
+              try {
+                evt?.preventDefault?.();
+                evt?.stopPropagation?.();
+              } catch {}
+              focusSearchInput();
+              return false;
+            }
+          }
+          if (btn === 7 || btn === GamepadButton.TRIGGER_LEFT || btn === 28) {
+            const root = rootRef.current;
+            const input = root?.querySelector<HTMLInputElement>("input.DialogInput, input");
+            const val = (input?.value || searchQuery).trim();
+            if (val) {
+              try {
+                evt?.preventDefault?.();
+                evt?.stopPropagation?.();
+              } catch {}
+              handleSearch(val);
+              return false;
+            }
+          }
           if (btn === 9) {
             // DPAD_UP: блокируем переход на вкладки
             try {
@@ -278,6 +340,19 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
           onKeyDown={handleKeyDown}
           onGamepadDirection={(evt: any) => {
             const btn = evt?.detail?.button;
+            if (btn === 7 || btn === GamepadButton.TRIGGER_LEFT || btn === 28) {
+              const root = rootRef.current;
+              const input = root?.querySelector<HTMLInputElement>("input.DialogInput, input");
+              const val = (input?.value || searchQuery).trim();
+              if (val) {
+                try {
+                  evt?.preventDefault?.();
+                  evt?.stopPropagation?.();
+                } catch {}
+                handleSearch(val);
+                return false;
+              }
+            }
             if (btn === 10 && searchResults.length > 0) {
               // DPAD_DOWN: переходим на карточки
               try {
@@ -295,8 +370,8 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
           className="ds-btn ds-btn--primary"
           noFocusRing
           onFocus={() => setBackdropMovie(null)}
-          onActivate={handleSearch}
-          onClick={handleSearch}
+          onActivate={() => handleSearch()}
+          onClick={() => handleSearch()}
           style={{
             padding: "8px 16px",
             fontSize: 12,
@@ -311,7 +386,7 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
           }}
           onGamepadDirection={(evt: any) => {
             const btn = evt?.detail?.button;
-            if (btn === 11) {
+            if (btn === 11 || btn === GamepadButton.DIR_LEFT) {
               // DPAD_LEFT: фокус на поле ввода
               try {
                 evt?.preventDefault?.();

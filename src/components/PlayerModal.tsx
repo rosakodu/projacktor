@@ -675,6 +675,16 @@ export const PlayerModal: FC<PlayerModalProps> = ({
         }
       }, 60);
       return () => clearTimeout(t);
+    } else if (!showControls) {
+      if (containerRef.current) {
+        try {
+          const doc = getActiveDocument(containerRef.current) || document;
+          doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+          if (doc.activeElement && doc.activeElement !== containerRef.current && doc.activeElement !== doc.body) {
+            (doc.activeElement as HTMLElement)?.blur?.();
+          }
+        } catch {}
+      }
     }
     return undefined;
   }, [showControls, showSubtitleMenu, showAudioMenu]);
@@ -1370,8 +1380,12 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   return (
     <Focusable
       ref={containerRef}
-      className="projacktor-player-fullscreen"
-      onCancelButton={() => {
+      className={`projacktor-player-fullscreen${showControls ? "" : " controls-hidden"}`}
+      onCancelButton={(evt: any) => {
+        try {
+          evt?.preventDefault?.();
+          evt?.stopPropagation?.();
+        } catch {}
         if (isOverlayActiveOrRecent(1200)) {
           return false;
         }
@@ -1385,6 +1399,24 @@ export const PlayerModal: FC<PlayerModalProps> = ({
         }
         closeModalRef.current?.();
         return false;
+      }}
+      onCancel={(evt: any) => {
+        try {
+          evt?.preventDefault?.();
+          evt?.stopPropagation?.();
+        } catch {}
+        if (isOverlayActiveOrRecent(1200)) {
+          return;
+        }
+        if (showAudioMenuRef.current) {
+          setShowAudioMenu(false);
+          return;
+        }
+        if (showSubtitleMenuRef.current) {
+          setShowSubtitleMenu(false);
+          return;
+        }
+        closeModalRef.current?.();
       }}
         onGamepadDirection={(evt: any) => {
           if (showAudioMenuRef.current || showSubtitleMenuRef.current) {

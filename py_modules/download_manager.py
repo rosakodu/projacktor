@@ -10,7 +10,7 @@ import subprocess
 import shutil
 import secrets
 from .db import CONFIG_DIR, get_db, DB_LOCK, logger
-from .common import get_bin_path, _clean_env, POPULAR_TRACKERS
+from .common import get_bin_path, _clean_env, POPULAR_TRACKERS, is_executable_release
 from .stream import is_header_ready
 
 class DownloadManager:
@@ -94,6 +94,8 @@ class DownloadManager:
             "--save-session-interval=30",
             "--bt-prioritize-piece=head=50M,tail=15M",
             "--file-allocation=none",
+            "--bt-save-metadata=true",
+            "--bt-load-saved-metadata=true",
             "--enable-dht=true",
             "--dht-listen-port=6881",
             "--enable-peer-exchange=true",
@@ -165,6 +167,13 @@ class DownloadManager:
         if options and isinstance(options, dict):
             opt.update(options)
         res = self._rpc_call("aria2.addUri", [[magnet], opt])
+        return res
+
+    def add_torrent(self, torrent_b64, directory, options=None):
+        opt = {"dir": directory}
+        if options and isinstance(options, dict):
+            opt.update(options)
+        res = self._rpc_call("aria2.addTorrent", [torrent_b64, [], opt])
         return res
 
     def get_status(self, gid):
@@ -355,6 +364,30 @@ class DownloadManager:
             down_speed = int(t.get('downloadSpeed', 0))
             up_speed = int(t.get('uploadSpeed', 0))
             has_followed = bool(t.get('followedBy'))
+
+            # Защита от вредоносных раздач (.exe): проверяем список файлов задачи
+            t_files = t.get('files') or []
+            real_files = [f for f in t_files if f.get('path') and not f.get('path').startswith('[METADATA]')]
+            if real_files:
+                video_exts = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov', '.m4v'}
+                has_video = any(os.path.splitext(f.get('path', ''))[1].lower() in video_exts for f in real_files)
+                if not has_video:
+                    has_exe = any(is_executable_release(f.get('path', '')) for f in real_files)
+                    if has_exe:
+                        logger.warning(f"Download id={row_id} contains only non-video/executable files! Aborting aria2 task {gid}.")
+                        try:
+                            self._rpc_call("aria2.forceRemove", [gid])
+                            self._rpc_call("aria2.removeDownloadResult", [gid])
+                        except Exception:
+                            pass
+                        cursor.execute("""
+                            UPDATE downloads 
+                            SET status='error', error_message='В раздаче не найдено видеофайлов (обнаружены нежелательные/исполняемые файлы .exe)',
+                                download_speed=0, upload_speed=0
+                            WHERE id=?
+                        """, (row_id,))
+                        db.commit()
+                        continue
             
             if raw_status == 'complete':
                 if has_followed:
@@ -409,6 +442,17 @@ class DownloadManager:
     def _scan_and_add_files(self, cursor, media_id, ddir):
         if not os.path.isdir(ddir):
             return
+
+        # Удаляем любые случайные исполняемые файлы из папки медиа
+        for root, _, files in os.walk(ddir):
+            for f in files:
+                if is_executable_release(f):
+                    try:
+                        os.remove(os.path.join(root, f))
+                        logger.warning(f"Removed dangerous executable file from download dir: {f}")
+                    except Exception:
+                        pass
+
         video_exts = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov'}
         for root, _, files in os.walk(ddir):
             for f in files:

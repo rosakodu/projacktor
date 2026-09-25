@@ -99,6 +99,13 @@ export const LibraryView: FC<LibraryViewProps> = memo(
 
 
 
+    // Сброс бэкдропа при опустошении списка библиотеки
+    useEffect(() => {
+      if (!isInitialLoading && library.length === 0) {
+        setBackdropMovie(null, true);
+      }
+    }, [library.length, isInitialLoading]);
+
     // Авто-фокус на элементе библиотеки при переходе во вкладку
     useEffect(() => {
       let cancelled = false;

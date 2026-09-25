@@ -229,6 +229,31 @@ function isUnwantedSequel(torrentTitle: string, targetTitle: string): boolean {
   return sequelRegex.test(torrentTitle);
 }
 
+export function isExecutableRelease(title: string, magnet?: string): boolean {
+  if (!title && !magnet) return false;
+  const text = `${title || ""} ${magnet || ""}`;
+
+  // 1. Опасные исполняемые расширения файлов (.exe, .msi, .bat, .cmd, .scr, .pif, .vbs, .cpl, .com, .jar, .apk, .dmg, .pkg)
+  const dangerousExts = /\.(exe|msi|scr|bat|cmd|pif|vbs|vbe|cpl|com|jar|apk|dmg|pkg)(?:$|[\s\?&"'\)\]_#])/i;
+  if (dangerousExts.test(text)) {
+    return true;
+  }
+
+  // 2. Изолированный тег или маркер [EXE] / (EXE) / .exe в релизе
+  const exeTag = /(?:^|[\s.\[\(_-])exe(?:$|[\s.\]\)_-])/i;
+  if (exeTag.test(title || "")) {
+    return true;
+  }
+
+  // 3. Маркеры инсталляторов и кряков
+  const malwareKeywords = /\b(setup|installer|crack|keygen|patch)\.exe\b/i;
+  if (malwareKeywords.test(text)) {
+    return true;
+  }
+
+  return false;
+}
+
 function filterTorrents(
   items: any[],
   targetTitle: string,
@@ -242,6 +267,10 @@ function filterTorrents(
 
   return items.filter((t) => {
     const title = t.title || "";
+
+    if (isExecutableRelease(title, t.magnet)) {
+      return false;
+    }
 
     if (isTargetMovie && isTvRelease(title)) {
       return false;
@@ -397,6 +426,7 @@ export async function searchTorrents(
     const deduplicated: TorrentItem[] = [];
 
     for (const t of filtered) {
+      if (isExecutableRelease(t.title, t.magnet)) continue;
       const key = t.magnet || t.title;
       if (!key || seen.has(key)) continue;
       seen.add(key);

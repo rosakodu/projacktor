@@ -46,6 +46,8 @@ export const GamepadTextField: FC<GamepadTextFieldProps> = ({
     return null;
   }, []);
 
+  const lastActivateRef = useRef<number>(0);
+
   // При монтировании инпута вешаем обработчик нативного события vgp_onactivate от SteamOS.
   // Поскольку инпут внутри TextField уже является нативным Focusable в Steam,
   // при нажатии кнопки 'A' SteamOS шлёт vgp_onactivate напрямую на input.
@@ -56,18 +58,27 @@ export const GamepadTextField: FC<GamepadTextFieldProps> = ({
 
     const onActivate = (e: Event) => {
       e.stopPropagation();
+      const now = Date.now();
+      if (now - lastActivateRef.current < 350) return;
+      lastActivateRef.current = now;
       try {
         input.scrollIntoView({ block: "center", behavior: "smooth" });
       } catch {}
       input.click();
     };
 
-    const onOk = () => {
-      onSubmit?.();
+    const onNativeKeyDown = (e: any) => {
+      if (e.key === "Enter" || e.keyCode === 13) {
+        try {
+          e.preventDefault?.();
+          e.stopPropagation?.();
+        } catch {}
+        onSubmit?.();
+      }
     };
 
     input.addEventListener("vgp_onactivate", onActivate);
-    input.addEventListener("vgp_onok", onOk);
+    input.addEventListener("keydown", onNativeKeyDown);
 
     let dirHandler: any = null;
     if (onGamepadDirection) {
@@ -83,7 +94,7 @@ export const GamepadTextField: FC<GamepadTextFieldProps> = ({
 
     return () => {
       input.removeEventListener("vgp_onactivate", onActivate);
-      input.removeEventListener("vgp_onok", onOk);
+      input.removeEventListener("keydown", onNativeKeyDown);
       if (dirHandler) {
         input.removeEventListener("vgp_ondirection", dirHandler);
       }
@@ -117,8 +128,11 @@ export const GamepadTextField: FC<GamepadTextFieldProps> = ({
     (e: any) => {
       if (disabled) return;
       const input = getInputElement();
+      const now = Date.now();
+      if (now - lastActivateRef.current < 350) return;
       // Если клик пришелся мимо самого input (по краям контейнера) — передаем клик в input
       if (input && e.target !== input && !input.contains(e.target as Node)) {
+        lastActivateRef.current = now;
         try {
           input.scrollIntoView({ block: "center", behavior: "smooth" });
         } catch {}
@@ -149,6 +163,9 @@ export const GamepadTextField: FC<GamepadTextFieldProps> = ({
         onBlur={onBlur}
         onKeyDown={handleKeyDownInternal}
         disabled={disabled}
+        onClick={() => {
+          lastActivateRef.current = Date.now();
+        }}
         {...({
           placeholder,
           spellCheck: false,

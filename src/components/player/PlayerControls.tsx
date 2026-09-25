@@ -105,13 +105,15 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
     zIndex: 2,
   };
 
+  const isFocusDisabled = !showControls || isAnyMenuOpen;
+
   // Содержимое ряда кнопок
   const buttonBarContent = (
     <>
       {/* Кнопка 1: Перемотка назад (-10с) */}
       <Focusable
-        tabIndex={isAnyMenuOpen ? -1 : 0}
-        noFocusRing={isAnyMenuOpen}
+        tabIndex={isFocusDisabled ? -1 : 0}
+        noFocusRing={isFocusDisabled}
         className="ds-btn ds-btn--compact ds-btn--icon"
         onActivate={(e?: any) => {
           if (isAnyMenuOpen) return;
@@ -133,8 +135,8 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
       {/* Кнопка 2: Пауза / Плей */}
       <Focusable
         ref={playBtnRef}
-        tabIndex={isAnyMenuOpen ? -1 : 0}
-        noFocusRing={isAnyMenuOpen}
+        tabIndex={isFocusDisabled ? -1 : 0}
+        noFocusRing={isFocusDisabled}
         className="ds-btn ds-btn--primary ds-btn--compact ds-btn--icon"
         onActivate={(e?: any) => {
           if (isAnyMenuOpen) return;
@@ -155,8 +157,8 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 
       {/* Кнопка 3: Перемотка вперед (+10с) */}
       <Focusable
-        tabIndex={isAnyMenuOpen ? -1 : 0}
-        noFocusRing={isAnyMenuOpen}
+        tabIndex={isFocusDisabled ? -1 : 0}
+        noFocusRing={isFocusDisabled}
         className="ds-btn ds-btn--compact ds-btn--icon"
         onActivate={(e?: any) => {
           if (isAnyMenuOpen) return;
@@ -178,8 +180,8 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
       {/* Кнопка 4: Начать сначала (если playhead > 30s) */}
       {currentPlayhead > 30 && (
         <Focusable
-          tabIndex={isAnyMenuOpen ? -1 : 0}
-          noFocusRing={isAnyMenuOpen}
+          tabIndex={isFocusDisabled ? -1 : 0}
+          noFocusRing={isFocusDisabled}
           className="ds-btn ds-btn--compact ds-btn--icon"
           onActivate={(e?: any) => {
             if (isAnyMenuOpen) return;
@@ -202,8 +204,8 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
       {/* Кнопка 5: Выбор субтитров */}
       <Focusable
         ref={subtitleBtnRef}
-        tabIndex={isAnyMenuOpen ? -1 : 0}
-        noFocusRing={isAnyMenuOpen}
+        tabIndex={isFocusDisabled ? -1 : 0}
+        noFocusRing={isFocusDisabled}
         className="ds-btn ds-btn--compact ds-btn--icon"
         onActivate={(e?: any) => {
           e?.stopPropagation?.();
@@ -231,8 +233,8 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
       {/* Кнопка 6: Выбор аудиодорожки */}
       <Focusable
         ref={audioBtnRef}
-        tabIndex={isAnyMenuOpen ? -1 : 0}
-        noFocusRing={isAnyMenuOpen}
+        tabIndex={isFocusDisabled ? -1 : 0}
+        noFocusRing={isFocusDisabled}
         className="ds-btn ds-btn--compact ds-btn--icon"
         onActivate={(e?: any) => {
           e?.stopPropagation?.();
@@ -270,8 +272,9 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
         zIndex: 10,
         background: "linear-gradient(to top, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.6) 70%, transparent 100%)",
         opacity: showControls ? 1 : 0,
+        visibility: showControls ? "visible" : "hidden",
         pointerEvents: showControls ? "auto" : "none",
-        transition: "opacity 0.3s ease",
+        transition: "opacity 0.3s ease, visibility 0.3s ease",
         display: "flex",
         flexDirection: "column",
       }}
@@ -338,7 +341,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
         <Focusable
           flow-children="horizontal"
           className="projacktor-player-controls-bar"
-          noFocusRing={isAnyMenuOpen}
+          noFocusRing={isFocusDisabled}
           onGamepadDirection={(evt: any) => {
             if (isAnyMenuOpen) {
               try {

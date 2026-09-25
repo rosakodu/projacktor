@@ -30,7 +30,8 @@ from .common import (
     POPULAR_TRACKERS,
     get_steam_language,
     get_available_storage_drives,
-    has_vaapi_support
+    has_vaapi_support,
+    is_executable_release
 )
 from .download_manager import DownloadManager
 from .torrserver import TorrServerManager, extract_hash_from_magnet, extract_ts_files

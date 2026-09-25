@@ -47,6 +47,18 @@ def get_ssl_context():
             logger.warning(f"Failed to create verified SSL context, using unverified fallback: {e2}")
             return ssl._create_unverified_context()
 
+DANGEROUS_EXT_REGEX = re.compile(
+    r'(?i)(\.(exe|msi|scr|bat|cmd|pif|vbs|vbe|cpl|com|jar|apk|dmg|pkg)(?:$|[\s\?&"\'\)\]_#])|'
+    r'(?:^|[\s.\[\(_-])exe(?:$|[\s.\]\)_-])|'
+    r'\b(?:setup|installer|crack|keygen|patch)\.exe\b)'
+)
+
+def is_executable_release(title: str, magnet: str = "") -> bool:
+    if not title and not magnet:
+        return False
+    combined = f"{title or ''} {magnet or ''}"
+    return bool(DANGEROUS_EXT_REGEX.search(combined))
+
 def normalize_jacred_url(url: str) -> str:
     if not url:
         return ""

@@ -42,6 +42,7 @@ export const ProjacktorApp: FC = () => {
   const rootRef = useRef<HTMLDivElement>(null);
   const fallbackRef = useRef<HTMLDivElement>(null);
   const lastTabSwitchAtRef = useRef<number>(0);
+  const lastPlayerCloseTimeRef = useRef<number>(0);
   const [activeTab, setActiveTab] = useState<string>("movies");
   const [ready, setReady] = useState(false);
   const [isPlayerOpen, setIsPlayerOpen] = useState<boolean>(false);
@@ -87,6 +88,7 @@ export const ProjacktorApp: FC = () => {
   };
 
   const closePlayer = useCallback(() => {
+    lastPlayerCloseTimeRef.current = Date.now();
     setIsPlayerOpen(false);
     setPlayerActive(false);
     setPlayerConfig(null);
@@ -176,10 +178,18 @@ export const ProjacktorApp: FC = () => {
     [handlePlayVideo]
   );
 
-  const handleBack = useCallback(() => {
+  const handleBack = useCallback((e?: any) => {
+    if (Date.now() - lastPlayerCloseTimeRef.current < 500) {
+      try {
+        e?.preventDefault?.();
+        e?.stopPropagation?.();
+      } catch {}
+      return false;
+    }
     try {
       Navigation.NavigateBack();
     } catch {}
+    return true;
   }, []);
 
   const holdFocusOnFallback = useCallback(() => {
@@ -336,11 +346,9 @@ export const ProjacktorApp: FC = () => {
     };
   }, [activeTab, ready, ensureContentFocus]);
 
-  // Сброс бэкдропа при переходе в настройки или поиск
+  // Сброс бэкдропа при любом переключении вкладки
   useEffect(() => {
-    if (activeTab === "settings" || activeTab === "search") {
-      setBackdropMovie(null, true);
-    }
+    setBackdropMovie(null, true);
   }, [activeTab]);
 
 
@@ -468,9 +476,28 @@ export const ProjacktorApp: FC = () => {
       ref={rootRef}
       className={`projacktor-app-root ${isPlayerOpen ? "projacktor-app-playing" : ""}`}
       flow-children="vertical"
-      onCancelButton={isPlayerOpen ? () => false : handleBack}
+      onCancelButton={(e: any) => {
+        if (isPlayerOpen || isPlayerActive() || Date.now() - lastPlayerCloseTimeRef.current < 500) {
+          try {
+            e?.preventDefault?.();
+            e?.stopPropagation?.();
+          } catch {}
+          return false;
+        }
+        return handleBack(e);
+      }}
+      onCancel={(e: any) => {
+        if (isPlayerOpen || isPlayerActive() || Date.now() - lastPlayerCloseTimeRef.current < 500) {
+          try {
+            e?.preventDefault?.();
+            e?.stopPropagation?.();
+          } catch {}
+          return;
+        }
+        handleBack(e);
+      }}
       onButtonDown={(e: any) => {
-        if (isPlayerOpen || isPlayerActive()) return false;
+        if (isPlayerOpen || isPlayerActive() || Date.now() - lastPlayerCloseTimeRef.current < 500) return false;
         if (isModalOpen()) return false;
         const btn = e?.detail?.button;
         if (btn === GamepadButton.BUMPER_LEFT || btn === 5) {

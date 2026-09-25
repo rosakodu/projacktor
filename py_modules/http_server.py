@@ -15,7 +15,7 @@ from socketserver import ThreadingMixIn
 import threading
 
 from .db import CONFIG_DIR, get_user_home, get_db, logger
-from .common import load_settings, save_settings, ping_jacred, normalize_jacred_url, get_ssl_context, get_bin_path, _clean_env, has_vaapi_support
+from .common import load_settings, save_settings, ping_jacred, normalize_jacred_url, get_ssl_context, get_bin_path, _clean_env, has_vaapi_support, is_executable_release
 from .stream import unwrap_stream_source, is_header_ready, probe_media_file
 from .torrserver import extract_hash_from_magnet, extract_ts_files
 from .transcoder import resolve_transcode_plan, build_ffmpeg_stream_command
@@ -745,6 +745,12 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                                 break
                             
                     details = item.get("Details") or item.get("details") or item.get("url") or ""
+
+                    # Строгий запрет на показ и выдачу любых раздач с .exe и исполняемыми файлами
+                    if is_executable_release(title, magnet) or is_executable_release(details):
+                        logger.warning(f"JacRed search blocked suspicious/executable torrent: {title}")
+                        continue
+
                     s_count = int(seeders) if str(seeders).isdigit() else 0
                     p_count = int(peers) if str(peers).isdigit() else 0
                     normalized.append({

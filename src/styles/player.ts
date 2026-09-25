@@ -31,6 +31,28 @@ export const PLAYER_STYLES = `
   filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.9)) !important;
 }
 
+/* ───── Video Player Controls Hidden (Suppresses All Focus Highlights) ───── */
+.projacktor-player-fullscreen.controls-hidden .ds-btn,
+.projacktor-player-fullscreen.controls-hidden .ds-btn:focus,
+.projacktor-player-fullscreen.controls-hidden .ds-btn.gpfocus,
+.projacktor-player-fullscreen.controls-hidden [tabindex="0"],
+.projacktor-player-fullscreen.controls-hidden [tabindex="0"]:focus,
+.projacktor-player-fullscreen.controls-hidden [tabindex="0"].gpfocus {
+  outline: none !important;
+  box-shadow: none !important;
+  border-color: transparent !important;
+  background: transparent !important;
+  transform: none !important;
+}
+
+.projacktor-player-fullscreen.controls-hidden [class*="focus-ring"],
+.projacktor-player-fullscreen.controls-hidden [class*="_1wPplsegQqCoe06wXPhzKT"],
+.projacktor-player-fullscreen.controls-hidden [class*="_3FIjYetykQsFYR08l1v7Ls"] {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
+
 /* ───── Video Player Dropdown Menus Focus ───── */
 .projacktor-player-dropdown-menu .ds-btn {
   border-radius: 4px !important;

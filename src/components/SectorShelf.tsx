@@ -172,6 +172,27 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
 
     const lastTitleRef = useRef<string>(title);
 
+    // Синхронизация фонового изображения полки с текущей карточкой или первой карточкой
+    useEffect(() => {
+      if (!items || items.length === 0) return;
+
+      const doc = getActiveDocument(rowRef.current);
+      const active = doc?.activeElement;
+      const isAlreadyInShelf = !!(active && rowRef.current?.contains(active as Node));
+
+      if (isAlreadyInShelf) {
+        const cards = Array.from(rowRef.current?.querySelectorAll<HTMLElement>(".projacktor-card") || []);
+        const curIdx = cards.findIndex((c) => c === active || c.contains(active as Node));
+        if (curIdx >= 0 && items[curIdx]) {
+          setBackdropMovie(items[curIdx]);
+          return;
+        }
+      }
+      if (items[0]) {
+        setBackdropMovie(items[0]);
+      }
+    }, [items, title]);
+
     // Авто-фокус на первой карточке при смене раздела
     useEffect(() => {
       const isNewSection = lastTitleRef.current !== title;
@@ -190,6 +211,13 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
         const currentDoc = getActiveDocument(rowRef.current);
         const currentActive = currentDoc?.activeElement;
         if (currentActive && rowRef.current?.contains(currentActive as Node)) {
+          const cards = Array.from(rowRef.current?.querySelectorAll<HTMLElement>(".projacktor-card") || []);
+          const curIdx = cards.findIndex((c) => c === currentActive || c.contains(currentActive as Node));
+          if (curIdx >= 0 && itemsRef.current[curIdx]) {
+            setBackdropMovie(itemsRef.current[curIdx]);
+          } else if (itemsRef.current[0]) {
+            setBackdropMovie(itemsRef.current[0]);
+          }
           return;
         }
         const inTabs = !!(
