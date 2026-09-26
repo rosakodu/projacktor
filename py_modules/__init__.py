@@ -31,7 +31,10 @@ from .common import (
     get_steam_language,
     get_available_storage_drives,
     has_vaapi_support,
-    is_executable_release
+    is_executable_release,
+    clean_media_title,
+    search_tmdb_metadata,
+    auto_enrich_library_metadata
 )
 from .download_manager import DownloadManager
 from .torrserver import TorrServerManager, extract_hash_from_magnet, extract_ts_files

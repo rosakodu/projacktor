@@ -426,6 +426,44 @@ export const CARDS_STYLES = `
   pointer-events: none !important;
 }
 
+.projacktor-dl-poster-placeholder {
+  width: 100% !important;
+  min-width: 100% !important;
+  max-width: 100% !important;
+  height: 186px !important;
+  min-height: 186px !important;
+  max-height: 186px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: linear-gradient(145deg, #1b2838 0%, #0d121a 100%) !important;
+  color: #8f98a0 !important;
+  padding: 12px 10px 24px 10px !important;
+  box-sizing: border-box !important;
+  text-align: center !important;
+  user-select: none !important;
+}
+
+.projacktor-dl-placeholder-icon {
+  font-size: 32px !important;
+  margin-bottom: 8px !important;
+  color: #67c1f5 !important;
+  opacity: 0.8 !important;
+}
+
+.projacktor-dl-placeholder-title {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  color: #c7d5e0 !important;
+  line-height: 1.3 !important;
+  overflow: hidden !important;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 4 !important;
+  -webkit-box-orient: vertical !important;
+  word-break: break-word !important;
+}
+
 .projacktor-dl-badge-status {
   position: absolute !important;
   top: 6px !important;

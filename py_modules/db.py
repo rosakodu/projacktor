@@ -415,10 +415,21 @@ def db_get_all_settings() -> dict:
 
 def rescan_library_from_disk(download_path: str = None, conn=None) -> int:
     """
-    Scans download directories for existing downloaded movies/series
-    and automatically indexes them into media, media_files, and downloads.
-    Restores user library after database recreation or plugin updates.
+    Scans download directories for existing downloaded movies/series and arbitrary video files
+    (including loose videos, phone videos, legacy directories), indexes them into media,
+    media_files and downloads, and enriches missing metadata from TMDB.
     """
+    try:
+        from .stream import is_header_ready
+    except Exception:
+        is_header_ready = lambda fp: True
+
+    try:
+        from .common import clean_media_title, auto_enrich_library_metadata
+    except Exception:
+        clean_media_title = lambda t: (t, None, False)
+        auto_enrich_library_metadata = lambda c: 0
+
     should_close = False
     if conn is None:
         try:
@@ -429,8 +440,9 @@ def rescan_library_from_disk(download_path: str = None, conn=None) -> int:
             logger.error(f"rescan_library_from_disk failed to connect to db: {e}")
             return 0
 
-    video_exts = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov', '.m4v'}
+    video_exts = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov', '.m4v', '.wmv', '.flv', '.3gp', '.m2ts', '.mpg', '.mpeg'}
     restored_count = 0
+    indexed_files = set()
 
     try:
         search_roots = []
@@ -448,26 +460,38 @@ def rescan_library_from_disk(download_path: str = None, conn=None) -> int:
             if os.path.isdir(r_dp):
                 search_roots.append(r_dp)
 
-        # 2. Стандартные домашние директории
+        # 2. Стандартные домашние директории (Videos, Movies, Projacktor и legacy)
+        user_home = get_user_home()
         for alt in [
-            os.path.join(get_user_home(), "Movies", "Projacktor"),
-            os.path.join(get_user_home(), "Videos", "Projacktor"),
-            os.path.join(get_user_home(), "Video", "Projactor"),
-            os.path.join(get_user_home(), "Video", "Projecktor"),
+            os.path.join(user_home, "Videos", "Projacktor"),
+            os.path.join(user_home, "Videos"),
+            os.path.join(user_home, "Movies", "Projacktor"),
+            os.path.join(user_home, "Movies"),
+            os.path.join(user_home, "Video", "Projactor"),
+            os.path.join(user_home, "Video", "Projecktor"),
+            os.path.join(user_home, "Video"),
+            os.path.join(user_home, "videos", "projacktor"),
+            os.path.join(user_home, "videos"),
+            os.path.join(user_home, "movies", "projacktor"),
+            os.path.join(user_home, "movies"),
         ]:
             r_alt = os.path.realpath(alt)
             if r_alt not in search_roots and os.path.isdir(r_alt):
                 search_roots.append(r_alt)
 
         # 3. MicroSD карты и внешние диски (/run/media/*/*)
-        media_bases = ["/run/media", os.path.join("/run/media", os.path.basename(get_user_home()))]
+        media_bases = ["/run/media", os.path.join("/run/media", os.path.basename(user_home))]
         for mb in media_bases:
             if os.path.isdir(mb):
                 try:
                     for entry in os.listdir(mb):
                         entry_path = os.path.join(mb, entry)
                         if os.path.isdir(entry_path):
-                            for sd_sub in ["Videos/Projacktor", "Movies/Projacktor", "Projacktor"]:
+                            for sd_sub in [
+                                "Videos/Projacktor", "Movies/Projacktor", 
+                                "Videos", "Movies", "Projacktor",
+                                "videos/projacktor", "movies/projacktor", "videos", "movies"
+                            ]:
                                 candidate = os.path.realpath(os.path.join(entry_path, sd_sub))
                                 if candidate not in search_roots and os.path.isdir(candidate):
                                     search_roots.append(candidate)
@@ -496,30 +520,25 @@ def rescan_library_from_disk(download_path: str = None, conn=None) -> int:
                         has_aria2 = True
                     ext = os.path.splitext(fn)[1].lower()
                     if ext in video_exts:
-                        fp = os.path.join(dirpath, fn)
+                        fp = os.path.realpath(os.path.join(dirpath, fn))
+                        if fp in indexed_files:
+                            continue
                         try:
                             sz = os.path.getsize(fp)
-                            if sz >= 10 * 1024 * 1024:
+                            if sz >= 100 * 1024 and is_header_ready(fp):
                                 vfiles.append((fp, fn, sz))
+                                indexed_files.add(fp)
                         except Exception:
                             pass
 
             if not vfiles:
                 return
 
-            parsed_title = folder_name
-            parsed_year = None
-            m_year = re.search(r'[\(\[](\d{4})[\)\]]', folder_name)
-            if m_year:
-                try:
-                    parsed_year = int(m_year.group(1))
-                    parsed_title = folder_name[:m_year.start()].strip()
-                except Exception:
-                    pass
+            clean_parsed, p_year, _ = clean_media_title(folder_name)
+            parsed_title = clean_parsed or folder_name
+            parsed_year = p_year
 
-            clean_title = parsed_title.replace(":", " ").strip()
-
-            # Точный поиск: сначала по download_dir, затем по точному названию и году
+            # Точный поиск: сначала по download_dir, затем по названию и году
             row = None
             if item_dir:
                 row = cursor.execute("""
@@ -534,13 +553,13 @@ def rescan_library_from_disk(download_path: str = None, conn=None) -> int:
                         SELECT id, in_library, download_dir, status FROM media 
                         WHERE (title = ? OR title = ?) AND year = ?
                         ORDER BY id ASC LIMIT 1
-                    """, (parsed_title, clean_title, parsed_year)).fetchone()
+                    """, (parsed_title, folder_name, parsed_year)).fetchone()
                 else:
                     row = cursor.execute("""
                         SELECT id, in_library, download_dir, status FROM media 
                         WHERE (title = ? OR title = ?)
                         ORDER BY id ASC LIMIT 1
-                    """, (parsed_title, clean_title)).fetchone()
+                    """, (parsed_title, folder_name)).fetchone()
 
             if row:
                 mid = row['id'] if isinstance(row, dict) else row[0]
@@ -564,7 +583,7 @@ def rescan_library_from_disk(download_path: str = None, conn=None) -> int:
                 if not mf_row:
                     ep_num = None
                     season_num = 1
-                    m_ep = re.search(r'[-_\s](\d{1,4})[-_\s\.]', fn)
+                    m_ep = re.search(r'(?i)(?:s\d{1,2}e|\bep?[-_\s]*)(\d{1,4})', fn)
                     if m_ep:
                         try:
                             ep_num = int(m_ep.group(1))
@@ -599,6 +618,72 @@ def rescan_library_from_disk(download_path: str = None, conn=None) -> int:
 
             restored_count += 1
 
+        def process_single_video_file(fp: str, fn: str, sz: int, parent_dir: str):
+            nonlocal restored_count
+            indexed_files.add(fp)
+            has_aria2 = os.path.exists(fp + ".aria2")
+
+            clean_parsed, p_year, _ = clean_media_title(fn)
+            file_title = clean_parsed or os.path.splitext(fn)[0]
+
+            is_tv = bool(re.search(r'(?i)\b(s\d{1,2}e\d{1,2}|s\d{1,2}|season\s*\d+|сезон\s*\d+|серия\s*\d+)\b', fn))
+            media_type = "tv" if is_tv else "movie"
+
+            # Check if this exact file path is already in media_files
+            mf_row = cursor.execute("""
+                SELECT mf.media_id, m.id FROM media_files mf
+                JOIN media m ON mf.media_id = m.id
+                WHERE mf.file_path = ? LIMIT 1
+            """, (fp,)).fetchone()
+
+            if mf_row:
+                mid = mf_row['media_id'] if isinstance(mf_row, dict) else mf_row[0]
+                cursor.execute("""
+                    UPDATE media 
+                    SET in_library = 1, status = 'downloaded', download_dir = ?
+                    WHERE id = ?
+                """, (parent_dir, mid))
+            else:
+                cursor.execute("""
+                    INSERT INTO media (title, year, media_type, in_library, status, download_dir)
+                    VALUES (?, ?, ?, 1, 'downloaded', ?)
+                """, (file_title, p_year, media_type, parent_dir))
+                mid = cursor.lastrowid
+
+                ep_num = None
+                m_ep = re.search(r'(?i)(?:s\d{1,2}e|\bep?[-_\s]*)(\d{1,4})', fn)
+                if m_ep:
+                    try:
+                        ep_num = int(m_ep.group(1))
+                    except Exception:
+                        pass
+
+                cursor.execute("""
+                    INSERT INTO media_files (media_id, file_path, file_name, file_size, season_number, episode_number)
+                    VALUES (?, ?, ?, ?, 1, ?)
+                """, (mid, fp, fn, sz, ep_num))
+
+            dl_row = cursor.execute("SELECT id, status FROM downloads WHERE media_id = ?", (mid,)).fetchone()
+            dl_status = 'downloading' if has_aria2 else 'completed'
+            dl_progress = 50.0 if has_aria2 else 100.0
+
+            if not dl_row:
+                cursor.execute("""
+                    INSERT INTO downloads (
+                        media_id, magnet_uri, torrent_title, status, progress, 
+                        total_size, downloaded_size, download_dir, completed_at
+                    ) VALUES (?, '', ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """, (mid, fn, dl_status, dl_progress, sz, sz, parent_dir))
+            else:
+                dl_id = dl_row['id'] if isinstance(dl_row, dict) else dl_row[0]
+                cursor.execute("""
+                    UPDATE downloads 
+                    SET status = ?, progress = ?, total_size = ?, downloaded_size = ?
+                    WHERE id = ?
+                """, (dl_status, dl_progress, sz, sz, dl_id))
+
+            restored_count += 1
+
         for root in search_roots:
             if not os.path.isdir(root):
                 continue
@@ -614,18 +699,64 @@ def rescan_library_from_disk(download_path: str = None, conn=None) -> int:
                     if os.path.isdir(item_dir):
                         process_media_folder(item_dir, folder_name, media_type)
 
-            # 2. Если в корне папки лежат папки релизов (не разделенные на Фильмы/Сериалы)
+            # 2. Рекурсивное сканирование всех остальных папок и видеофайлов
+            skip_dir_names = {
+                'steam', 'steamapps', 'node_modules', '__pycache__', 
+                '.thumbnails', '.cache', '.config', '.git'
+            }
             known_cat_names = {c[0].lower() for c in categories}
-            for entry_name in sorted(os.listdir(root)):
-                if entry_name.lower() in known_cat_names:
+
+            for dirpath, dirs, filenames in os.walk(root):
+                # Исключаем скрытые и системные директории
+                dirs[:] = [
+                    d for d in dirs 
+                    if not d.startswith('.') and d.lower() not in skip_dir_names
+                ]
+
+                # Проверяем, не является ли dirpath стандартной категорией
+                if os.path.basename(dirpath).lower() in known_cat_names:
                     continue
-                entry_dir = os.path.join(root, entry_name)
-                if os.path.isdir(entry_dir):
-                    # Проверяем, есть ли там видеофайлы
-                    mtype = "tv" if any(kw in entry_name.lower() for kw in ["season", "сезон", "s0", "s1", "серии"]) else "movie"
-                    process_media_folder(entry_dir, entry_name, mtype)
+
+                # Ищем неиндексированные видеофайлы в текущей директории
+                local_vfiles = []
+                for fn in filenames:
+                    ext = os.path.splitext(fn)[1].lower()
+                    if ext in video_exts and not fn.endswith('.aria2'):
+                        fp = os.path.realpath(os.path.join(dirpath, fn))
+                        if fp not in indexed_files:
+                            try:
+                                sz = os.path.getsize(fp)
+                                if sz >= 100 * 1024 and is_header_ready(fp):
+                                    local_vfiles.append((fp, fn, sz))
+                            except Exception:
+                                pass
+
+                if not local_vfiles:
+                    continue
+
+                folder_name = os.path.basename(dirpath)
+                is_root_dir = (os.path.realpath(dirpath) == os.path.realpath(root))
+                
+                # Если это не корень и в папке собраны серии сериала или части релиза
+                is_season_folder = any(kw in folder_name.lower() for kw in ["season", "сезон", "s0", "s1", "серии"])
+                is_structured_release = (not is_root_dir) and (len(local_vfiles) > 1 and is_season_folder)
+
+                if is_structured_release:
+                    mtype = "tv" if is_season_folder else "movie"
+                    process_media_folder(dirpath, folder_name, mtype)
+                else:
+                    # Одиночные файлы или файлы в общих папках (например, телефонные видео или отдельные фильмы)
+                    for fp, fn, sz in local_vfiles:
+                        process_single_video_file(fp, fn, sz, dirpath)
 
         conn.commit()
+
+        # Автоматическое обогащение метаданных через TMDB (постеры, бэкдропы, описания)
+        try:
+            auto_enrich_library_metadata(conn)
+        except Exception as e_meta:
+            logger.debug(f"auto_enrich_library_metadata background check: {e_meta}")
+
         if restored_count > 0:
             logger.info(f"[rescan_library_from_disk] Successfully indexed {restored_count} media items into library")
     except Exception as e:

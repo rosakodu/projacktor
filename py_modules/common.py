@@ -475,3 +475,198 @@ def get_available_storage_drives():
                 pass
     return drives
 
+
+def clean_media_title(raw_title: str):
+    """
+    Cleans filename/folder name to extract clean title, year, and should_search flag.
+    Returns (clean_title, year, should_search).
+    """
+    if not raw_title:
+        return "", None, False
+
+    base = os.path.splitext(raw_title)[0]
+
+    # Phone camera / screen recording video patterns (skip TMDB search)
+    if re.match(r'^(VID|IMG|PXL|MOV|REC|MVI|Screen_?Recording|Capture|gameplay)[-_0-9]', base, re.IGNORECASE):
+        clean_name = re.sub(r'[._]+', ' ', base).strip()
+        return clean_name or base, None, False
+
+    year = None
+    m_year = re.search(r'[\(\[\s._-]((?:19|20)\d{2})[\)\]\s._-]', base)
+    if m_year:
+        try:
+            year = int(m_year.group(1))
+            base = base[:m_year.start()]
+        except Exception:
+            pass
+
+    # Strip series episode tags (S01E02, Season 1, etc.)
+    base = re.sub(r'(?i)\b(s\d{1,2}e\d{1,2}|s\d{1,2}|season\s*\d+|сезон\s*\d+|серия\s*\d+|\d{1,2}x\d{1,3})\b.*$', '', base)
+
+    # Strip release quality and groups
+    base = re.sub(
+        r'(?i)\b(1080p|720p|2160p|4k|uhd|web-dl|webrip|bdrip|brrip|bluray|dvdrip|h264|x264|h265|x265|hevc|10bit|aac|ac3|dts|ddp5\.1|dual|rus|eng|sub|dub|lostfilm|hdrezka|newstudio|alexfilm|кураж-бамбей)\b.*$',
+        '',
+        base
+    )
+
+    clean = re.sub(r'[._]+', ' ', base).strip()
+    clean = re.sub(r'\s+', ' ', clean).strip()
+    return clean or raw_title, year, True
+
+
+def search_tmdb_metadata(title: str, year: int = None, media_type: str = "movie"):
+    """
+    Searches TMDB for a movie or TV show using Decky mirror or official TMDB API.
+    Returns metadata dict or None if not found or skipped.
+    """
+    clean_title, parsed_year, should_search = clean_media_title(title)
+    if not should_search or not clean_title or len(clean_title) < 2:
+        return None
+
+    target_year = year or parsed_year
+    api_key = "4ef0d7355d9ffb5151e987764708ce96"
+
+    types_to_try = [media_type]
+    if media_type == "movie":
+        types_to_try.append("tv")
+    else:
+        types_to_try.append("movie")
+
+    ctx = get_ssl_context()
+
+    for mtype in types_to_try:
+        endpoint = "search/movie" if mtype == "movie" else "search/tv"
+        params = {
+            "api_key": api_key,
+            "language": "ru-RU",
+            "query": clean_title,
+        }
+        if target_year:
+            if mtype == "movie":
+                params["primary_release_year"] = str(target_year)
+            else:
+                params["first_air_date_year"] = str(target_year)
+
+        for base_api in ["https://deckyloader.ru/tmdb-api/3", "https://api.themoviedb.org/3"]:
+            try:
+                url = f"{base_api}/{endpoint}?{urllib.parse.urlencode(params)}"
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=5, context=ctx) as resp:
+                    data = json.loads(resp.read().decode('utf-8'))
+                    results = data.get("results", [])
+                    if not results and target_year:
+                        # Fallback search without year filter
+                        fallback_params = dict(params)
+                        if "primary_release_year" in fallback_params:
+                            del fallback_params["primary_release_year"]
+                        if "first_air_date_year" in fallback_params:
+                            del fallback_params["first_air_date_year"]
+                        url_ny = f"{base_api}/{endpoint}?{urllib.parse.urlencode(fallback_params)}"
+                        req_ny = urllib.request.Request(url_ny, headers={"User-Agent": "Mozilla/5.0"})
+                        with urllib.request.urlopen(req_ny, timeout=5, context=ctx) as r2:
+                            d2 = json.loads(r2.read().decode('utf-8'))
+                            results = d2.get("results", [])
+
+                    if results:
+                        first = results[0]
+                        res_title = first.get("title") or first.get("name") or clean_title
+                        res_orig = first.get("original_title") or first.get("original_name") or ""
+                        res_date = first.get("release_date") or first.get("first_air_date") or ""
+                        res_year = target_year
+                        if res_date and len(res_date) >= 4:
+                            try:
+                                res_year = int(res_date[:4])
+                            except Exception:
+                                pass
+                        return {
+                            "tmdb_id": first.get("id"),
+                            "title": res_title,
+                            "original_title": res_orig,
+                            "year": res_year,
+                            "media_type": mtype,
+                            "poster_path": first.get("poster_path") or "",
+                            "backdrop_path": first.get("backdrop_path") or "",
+                            "overview": first.get("overview") or "",
+                            "vote_average": float(first.get("vote_average", 0.0) or 0.0),
+                        }
+            except Exception as e:
+                logger.debug(f"TMDB search query failed ({base_api}): {e}")
+                continue
+
+    return None
+
+
+def auto_enrich_library_metadata(conn=None) -> int:
+    """
+    Finds media entries in library that lack poster_path and queries TMDB to populate
+    poster_path, backdrop_path, overview, tmdb_id, title and year.
+    Returns count of enriched items.
+    """
+    import time
+    import sqlite3
+    should_close = False
+    if conn is None:
+        try:
+            from .db import DB_PATH
+            conn = sqlite3.connect(DB_PATH, timeout=10.0)
+            conn.row_factory = sqlite3.Row
+            should_close = True
+        except Exception as e:
+            logger.error(f"auto_enrich_library_metadata db error: {e}")
+            return 0
+
+    enriched = 0
+    try:
+        cursor = conn.cursor()
+        rows = cursor.execute("""
+            SELECT id, title, year, media_type, download_dir 
+            FROM media 
+            WHERE (poster_path IS NULL OR poster_path = '') AND in_library = 1
+            ORDER BY id DESC
+        """).fetchall()
+
+        for r in rows:
+            mid = r['id']
+            raw_title = r['title']
+            year = r['year']
+            mtype = r['media_type'] or 'movie'
+
+            meta = search_tmdb_metadata(raw_title, year=year, media_type=mtype)
+            if meta and meta.get('poster_path'):
+                cursor.execute("""
+                    UPDATE media 
+                    SET tmdb_id = COALESCE(?, tmdb_id),
+                        title = ?,
+                        year = COALESCE(?, year),
+                        media_type = ?,
+                        poster_path = ?,
+                        backdrop_path = ?,
+                        overview = ?,
+                        vote_average = ?
+                    WHERE id = ?
+                """, (
+                    meta.get('tmdb_id'),
+                    meta.get('title'),
+                    meta.get('year'),
+                    meta.get('media_type', mtype),
+                    meta.get('poster_path'),
+                    meta.get('backdrop_path'),
+                    meta.get('overview'),
+                    meta.get('vote_average', 0.0),
+                    mid
+                ))
+                enriched += 1
+                logger.info(f"[TMDB Enrich] Enriched #{mid} '{raw_title}' -> '{meta.get('title')}' ({meta.get('year')})")
+            time.sleep(0.15)
+
+        if enriched > 0:
+            conn.commit()
+    except Exception as e:
+        logger.error(f"auto_enrich_library_metadata error: {e}")
+    finally:
+        if should_close:
+            conn.close()
+
+    return enriched
+

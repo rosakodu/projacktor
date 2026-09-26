@@ -61,6 +61,9 @@ from py_modules import (
     get_available_storage_drives,
     has_vaapi_support,
     is_executable_release,
+    clean_media_title,
+    search_tmdb_metadata,
+    auto_enrich_library_metadata,
     DownloadManager,
     TorrServerManager,
     extract_hash_from_magnet,
@@ -96,6 +99,8 @@ class Plugin:
         try:
             dp = sett.get('download_path', '')
             rescan_library_from_disk(download_path=dp)
+            # В фоновом режиме обогащаем постеры и метаданные найденных файлов через TMDB
+            threading.Thread(target=auto_enrich_library_metadata, daemon=True).start()
         except Exception as e:
             logger.error(f"Error rescanning library on startup: {e}")
         
@@ -1083,7 +1088,7 @@ class Plugin:
                 db.close()
                 episodes = []
                 for idx, f in enumerate(existing_files, 1):
-                    if f['file_size'] < 10 * 1024 * 1024:
+                    if f['file_size'] < 100 * 1024:
                         continue
                     episodes.append({
                         "index": idx,
@@ -1488,7 +1493,12 @@ class Plugin:
                                 if f_e != 999999 and f_e == expected_ep_num and f_s == expected_season:
                                     target_file = f['file_path']
                                     break
-                    elif m.get('media_type') == 'movie':
+                        if not target_file and file_idx <= len(m_files):
+                            target_file = m_files[file_idx - 1]['file_path']
+                    else:
+                        target_file = m_files[0]['file_path']
+
+                    if not target_file and m_files:
                         target_file = m_files[0]['file_path']
 
                     if target_file and os.path.isfile(target_file) and is_header_ready(target_file):
@@ -1572,7 +1582,25 @@ class Plugin:
             # 2. Online streaming via TorrServer (Zero disk wear, RAM-only cache)
             target_magnet = magnet or m.get('magnet_uri')
             if not target_magnet:
-                return {"success": False, "error": "Нет magnet-ссылки для раздачи"}
+                # Если это локальное видео без торрента, пробуем найти любой существующий файл в media_files
+                try:
+                    db_local = get_db()
+                    cur_files = db_local.execute("SELECT file_path, file_name FROM media_files WHERE media_id=? ORDER BY id ASC", (mid,)).fetchall()
+                    db_local.close()
+                    for cf in cur_files:
+                        cfp = cf['file_path']
+                        if cfp and os.path.isfile(cfp):
+                            return {
+                                "success": True,
+                                "stream_url": f"http://127.0.0.1:8400/api/stream?file={urllib.parse.quote(cfp)}",
+                                "file_path": cfp,
+                                "title": m['title'],
+                                "transcode": True,
+                                "online": False
+                            }
+                except Exception:
+                    pass
+                return {"success": False, "error": "Локальный видеофайл не найден на диске"}
 
             if not self.ts:
                 sett = load_settings()
@@ -1803,7 +1831,7 @@ class Plugin:
             result = []
             for r in rows:
                 d = dict(r)
-                m_files = db.execute("SELECT * FROM media_files WHERE media_id=? AND file_size > 10485760 ORDER BY id ASC", (d['id'],)).fetchall()
+                m_files = db.execute("SELECT * FROM media_files WHERE media_id=? AND file_size > 102400 ORDER BY id ASC", (d['id'],)).fetchall()
                 valid_files = []
                 for f in m_files:
                     f_dict = dict(f)
@@ -1818,6 +1846,11 @@ class Plugin:
                             pass
                 d['files'] = valid_files
                 d['downloaded_episodes_count'] = len(valid_files)
+
+                # Если файлы физически есть на диске, статус должен позволять мгновенное воспроизведение
+                if valid_files and (not d.get('download_status') or d.get('download_status') in ('queued', 'cancelled')):
+                    d['download_status'] = 'completed'
+                    d['download_progress'] = 100.0
                 total_eps = 0
                 if d.get('episodes_json'):
                     try:
@@ -1986,6 +2019,7 @@ class Plugin:
             sett = load_settings()
             dp = sett.get('download_path', '')
             count = await asyncio.to_thread(rescan_library_from_disk, dp)
+            asyncio.create_task(asyncio.to_thread(auto_enrich_library_metadata))
             return {"success": True, "restored_count": count}
         except Exception as e:
             logger.error(f"rescan_library RPC error: {e}")

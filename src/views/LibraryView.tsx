@@ -1,6 +1,6 @@
 import { FC, memo, useEffect, useRef, useCallback, useState } from "react";
 import { Focusable, showModal } from "@decky/ui";
-import { FaPlay, FaPause, FaDownload, FaList, FaTrash, FaMoon, FaSync } from "react-icons/fa";
+import { FaPlay, FaPause, FaDownload, FaList, FaTrash, FaMoon, FaSync, FaFilm } from "react-icons/fa";
 import { LibraryItem, PlayerMediaInfo } from "../types";
 import { formatSpeed, getImageUrl } from "../api";
 import { useLibrary } from "../hooks/useLibrary";
@@ -332,25 +332,25 @@ export const LibraryView: FC<LibraryViewProps> = memo(
 
               const downloadedEps = item.downloaded_episodes_count !== undefined
                 ? item.downloaded_episodes_count
-                : (item.files ? item.files.filter((f) => f.file_size > 10 * 1024 * 1024).length : 0);
+                : (item.files ? item.files.filter((f) => f.file_size > 100 * 1024).length : 0);
               const totalEps = item.total_episodes_count || 0;
 
-              // Фильм считается полностью скачанным, если статус completed или есть локальный файл.
-              // Сериал считается скачанным ТОЛЬКО когда загружены ВСЕ серии (totalEps > 0 && downloadedEps >= totalEps).
+              // Фильм считается полностью скачанным, если есть локальный файл или статус completed
               const isCompleted = isTv
                 ? (totalEps > 0 && downloadedEps >= totalEps)
                 : (item.download_status === "completed" ||
                    (item.download_progress !== undefined && item.download_progress >= 99.9) ||
-                   (!isDownloading && !isPaused && hasLocalFiles));
+                   hasLocalFiles);
 
-              const canPlayDirect = isCompleted && !isTv && !!localFilePath;
+              // Если физический файл есть на диске, фильм или серия ВСЕГДА может быть проигран напрямую!
+              const canPlayDirect = hasLocalFiles && !!localFilePath && (!isTv || totalEps <= 1 || downloadedEps >= totalEps);
               const progress = Math.min(100, Math.max(0, item.download_progress || 0));
 
               const handlePrimaryAction = () => {
                 lastInteractedItemIdRef.current = item.id;
-                if (isTv) {
+                if (isTv && totalEps > 1) {
                   handleOpenEpisodes(item);
-                } else if (canPlayDirect && localFilePath) {
+                } else if (localFilePath) {
                   const mediaInfo: PlayerMediaInfo = {
                     tmdbId: item.tmdb_id,
                     title: item.title,
@@ -361,6 +361,8 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                     overview: item.overview,
                   };
                   onPlayVideo(localFilePath, item.title, false, undefined, mediaInfo);
+                } else if (isTv) {
+                  handleOpenEpisodes(item);
                 }
               };
 
@@ -401,16 +403,32 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                     className="projacktor-dl-poster-btn"
                     style={{ cursor: "default" }}
                   >
-                    <img
-                      src={getImageUrl(item.poster_path)}
-                      alt={item.title}
-                      className="projacktor-dl-poster-img"
-                      loading="lazy"
-                      draggable={false}
-                      onError={(e) => {
-                        (e.currentTarget as HTMLImageElement).style.display = "none";
-                      }}
-                    />
+                    {item.poster_path ? (
+                      <img
+                        src={getImageUrl(item.poster_path)}
+                        alt={item.title}
+                        className="projacktor-dl-poster-img"
+                        loading="lazy"
+                        draggable={false}
+                        onError={(e) => {
+                          const img = e.currentTarget as HTMLImageElement;
+                          img.style.display = "none";
+                          const ph = img.parentElement?.querySelector(".projacktor-dl-poster-placeholder") as HTMLElement;
+                          if (ph) ph.style.display = "flex";
+                        }}
+                      />
+                    ) : null}
+
+                    {/* Стилизованная заглушка для видео без обложки TMDB или при ошибке сети */}
+                    <div
+                      className="projacktor-dl-poster-placeholder"
+                      style={{ display: item.poster_path ? "none" : "flex" }}
+                    >
+                      <FaFilm className="projacktor-dl-placeholder-icon" />
+                      <div className="projacktor-dl-placeholder-title" title={item.title}>
+                        {item.title}
+                      </div>
+                    </div>
 
                     {/* Бейдж статуса */}
                     <div className={`projacktor-dl-badge-status ${badgeClass}`}>
@@ -466,9 +484,9 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                   {/* Кнопки действий */}
                   <div className="projacktor-dl-card-btns">
                     {/* Кнопка Смотреть (только для скачанного файла) или Серии (для сериала) */}
-                    {(canPlayDirect || isTv) && (
+                    {(canPlayDirect || hasLocalFiles || isTv) && (
                       <Focusable
-                        className={`projacktor-dl-btn-play ${canPlayDirect ? "success" : ""}`}
+                        className={`projacktor-dl-btn-play ${(canPlayDirect || hasLocalFiles) ? "success" : ""}`}
                         noFocusRing
                         tabIndex={0}
                         onActivate={handlePrimaryAction}
@@ -476,9 +494,9 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                         onFocus={() => setBackdropMovie(item as any)}
                         onMouseEnter={() => setBackdropMovie(item as any)}
                         onGamepadDirection={handleGamepadDir}
-                        title={canPlayDirect ? t("watchFile") : t("episodes")}
+                        title={(canPlayDirect || hasLocalFiles) ? t("watchFile") : t("episodes")}
                       >
-                        {canPlayDirect ? (
+                        {(canPlayDirect || hasLocalFiles) && (!isTv || totalEps <= 1) ? (
                           <FaPlay style={{ fontSize: 10, marginLeft: 1 }} />
                         ) : (
                           <FaList style={{ fontSize: 10 }} />
