@@ -154,7 +154,10 @@ def resolve_transcode_plan(
         except Exception:
             pass
 
-    audio_needs_transcode = target_acodec not in ["aac", "mp3"]
+    # Chromium HTML5 <video> in SteamOS Gamepad UI only natively supports AAC and MP3 in MP4 containers.
+    # Proprietary codecs (AC3, EAC3, DTS, TrueHD, FLAC, Vorbis) or unknown/empty codecs
+    # must be transcoded to AAC stereo to avoid silent video playback.
+    audio_needs_transcode = (target_acodec not in ["aac", "mp3"]) or (not target_acodec) or (target_acodec == "unknown")
     # H.264/AVC1, VP8, VP9 can be direct copied into fragmented MP4
     video_is_compatible = vcodec in ["h264", "avc1", "vp8", "vp9"]
     

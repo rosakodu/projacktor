@@ -183,7 +183,7 @@ def probe_media_file(filepath):
         out = subprocess.check_output(cmd, env=env, timeout=timeout).decode('utf-8')
         return json.loads(out)
 
-    probe_timeout = 6.0 if is_http else 3.5
+    probe_timeout = 10.0 if is_http else 4.0
     try:
         data = run_ffprobe(probesize, analyzeduration, probe_timeout)
         vcodec, acodec, duration, audio_tracks, subtitle_tracks, width, height = _parse_ffprobe_data(data)
@@ -239,7 +239,7 @@ def probe_media_file(filepath):
         logger.warning(f"probe_media_file timeout ({probe_timeout}s) for {filepath}")
         return {
             "vcodec": "h264",
-            "acodec": "aac",
+            "acodec": "unknown",
             "width": 0,
             "height": 0,
             "duration": 0.0,
@@ -252,7 +252,7 @@ def probe_media_file(filepath):
         logger.error(f"probe_media_file error: {e}")
         return {
             "vcodec": "h264",
-            "acodec": "aac",
+            "acodec": "unknown",
             "width": 0,
             "height": 0,
             "duration": 0.0,
