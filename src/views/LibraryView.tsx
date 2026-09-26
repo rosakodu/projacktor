@@ -1,6 +1,6 @@
-import { FC, memo, useEffect, useRef, useCallback } from "react";
+import { FC, memo, useEffect, useRef, useCallback, useState } from "react";
 import { Focusable, showModal } from "@decky/ui";
-import { FaPlay, FaPause, FaDownload, FaList, FaTrash, FaMoon } from "react-icons/fa";
+import { FaPlay, FaPause, FaDownload, FaList, FaTrash, FaMoon, FaSync } from "react-icons/fa";
 import { LibraryItem, PlayerMediaInfo } from "../types";
 import { formatSpeed, getImageUrl } from "../api";
 import { useLibrary } from "../hooks/useLibrary";
@@ -29,11 +29,14 @@ export const LibraryView: FC<LibraryViewProps> = memo(
     const rootRef = useRef<HTMLDivElement>(null);
     const rowRef = useRef<HTMLDivElement>(null);
     const lastInteractedItemIdRef = useRef<number | string | null>(null);
+    const [isRescanning, setIsRescanning] = useState<boolean>(false);
+    const [rescanResult, setRescanResult] = useState<string | null>(null);
     const { t, locale } = useI18n();
 
     const {
       library,
       isInitialLoading,
+      rescanLibrary,
       pauseDownload,
       resumeDownload,
       startDownload,
@@ -244,26 +247,77 @@ export const LibraryView: FC<LibraryViewProps> = memo(
           <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.6)", marginBottom: 20 }}>
             {t("libraryEmptyDesc")}
           </div>
-          {onNavigateToCatalog && (
+          {rescanResult && (
+            <div style={{ fontSize: 13, color: "#4ade80", marginBottom: 16, fontWeight: 600 }}>
+              {rescanResult}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 12, justifyContent: "center", alignItems: "center", flexWrap: "wrap" }}>
             <Focusable
               role="button"
-              className="ds-btn ds-btn--primary projacktor-empty-cta-btn"
-              onClick={onNavigateToCatalog}
-              onActivate={onNavigateToCatalog}
+              className="ds-btn ds-btn--secondary projacktor-rescan-btn"
+              onClick={async () => {
+                if (isRescanning) return;
+                setIsRescanning(true);
+                setRescanResult(null);
+                const res = await rescanLibrary();
+                setIsRescanning(false);
+                if (res && res.restored_count > 0) {
+                  setRescanResult(`${t("rescannedSuccess")} ${res.restored_count}`);
+                } else {
+                  setRescanResult(`${t("rescannedSuccess")} 0`);
+                }
+              }}
+              onActivate={async () => {
+                if (isRescanning) return;
+                setIsRescanning(true);
+                setRescanResult(null);
+                const res = await rescanLibrary();
+                setIsRescanning(false);
+                if (res && res.restored_count > 0) {
+                  setRescanResult(`${t("rescannedSuccess")} ${res.restored_count}`);
+                } else {
+                  setRescanResult(`${t("rescannedSuccess")} 0`);
+                }
+              }}
               style={{
                 display: "inline-flex",
                 alignItems: "center",
                 justifyContent: "center",
-                padding: "10px 24px",
+                gap: 8,
+                padding: "10px 20px",
                 fontSize: 13,
-                fontWeight: 700,
+                fontWeight: 600,
                 borderRadius: 4,
                 cursor: "pointer",
+                backgroundColor: "rgba(255, 255, 255, 0.1)",
+                color: "#fff",
               }}
             >
-              {t("goToCatalog")}
+              <FaSync className={isRescanning ? "spin-animation" : ""} style={{ fontSize: 12 }} />
+              {isRescanning ? t("rescanningLibraryBtn") : t("rescanLibraryBtn")}
             </Focusable>
-          )}
+            {onNavigateToCatalog && (
+              <Focusable
+                role="button"
+                className="ds-btn ds-btn--primary projacktor-empty-cta-btn"
+                onClick={onNavigateToCatalog}
+                onActivate={onNavigateToCatalog}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "10px 24px",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  borderRadius: 4,
+                  cursor: "pointer",
+                }}
+              >
+                {t("goToCatalog")}
+              </Focusable>
+            )}
+          </div>
         </div>
       )}
 

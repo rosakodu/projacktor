@@ -55,6 +55,7 @@ export const rpcResumeAllDownloads = callable<[], boolean>("resume_all_downloads
 export const rpcDeleteDownload = callable<[number], boolean>("delete_download");
 export const rpcGetLibrary = callable<[], LibraryItem[]>("get_library");
 export const rpcDeleteLibraryItem = callable<[number], boolean>("delete_library_item");
+export const rpcRescanLibrary = callable<[], { success: boolean; restored_count: number; error?: string }>("rescan_library");
 export const rpcPlayMedia = callable<[string], boolean>("play_media");
 export const rpcGetSettings = callable<[], Record<string, any>>("get_settings");
 export const rpcSaveSettings = callable<[string], boolean>("save_settings");

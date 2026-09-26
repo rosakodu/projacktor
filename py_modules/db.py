@@ -358,11 +358,6 @@ def init_db():
         except Exception:
             pass
 
-        try:
-            rescan_library_from_disk(conn)
-        except Exception as e:
-            logger.debug(f"Initial rescan_library_from_disk error: {e}")
-
         conn.commit()
         conn.close()
         try:
@@ -418,7 +413,7 @@ def db_get_all_settings() -> dict:
         logger.debug(f"db_get_all_settings error: {e}")
     return res
 
-def rescan_library_from_disk(conn=None) -> int:
+def rescan_library_from_disk(download_path: str = None, conn=None) -> int:
     """
     Scans download directories for existing downloaded movies/series
     and automatically indexes them into media, media_files, and downloads.
@@ -439,9 +434,21 @@ def rescan_library_from_disk(conn=None) -> int:
 
     try:
         search_roots = []
-        sett_dp = db_get_setting("download_path", "")
+
+        # 1. Актуальный путь загрузки из параметров или БД
+        sett_dp = download_path
+        if not sett_dp:
+            try:
+                sett_dp = db_get_setting("download_path", "")
+            except Exception:
+                pass
+
         if sett_dp:
-            search_roots.append(os.path.realpath(os.path.expanduser(sett_dp)))
+            r_dp = os.path.realpath(os.path.expanduser(sett_dp))
+            if os.path.isdir(r_dp):
+                search_roots.append(r_dp)
+
+        # 2. Стандартные домашние директории
         for alt in [
             os.path.join(get_user_home(), "Movies", "Projacktor"),
             os.path.join(get_user_home(), "Videos", "Projacktor"),
@@ -449,19 +456,154 @@ def rescan_library_from_disk(conn=None) -> int:
             os.path.join(get_user_home(), "Video", "Projecktor"),
         ]:
             r_alt = os.path.realpath(alt)
-            if r_alt not in search_roots:
+            if r_alt not in search_roots and os.path.isdir(r_alt):
                 search_roots.append(r_alt)
 
+        # 3. MicroSD карты и внешние диски (/run/media/*/*)
+        media_bases = ["/run/media", os.path.join("/run/media", os.path.basename(get_user_home()))]
+        for mb in media_bases:
+            if os.path.isdir(mb):
+                try:
+                    for entry in os.listdir(mb):
+                        entry_path = os.path.join(mb, entry)
+                        if os.path.isdir(entry_path):
+                            for sd_sub in ["Videos/Projacktor", "Movies/Projacktor", "Projacktor"]:
+                                candidate = os.path.realpath(os.path.join(entry_path, sd_sub))
+                                if candidate not in search_roots and os.path.isdir(candidate):
+                                    search_roots.append(candidate)
+                except Exception:
+                    pass
+
         cursor = conn.cursor()
+
+        categories = [
+            ("Фильмы", "movie"),
+            ("Movies", "movie"),
+            ("Films", "movie"),
+            ("Сериалы", "tv"),
+            ("Series", "tv"),
+            ("TV", "tv"),
+            ("TV Shows", "tv"),
+        ]
+
+        def process_media_folder(item_dir: str, folder_name: str, media_type: str):
+            nonlocal restored_count
+            vfiles = []
+            has_aria2 = False
+            for dirpath, _, filenames in os.walk(item_dir):
+                for fn in filenames:
+                    if fn.endswith('.aria2'):
+                        has_aria2 = True
+                    ext = os.path.splitext(fn)[1].lower()
+                    if ext in video_exts:
+                        fp = os.path.join(dirpath, fn)
+                        try:
+                            sz = os.path.getsize(fp)
+                            if sz >= 10 * 1024 * 1024:
+                                vfiles.append((fp, fn, sz))
+                        except Exception:
+                            pass
+
+            if not vfiles:
+                return
+
+            parsed_title = folder_name
+            parsed_year = None
+            m_year = re.search(r'[\(\[](\d{4})[\)\]]', folder_name)
+            if m_year:
+                try:
+                    parsed_year = int(m_year.group(1))
+                    parsed_title = folder_name[:m_year.start()].strip()
+                except Exception:
+                    pass
+
+            clean_title = parsed_title.replace(":", " ").strip()
+
+            # Точный поиск: сначала по download_dir, затем по точному названию и году
+            row = None
+            if item_dir:
+                row = cursor.execute("""
+                    SELECT id, in_library, download_dir, status FROM media 
+                    WHERE download_dir = ?
+                    ORDER BY id ASC LIMIT 1
+                """, (item_dir,)).fetchone()
+
+            if not row:
+                if parsed_year is not None:
+                    row = cursor.execute("""
+                        SELECT id, in_library, download_dir, status FROM media 
+                        WHERE (title = ? OR title = ?) AND year = ?
+                        ORDER BY id ASC LIMIT 1
+                    """, (parsed_title, clean_title, parsed_year)).fetchone()
+                else:
+                    row = cursor.execute("""
+                        SELECT id, in_library, download_dir, status FROM media 
+                        WHERE (title = ? OR title = ?)
+                        ORDER BY id ASC LIMIT 1
+                    """, (parsed_title, clean_title)).fetchone()
+
+            if row:
+                mid = row['id'] if isinstance(row, dict) else row[0]
+                cursor.execute("""
+                    UPDATE media 
+                    SET in_library = 1, status = 'downloaded', download_dir = ?
+                    WHERE id = ?
+                """, (item_dir, mid))
+            else:
+                cursor.execute("""
+                    INSERT INTO media (title, year, media_type, in_library, status, download_dir)
+                    VALUES (?, ?, ?, 1, 'downloaded', ?)
+                """, (parsed_title, parsed_year, media_type, item_dir))
+                mid = cursor.lastrowid
+
+            for fp, fn, sz in vfiles:
+                mf_row = cursor.execute("""
+                    SELECT id FROM media_files 
+                    WHERE media_id = ? AND (file_path = ? OR file_name = ?)
+                """, (mid, fp, fn)).fetchone()
+                if not mf_row:
+                    ep_num = None
+                    season_num = 1
+                    m_ep = re.search(r'[-_\s](\d{1,4})[-_\s\.]', fn)
+                    if m_ep:
+                        try:
+                            ep_num = int(m_ep.group(1))
+                        except Exception:
+                            pass
+                    cursor.execute("""
+                        INSERT INTO media_files (media_id, file_path, file_name, file_size, season_number, episode_number)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (mid, fp, fn, sz, season_num, ep_num))
+
+            dl_row = cursor.execute("SELECT id, status FROM downloads WHERE media_id = ?", (mid,)).fetchone()
+            tot_sz = sum(vf[2] for vf in vfiles)
+            dl_status = 'downloading' if has_aria2 else 'completed'
+            dl_progress = 50.0 if has_aria2 else 100.0
+
+            if not dl_row:
+                cursor.execute("""
+                    INSERT INTO downloads (
+                        media_id, magnet_uri, torrent_title, status, progress, 
+                        total_size, downloaded_size, download_dir, completed_at
+                    ) VALUES (?, '', ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """, (mid, folder_name, dl_status, dl_progress, tot_sz, tot_sz, item_dir))
+            else:
+                dl_id = dl_row['id'] if isinstance(dl_row, dict) else dl_row[0]
+                dl_st = dl_row['status'] if isinstance(dl_row, dict) else dl_row[1]
+                if dl_st != 'completed' and not has_aria2:
+                    cursor.execute("""
+                        UPDATE downloads 
+                        SET status = 'completed', progress = 100.0, total_size = ?, downloaded_size = ?
+                        WHERE id = ?
+                    """, (tot_sz, tot_sz, dl_id))
+
+            restored_count += 1
 
         for root in search_roots:
             if not os.path.isdir(root):
                 continue
 
-            categories = [
-                ("Фильмы", "movie"),
-                ("Сериалы", "tv")
-            ]
+            # 1. Сканируем стандартные категории внутри папки
             for cat_name, media_type in categories:
                 cat_dir = os.path.join(root, cat_name)
                 if not os.path.isdir(cat_dir):
@@ -469,102 +611,19 @@ def rescan_library_from_disk(conn=None) -> int:
 
                 for folder_name in sorted(os.listdir(cat_dir)):
                     item_dir = os.path.join(cat_dir, folder_name)
-                    if not os.path.isdir(item_dir):
-                        continue
+                    if os.path.isdir(item_dir):
+                        process_media_folder(item_dir, folder_name, media_type)
 
-                    vfiles = []
-                    has_aria2 = False
-                    for dirpath, _, filenames in os.walk(item_dir):
-                        for fn in filenames:
-                            if fn.endswith('.aria2'):
-                                has_aria2 = True
-                            ext = os.path.splitext(fn)[1].lower()
-                            if ext in video_exts:
-                                fp = os.path.join(dirpath, fn)
-                                try:
-                                    sz = os.path.getsize(fp)
-                                    if sz >= 10 * 1024 * 1024:
-                                        vfiles.append((fp, fn, sz))
-                                except Exception:
-                                    pass
-
-                    if not vfiles:
-                        continue
-
-                    parsed_title = folder_name
-                    parsed_year = None
-                    m_year = re.search(r'[\(\[](\d{4})[\)\]]', folder_name)
-                    if m_year:
-                        try:
-                            parsed_year = int(m_year.group(1))
-                            parsed_title = folder_name[:m_year.start()].strip()
-                        except Exception:
-                            pass
-
-                    clean_title = parsed_title.replace(":", " ").strip()
-
-                    row = cursor.execute("""
-                        SELECT id, in_library, download_dir, status FROM media 
-                        WHERE title = ? OR title = ? OR title LIKE ? OR download_dir = ?
-                        ORDER BY id ASC LIMIT 1
-                    """, (parsed_title, clean_title, f"%{clean_title[:15]}%", item_dir)).fetchone()
-
-                    if row:
-                        mid = row['id'] if isinstance(row, dict) else row[0]
-                        cursor.execute("""
-                            UPDATE media 
-                            SET in_library = 1, status = 'downloaded', download_dir = ?
-                            WHERE id = ?
-                        """, (item_dir, mid))
-                    else:
-                        cursor.execute("""
-                            INSERT INTO media (title, year, media_type, in_library, status, download_dir)
-                            VALUES (?, ?, ?, 1, 'downloaded', ?)
-                        """, (parsed_title, parsed_year, media_type, item_dir))
-                        mid = cursor.lastrowid
-
-                    for fp, fn, sz in vfiles:
-                        mf_row = cursor.execute("""
-                            SELECT id FROM media_files 
-                            WHERE media_id = ? AND (file_path = ? OR file_name = ?)
-                        """, (mid, fp, fn)).fetchone()
-                        if not mf_row:
-                            ep_num = None
-                            season_num = 1
-                            m_ep = re.search(r'[-_\s](\d{1,4})[-_\s\.]', fn)
-                            if m_ep:
-                                try:
-                                    ep_num = int(m_ep.group(1))
-                                except Exception:
-                                    pass
-                            cursor.execute("""
-                                INSERT INTO media_files (media_id, file_path, file_name, file_size, season_number, episode_number)
-                                VALUES (?, ?, ?, ?, ?, ?)
-                            """, (mid, fp, fn, sz, season_num, ep_num))
-
-                    dl_row = cursor.execute("SELECT id, status FROM downloads WHERE media_id = ?", (mid,)).fetchone()
-                    tot_sz = sum(vf[2] for vf in vfiles)
-                    dl_status = 'downloading' if has_aria2 else 'completed'
-                    dl_progress = 50.0 if has_aria2 else 100.0
-
-                    if not dl_row:
-                        cursor.execute("""
-                            INSERT INTO downloads (
-                                media_id, magnet_uri, torrent_title, status, progress, 
-                                total_size, downloaded_size, download_dir, completed_at
-                            ) VALUES (?, '', ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                        """, (mid, folder_name, dl_status, dl_progress, tot_sz, tot_sz, item_dir))
-                    else:
-                        dl_id = dl_row['id'] if isinstance(dl_row, dict) else dl_row[0]
-                        dl_st = dl_row['status'] if isinstance(dl_row, dict) else dl_row[1]
-                        if dl_st != 'completed' and not has_aria2:
-                            cursor.execute("""
-                                UPDATE downloads 
-                                SET status = 'completed', progress = 100.0, total_size = ?, downloaded_size = ?
-                                WHERE id = ?
-                            """, (tot_sz, tot_sz, dl_id))
-
-                    restored_count += 1
+            # 2. Если в корне папки лежат папки релизов (не разделенные на Фильмы/Сериалы)
+            known_cat_names = {c[0].lower() for c in categories}
+            for entry_name in sorted(os.listdir(root)):
+                if entry_name.lower() in known_cat_names:
+                    continue
+                entry_dir = os.path.join(root, entry_name)
+                if os.path.isdir(entry_dir):
+                    # Проверяем, есть ли там видеофайлы
+                    mtype = "tv" if any(kw in entry_name.lower() for kw in ["season", "сезон", "s0", "s1", "серии"]) else "movie"
+                    process_media_folder(entry_dir, entry_name, mtype)
 
         conn.commit()
         if restored_count > 0:

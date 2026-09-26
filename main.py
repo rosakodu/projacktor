@@ -91,6 +91,13 @@ class Plugin:
         logger.info("Projacktor: Starting plugin")
         init_db()
         sett = load_settings()
+
+        # Восстановление скачанных файлов с актуальным путем загрузок
+        try:
+            dp = sett.get('download_path', '')
+            rescan_library_from_disk(download_path=dp)
+        except Exception as e:
+            logger.error(f"Error rescanning library on startup: {e}")
         
         self.dm = DownloadManager(sett.get('aria2_port', 6800))
         self.dm.start()
@@ -147,8 +154,9 @@ class Plugin:
         logger.info("Projacktor: Migration hook called")
         try:
             init_db()
-            load_settings()
-            rescan_library_from_disk()
+            sett = load_settings()
+            dp = sett.get('download_path', '')
+            rescan_library_from_disk(download_path=dp)
         except Exception as e:
             logger.warning(f"Projacktor: Migration warning: {e}")
 
@@ -790,7 +798,8 @@ class Plugin:
             overview = data.get('overview', '')
             in_lib = 1 if data.get('in_library', True) else 0
 
-            base_dir = VIDEO_DIR
+            sett = load_settings()
+            base_dir = os.path.realpath(os.path.expanduser(sett.get('download_path') or VIDEO_DIR))
             folder = "Фильмы" if mtype == 'movie' else "Сериалы"
             safe_title = re.sub(r'[/\\?%*:|"<>!]', '', title).strip() or "Media"
             ddir = os.path.join(base_dir, folder, f"{safe_title} ({year})".strip())
@@ -1971,3 +1980,13 @@ class Plugin:
         except Exception as e:
             logger.error(f"Failed to clear cache: {e}")
             return False
+
+    async def rescan_library(self):
+        try:
+            sett = load_settings()
+            dp = sett.get('download_path', '')
+            count = await asyncio.to_thread(rescan_library_from_disk, dp)
+            return {"success": True, "restored_count": count}
+        except Exception as e:
+            logger.error(f"rescan_library RPC error: {e}")
+            return {"success": False, "error": str(e), "restored_count": 0}

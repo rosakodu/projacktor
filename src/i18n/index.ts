@@ -130,6 +130,9 @@ export const translations = {
     libraryEmptyTitle: "Нет активных или скачанных загрузок",
     libraryEmptyDesc:
       "Здесь отображается очередь скачивания и сохраненные на диск файлы.",
+    rescanLibraryBtn: "Найти скачанные файлы",
+    rescanningLibraryBtn: "Поиск файлов...",
+    rescannedSuccess: "Найдено файлов:",
     loadingWatchlist: "Загрузка избранного...",
     loadingHistory: "Загрузка истории...",
     loadingLibrary: "Загрузка...",
@@ -259,6 +262,9 @@ export const translations = {
     libraryEmptyTitle: "No active or downloaded files",
     libraryEmptyDesc:
       "Download queue and saved files on disk will appear here.",
+    rescanLibraryBtn: "Find Downloaded Files",
+    rescanningLibraryBtn: "Scanning Files...",
+    rescannedSuccess: "Files found:",
     loadingWatchlist: "Loading favorites...",
     loadingHistory: "Loading history...",
     loadingLibrary: "Loading...",

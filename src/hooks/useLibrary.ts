@@ -12,6 +12,7 @@ import {
   rpcGetEpisodes,
   rpcDownloadEpisode,
   rpcPrepareStream,
+  rpcRescanLibrary,
   sortEpisodes,
 } from "../api";
 
@@ -180,6 +181,17 @@ export function useLibrary(
     [onPlayVideo]
   );
 
+  const rescanLibrary = useCallback(async () => {
+    try {
+      const res = await rpcRescanLibrary();
+      refreshLibrary();
+      return res;
+    } catch (e) {
+      console.error("rescanLibrary error:", e);
+      return { success: false, restored_count: 0 };
+    }
+  }, [refreshLibrary]);
+
   return {
     library,
     isInitialLoading,
@@ -188,6 +200,7 @@ export function useLibrary(
     episodesLoading,
     streamLoading,
     refreshLibrary,
+    rescanLibrary,
     pauseDownload,
     resumeDownload,
     resumeAllDownloads,
