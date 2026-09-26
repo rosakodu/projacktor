@@ -1285,6 +1285,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
       setIsBuffering(false);
       if (vTime > 0.05) {
         setHasStartedPlayback(true);
+        setErrorMsg(null);
       }
       const totalCur = Math.floor(isDirectStream ? vTime : (baseTime + vTime));
       if (Math.abs(totalCur - lastSaveSec) >= 5) {
@@ -1326,12 +1327,14 @@ export const PlayerModal: FC<PlayerModalProps> = ({
       setIsBuffering(false);
       if (video.currentTime > 0.05) {
         setHasStartedPlayback(true);
+        setErrorMsg(null);
       }
     };
     const onPlaying = () => {
       setIsPlaying(true);
       setIsBuffering(false);
       setHasStartedPlayback(true);
+      setErrorMsg(null);
     };
     const onPause = () => {
       setIsPlaying(false);
@@ -1535,12 +1538,6 @@ export const PlayerModal: FC<PlayerModalProps> = ({
             isOnline={isOnline}
           />
 
-          {errorMsg ? (
-            <div style={{ textAlign: "center", color: "var(--ds-danger)", fontSize: 14, padding: 20 }}>
-              {errorMsg}
-            </div>
-          ) : (
-            <>
               <video
                 ref={videoRef}
                 src={streamUrl}
@@ -1559,6 +1556,26 @@ export const PlayerModal: FC<PlayerModalProps> = ({
                 }}
               />
 
+              {errorMsg && (
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    zIndex: 30,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "rgba(10, 13, 20, 0.88)",
+                    textAlign: "center",
+                    color: "var(--ds-danger)",
+                    fontSize: 14,
+                    padding: 24,
+                  }}
+                >
+                  {errorMsg}
+                </div>
+              )}
+
               {/* Custom Subtitle Overlay (Zoom-independent, hidden during buffering) */}
               {selectedSubtitle !== null && currentSubtitleText && !isBuffering && hasStartedPlayback && (
                 <div
@@ -1572,8 +1589,6 @@ export const PlayerModal: FC<PlayerModalProps> = ({
                   </span>
                 </div>
               )}
-            </>
-          )}
         </div>
 
         {/* Bottom Controls Overlay */}

@@ -353,7 +353,7 @@ def build_ffmpeg_stream_command(
         "-sn",
         "-avoid_negative_ts", "make_zero",
         "-max_muxing_queue_size", "2048",
-        "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+        "-movflags", "frag_keyframe+empty_moov+default_base_moof+delay_moov",
         "-f", "mp4",
         "pipe:1"
     ]
