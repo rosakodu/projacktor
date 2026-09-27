@@ -360,7 +360,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     if (subtitleBtnRef.current) {
       try {
         const doc = getActiveDocument(subtitleBtnRef.current) || document;
-        doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+        doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => el.classList.remove("gpfocus"));
         subtitleBtnRef.current.focus();
         subtitleBtnRef.current.classList.add("gpfocus");
       } catch {}
@@ -372,7 +372,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
       if (subtitleBtnRef.current) {
         try {
           const doc = getActiveDocument(subtitleBtnRef.current) || document;
-          doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+          doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => el.classList.remove("gpfocus"));
           subtitleBtnRef.current.focus();
           subtitleBtnRef.current.classList.add("gpfocus");
         } catch {}
@@ -400,7 +400,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
       if (playBtnRef.current) {
         try {
           const doc = getActiveDocument(playBtnRef.current) || document;
-          doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+          doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => el.classList.remove("gpfocus"));
           playBtnRef.current.focus();
           playBtnRef.current.classList.add("gpfocus");
           return true;
@@ -429,22 +429,35 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     };
   }, []);
 
+  const prevShowControlsRef = useRef<boolean>(showControls);
+
   useEffect(() => {
-    if (showControls && !showSubtitleMenu && !showAudioMenu) {
-      const t = setTimeout(() => {
-        if (playBtnRef.current) {
-          try {
-            const doc = getActiveDocument(playBtnRef.current) || document;
-            const currentGpfocus = doc.querySelector(".projacktor-player-fullscreen .gpfocus");
-            if (!currentGpfocus) {
-              playBtnRef.current.focus();
-              playBtnRef.current.classList.add("gpfocus");
-            }
-          } catch {}
-        }
-      }, 60);
-      return () => clearTimeout(t);
-    } else if (!showControls) {
+    const wasHidden = !prevShowControlsRef.current;
+    prevShowControlsRef.current = showControls;
+
+    if (showControls) {
+      // Восстанавливаем фокус на playBtnRef ТОЛЬКО если контролы только что появились из скрытого состояния,
+      // а НЕ при закрытии/открытии меню субтитров/аудио, когда контролы уже были видны!
+      if (wasHidden && !showSubtitleMenu && !showAudioMenu) {
+        const t = setTimeout(() => {
+          if (playBtnRef.current) {
+            try {
+              const doc = getActiveDocument(playBtnRef.current) || document;
+              const activeEl = doc.activeElement as HTMLElement | null;
+              const hasActivePlayerFocus =
+                doc.querySelector(".projacktor-player-fullscreen .gpfocus") ||
+                (activeEl && activeEl !== doc.body && containerRef.current?.contains(activeEl));
+              if (!hasActivePlayerFocus) {
+                doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+                playBtnRef.current.focus();
+                playBtnRef.current.classList.add("gpfocus");
+              }
+            } catch {}
+          }
+        }, 60);
+        return () => clearTimeout(t);
+      }
+    } else {
       if (containerRef.current) {
         try {
           const doc = getActiveDocument(containerRef.current) || document;
@@ -567,7 +580,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     if (audioBtnRef.current) {
       try {
         const doc = getActiveDocument(audioBtnRef.current) || document;
-        doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+        doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => el.classList.remove("gpfocus"));
         audioBtnRef.current.focus();
         audioBtnRef.current.classList.add("gpfocus");
       } catch {}
@@ -584,7 +597,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
       if (audioBtnRef.current) {
         try {
           const doc = getActiveDocument(audioBtnRef.current) || document;
-          doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+          doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => el.classList.remove("gpfocus"));
           audioBtnRef.current.focus();
           audioBtnRef.current.classList.add("gpfocus");
         } catch {}

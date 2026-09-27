@@ -1,4 +1,4 @@
-import { FC, RefObject } from "react";
+import { FC, RefObject, useCallback, useEffect, useRef } from "react";
 import { Focusable } from "@decky/ui";
 import {
   FaPlay,
@@ -12,6 +12,7 @@ import {
 import { AudioTrack, SubtitleTrack } from "./types";
 import { TrackSelectionMenu } from "./TrackSelectionMenu";
 import { useI18n } from "../../i18n";
+import { getActiveDocument } from "../../runtime/activeDoc";
 
 function formatTime(seconds: number): string {
   if (isNaN(seconds) || seconds < 0 || !isFinite(seconds)) return "00:00";
@@ -107,6 +108,63 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 
   const isFocusDisabled = !showControls || isAnyMenuOpen;
 
+  // Централизованная синхронизация фокуса для кнопок плеера:
+  // При получении фокуса любой кнопкой убираем .gpfocus со всех остальных,
+  // чтобы никогда не оставалось двух одновременно подсвеченных кнопок.
+  const handleBtnFocus = useCallback((e: any) => {
+    const current = e?.currentTarget as HTMLElement | null;
+    if (!current) return;
+    const doc = getActiveDocument(current) || document;
+    doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => {
+      if (el !== current) {
+        el.classList.remove("gpfocus");
+      }
+    });
+    current.classList.add("gpfocus");
+  }, []);
+
+  const handleBtnBlur = useCallback((e: any) => {
+    const current = e?.currentTarget as HTMLElement | null;
+    if (current) {
+      current.classList.remove("gpfocus");
+    }
+  }, []);
+
+  const barContainerRef = useRef<HTMLDivElement>(null);
+
+  // Нативные слушатели focusin/focusout на контейнере панели управления:
+  // Гарантируют снятие .gpfocus при любом уходе фокуса с кнопки (включая навигацию геймпадом SteamOS)
+  useEffect(() => {
+    const bar = barContainerRef.current;
+    if (!bar) return;
+    const doc = getActiveDocument(bar) || document;
+
+    const handleFocusIn = (e: FocusEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (target.classList?.contains("ds-btn") || target.getAttribute?.("tabindex") === "0") {
+        doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => {
+          if (el !== target) el.classList.remove("gpfocus");
+        });
+        target.classList.add("gpfocus");
+      }
+    };
+
+    const handleFocusOut = (e: FocusEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target) {
+        target.classList.remove("gpfocus");
+      }
+    };
+
+    bar.addEventListener("focusin", handleFocusIn);
+    bar.addEventListener("focusout", handleFocusOut);
+    return () => {
+      bar.removeEventListener("focusin", handleFocusIn);
+      bar.removeEventListener("focusout", handleFocusOut);
+    };
+  }, []);
+
   // Содержимое ряда кнопок
   const buttonBarContent = (
     <>
@@ -115,6 +173,8 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
         tabIndex={isFocusDisabled ? -1 : 0}
         noFocusRing={isFocusDisabled}
         className="ds-btn ds-btn--compact ds-btn--icon"
+        onFocus={handleBtnFocus}
+        onBlur={handleBtnBlur}
         onActivate={(e?: any) => {
           if (isAnyMenuOpen) return;
           e?.stopPropagation?.();
@@ -138,6 +198,8 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
         tabIndex={isFocusDisabled ? -1 : 0}
         noFocusRing={isFocusDisabled}
         className="ds-btn ds-btn--primary ds-btn--compact ds-btn--icon"
+        onFocus={handleBtnFocus}
+        onBlur={handleBtnBlur}
         onActivate={(e?: any) => {
           if (isAnyMenuOpen) return;
           e?.stopPropagation?.();
@@ -160,6 +222,8 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
         tabIndex={isFocusDisabled ? -1 : 0}
         noFocusRing={isFocusDisabled}
         className="ds-btn ds-btn--compact ds-btn--icon"
+        onFocus={handleBtnFocus}
+        onBlur={handleBtnBlur}
         onActivate={(e?: any) => {
           if (isAnyMenuOpen) return;
           e?.stopPropagation?.();
@@ -183,6 +247,8 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
           tabIndex={isFocusDisabled ? -1 : 0}
           noFocusRing={isFocusDisabled}
           className="ds-btn ds-btn--compact ds-btn--icon"
+          onFocus={handleBtnFocus}
+          onBlur={handleBtnBlur}
           onActivate={(e?: any) => {
             if (isAnyMenuOpen) return;
             e?.stopPropagation?.();
@@ -207,6 +273,8 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
         tabIndex={isFocusDisabled ? -1 : 0}
         noFocusRing={isFocusDisabled}
         className="ds-btn ds-btn--compact ds-btn--icon"
+        onFocus={handleBtnFocus}
+        onBlur={handleBtnBlur}
         onActivate={(e?: any) => {
           e?.stopPropagation?.();
           onToggleSubtitleMenu();
@@ -236,6 +304,8 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
         tabIndex={isFocusDisabled ? -1 : 0}
         noFocusRing={isFocusDisabled}
         className="ds-btn ds-btn--compact ds-btn--icon"
+        onFocus={handleBtnFocus}
+        onBlur={handleBtnBlur}
         onActivate={(e?: any) => {
           e?.stopPropagation?.();
           onToggleAudioMenu();
@@ -311,6 +381,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 
       {/* Bottom Controls Bar */}
       <div
+        ref={barContainerRef}
         className="projacktor-player-controls-container"
         style={{
           position: "relative",
@@ -342,6 +413,23 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
           flow-children="horizontal"
           className="projacktor-player-controls-bar"
           noFocusRing={isFocusDisabled}
+          onFocusCapture={(e: any) => {
+            const target = e?.target as HTMLElement | null;
+            if (!target) return;
+            const doc = getActiveDocument(target) || document;
+            doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => {
+              if (el !== target) el.classList.remove("gpfocus");
+            });
+            if (target.classList?.contains("ds-btn")) {
+              target.classList.add("gpfocus");
+            }
+          }}
+          onBlurCapture={(e: any) => {
+            const target = e?.target as HTMLElement | null;
+            if (target && target.classList?.contains("ds-btn")) {
+              target.classList.remove("gpfocus");
+            }
+          }}
           onGamepadDirection={(evt: any) => {
             if (isAnyMenuOpen) {
               try {

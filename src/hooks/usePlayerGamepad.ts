@@ -220,8 +220,9 @@ export function usePlayerGamepad(props: UsePlayerGamepadParams) {
         }
 
         const doc = getActiveDocument(containerRef.current) || document;
-        const gpfocus = doc?.querySelector?.(".projacktor-player-fullscreen .gpfocus");
-        const focusedEl = (gpfocus || doc?.activeElement) as HTMLElement | null;
+        const activeEl = (doc?.activeElement && doc.activeElement !== doc.body && containerRef.current?.contains(doc.activeElement)) ? (doc.activeElement as HTMLElement) : null;
+        const gpfocus = doc?.querySelector?.(".projacktor-player-fullscreen .gpfocus") as HTMLElement | null;
+        const focusedEl = activeEl || gpfocus;
 
         // Если фокус на кнопке субтитров: переключаем меню без паузы
         if (subtitleBtnRef.current && (subtitleBtnRef.current === focusedEl || subtitleBtnRef.current.contains(focusedEl as Node))) {
@@ -267,7 +268,7 @@ export function usePlayerGamepad(props: UsePlayerGamepadParams) {
           setTimeout(() => {
             if (audioBtnRef.current) {
               const doc = getActiveDocument(audioBtnRef.current) || document;
-              doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+              doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => el.classList.remove("gpfocus"));
               audioBtnRef.current.focus();
               audioBtnRef.current.classList.add("gpfocus");
             }
@@ -279,7 +280,7 @@ export function usePlayerGamepad(props: UsePlayerGamepadParams) {
           setTimeout(() => {
             if (subtitleBtnRef.current) {
               const doc = getActiveDocument(subtitleBtnRef.current) || document;
-              doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+              doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => el.classList.remove("gpfocus"));
               subtitleBtnRef.current.focus();
               subtitleBtnRef.current.classList.add("gpfocus");
             }
@@ -382,7 +383,7 @@ export function usePlayerGamepad(props: UsePlayerGamepadParams) {
           resetControlsTimer();
           if (playBtnRef.current) {
             const doc = getActiveDocument(playBtnRef.current) || document;
-            doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+            doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => el.classList.remove("gpfocus"));
             playBtnRef.current.focus();
             playBtnRef.current.classList.add("gpfocus");
           }
@@ -449,7 +450,7 @@ export function usePlayerGamepad(props: UsePlayerGamepadParams) {
           setTimeout(() => {
             if (audioBtnRef.current) {
               const doc = getActiveDocument(audioBtnRef.current) || document;
-              doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+              doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => el.classList.remove("gpfocus"));
               audioBtnRef.current.focus();
               audioBtnRef.current.classList.add("gpfocus");
             }
@@ -461,7 +462,7 @@ export function usePlayerGamepad(props: UsePlayerGamepadParams) {
           setTimeout(() => {
             if (subtitleBtnRef.current) {
               const doc = getActiveDocument(subtitleBtnRef.current) || document;
-              doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+              doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => el.classList.remove("gpfocus"));
               subtitleBtnRef.current.focus();
               subtitleBtnRef.current.classList.add("gpfocus");
             }
@@ -481,7 +482,7 @@ export function usePlayerGamepad(props: UsePlayerGamepadParams) {
           resetControlsTimer();
           if (playBtnRef.current) {
             const doc = getActiveDocument(playBtnRef.current) || document;
-            doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+            doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => el.classList.remove("gpfocus"));
             playBtnRef.current.focus();
             playBtnRef.current.classList.add("gpfocus");
           }
@@ -519,8 +520,9 @@ export function usePlayerGamepad(props: UsePlayerGamepadParams) {
         }
 
         const doc = getActiveDocument(containerRef.current) || document;
-        const gpfocus = doc?.querySelector?.(".projacktor-player-fullscreen .gpfocus");
-        const focusedEl = (gpfocus || doc?.activeElement) as HTMLElement | null;
+        const activeEl = (doc?.activeElement && doc.activeElement !== doc.body && containerRef.current?.contains(doc.activeElement)) ? (doc.activeElement as HTMLElement) : null;
+        const gpfocus = doc?.querySelector?.(".projacktor-player-fullscreen .gpfocus") as HTMLElement | null;
+        const focusedEl = activeEl || gpfocus;
 
         if (subtitleBtnRef.current && (subtitleBtnRef.current === focusedEl || subtitleBtnRef.current.contains(focusedEl as Node))) {
           toggleSubtitleMenu();

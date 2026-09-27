@@ -9,9 +9,7 @@ export const PLAYER_STYLES = `
 .projacktor-player-fullscreen .ds-btn:focus,
 .projacktor-player-fullscreen .ds-btn.gpfocus,
 .projacktor-player-fullscreen .ds-btn--primary:focus,
-.projacktor-player-fullscreen .ds-btn--primary.gpfocus,
-.projacktor-player-fullscreen [tabindex="0"]:focus,
-.projacktor-player-fullscreen [tabindex="0"].gpfocus {
+.projacktor-player-fullscreen .ds-btn--primary.gpfocus {
   background: #1a9fff !important;
   border-color: #ffffff !important;
   color: #ffffff !important;
