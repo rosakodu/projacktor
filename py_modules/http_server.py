@@ -626,15 +626,29 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             self.send_response(400)
             self.end_headers()
             return
+
+        if img_path.lower().endswith('.svg'):
+            size = 'original'
             
         cache_dir = os.path.join(CONFIG_DIR, "cache", "images", size)
         os.makedirs(cache_dir, exist_ok=True)
         local_file = os.path.join(cache_dir, os.path.basename(img_path))
+
+        def _detect_ctype(data, name):
+            if data.startswith(b'RIFF') and b'WEBP' in data[:12]:
+                return 'image/webp'
+            if data.startswith(b'\x89PNG'):
+                return 'image/png'
+            if data.startswith(b'<svg') or b'<svg' in data[:200] or name.lower().endswith('.svg'):
+                return 'image/svg+xml'
+            if data.startswith(b'GIF8'):
+                return 'image/gif'
+            return 'image/jpeg'
         
-        if os.path.isfile(local_file) and os.path.getsize(local_file) > 200:
+        if os.path.isfile(local_file) and os.path.getsize(local_file) > 50:
             with open(local_file, 'rb') as f:
                 content = f.read()
-            ctype = 'image/webp' if (content.startswith(b'RIFF') and b'WEBP' in content[:12]) else ('image/png' if content.startswith(b'\x89PNG') else 'image/jpeg')
+            ctype = _detect_ctype(content, img_path)
             self.send_response(200)
             self.send_cors_headers()
             self.send_header('Content-Type', ctype)
@@ -660,19 +674,19 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                 ctx = get_ssl_context()
                 with urllib.request.urlopen(req, timeout=12, context=ctx) as response:
                     content = response.read()
-                    if len(content) > 200:
+                    if len(content) > 50:
                         break
             except Exception as e:
                 logger.warning(f"Failed to fetch image {target_url}: {e}")
                 continue
 
-        if content and len(content) > 200:
+        if content and len(content) > 50:
             try:
                 with open(local_file, 'wb') as f:
                     f.write(content)
             except Exception:
                 pass
-            ctype = 'image/webp' if (content.startswith(b'RIFF') and b'WEBP' in content[:12]) else ('image/png' if content.startswith(b'\x89PNG') else 'image/jpeg')
+            ctype = _detect_ctype(content, img_path)
             self.send_response(200)
             self.send_cors_headers()
             self.send_header('Content-Type', ctype)

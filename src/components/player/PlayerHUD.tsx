@@ -152,17 +152,17 @@ export const PlayerHUD: FC<PlayerHUDProps> = ({
           >
             {logoPath && !logoFailed ? (
               <img
-                className="projacktor-buffering-heartbeat"
+                className="projacktor-buffering-logo"
                 src={getLogoUrl(logoPath)}
                 alt={title}
                 onError={() => setLogoFailed(true)}
                 style={{
-                  maxWidth: 420,
-                  maxHeight: 160,
+                  maxWidth: 380,
+                  maxHeight: 120,
                   width: "auto",
                   height: "auto",
                   objectFit: "contain",
-                  filter: "drop-shadow(0 8px 24px rgba(0, 0, 0, 0.95)) drop-shadow(0 2px 6px rgba(0, 0, 0, 0.8))",
+                  filter: "drop-shadow(0 4px 16px rgba(0, 0, 0, 0.75)) drop-shadow(0 1px 4px rgba(0, 0, 0, 0.5))",
                   userSelect: "none",
                 }}
               />

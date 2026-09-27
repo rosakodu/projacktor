@@ -468,7 +468,7 @@ export async function fetchMovieLogo(
     );
     if (!res.ok) return null;
     const data = await res.json();
-    const logos = data.logos || [];
+    const logos = (data.logos || []) as any[];
     if (!logos.length) return null;
 
     // Приоритет языка логотипа в зависимости от выбранной локали
@@ -476,13 +476,64 @@ export async function fetchMovieLogo(
     const primaryLang = isEn ? "en" : "ru";
     const fallbackLang = isEn ? "ru" : "en";
 
-    const pLogo = logos.find((l: any) => l.iso_639_1 === primaryLang);
-    if (pLogo?.file_path) return pLogo.file_path;
+    // Функция оценки качества логотипа:
+    // Предпочитает официальные высококачественные логотипы с правильными пропорциями
+    const scoreLogo = (logo: any) => {
+      let score = 0;
+      const va = logo.vote_average || 0;
+      const vc = logo.vote_count || 0;
+      score += va * 15;
+      score += Math.min(vc, 10) * 8;
 
-    const fLogo = logos.find((l: any) => l.iso_639_1 === fallbackLang);
-    if (fLogo?.file_path) return fLogo.file_path;
+      const w = logo.width || 0;
+      const h = logo.height || 0;
+      if (w >= 1600) score += 40;
+      else if (w >= 1100) score += 30;
+      else if (w >= 750) score += 20;
+      else if (w < 500) score -= 50;
 
-    // Логотип без языка или с наивысшим рейтингом
+      if (h >= 220) score += 25;
+      else if (h >= 140) score += 15;
+      else if (h < 85) score -= 40;
+
+      const ratio = logo.aspect_ratio || (h > 0 ? w / h : 3.0);
+      if (ratio >= 2.0 && ratio <= 6.0) score += 30;
+      else if (ratio < 1.4 || ratio > 8.0) score -= 40;
+
+      return score;
+    };
+
+    const isAcceptable = (l: any) => {
+      const w = l.width || 0;
+      const h = l.height || 0;
+      const ratio = l.aspect_ratio || (h > 0 ? w / h : 3.0);
+      if (w < 450 || h < 75) return false;
+      if (ratio < 1.2 || ratio > 9.5) return false;
+      return true;
+    };
+
+    // 1. Ищем лучший логотип на основном языке (ru)
+    const primaryLogos = logos.filter((l) => l.iso_639_1 === primaryLang && isAcceptable(l));
+    if (primaryLogos.length > 0) {
+      primaryLogos.sort((a, b) => scoreLogo(b) - scoreLogo(a));
+      return primaryLogos[0].file_path;
+    }
+
+    // 2. Ищем лучший логотип на резервном языке (en)
+    const fallbackLogos = logos.filter((l) => l.iso_639_1 === fallbackLang && isAcceptable(l));
+    if (fallbackLogos.length > 0) {
+      fallbackLogos.sort((a, b) => scoreLogo(b) - scoreLogo(a));
+      return fallbackLogos[0].file_path;
+    }
+
+    // 3. Международные логотипы без языка
+    const otherLogos = logos.filter(isAcceptable);
+    if (otherLogos.length > 0) {
+      otherLogos.sort((a, b) => scoreLogo(b) - scoreLogo(a));
+      return otherLogos[0].file_path;
+    }
+
+    // Fallback на первый с наивысшим рейтингом
     logos.sort((a: any, b: any) => (b.vote_average || 0) - (a.vote_average || 0));
     return logos[0]?.file_path || null;
   } catch {

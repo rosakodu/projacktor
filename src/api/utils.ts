@@ -30,7 +30,9 @@ export function getLogoUrl(path: string | null | undefined): string {
   if (cleanPath.startsWith("http")) {
     return `${API_BASE}/image?url=${encodeURIComponent(cleanPath)}`;
   }
-  return `${API_BASE}/image?path=${encodeURIComponent(cleanPath)}&size=w500`;
+  const isSvg = cleanPath.toLowerCase().endsWith(".svg");
+  const size = isSvg ? "original" : "w500";
+  return `${API_BASE}/image?path=${encodeURIComponent(cleanPath)}&size=${size}`;
 }
 
 export function formatBytes(bytes: number): string {
