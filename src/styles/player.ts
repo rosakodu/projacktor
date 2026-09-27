@@ -121,22 +121,37 @@ export const PLAYER_STYLES = `
   100% { transform: rotate(360deg); }
 }
 
-/* ───── Buffering Logo Breathing Animation ───── */
-@keyframes projacktor-logo-breathe {
+/* ───── Buffering Heartbeat Animation ───── */
+@keyframes projacktor-heartbeat {
   0% {
-    opacity: 0.92;
+    transform: scale(1);
+    opacity: 0.88;
   }
-  50% {
+  14% {
+    transform: scale(1.06);
     opacity: 1;
   }
+  28% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  42% {
+    transform: scale(1.04);
+    opacity: 1;
+  }
+  70% {
+    transform: scale(1);
+    opacity: 0.88;
+  }
   100% {
-    opacity: 0.92;
+    transform: scale(1);
+    opacity: 0.88;
   }
 }
 
-.projacktor-buffering-logo,
-.projacktor-buffering-heartbeat {
-  animation: projacktor-logo-breathe 2.4s ease-in-out infinite !important;
+.projacktor-buffering-heartbeat,
+.projacktor-buffering-logo {
+  animation: projacktor-heartbeat 1.6s ease-in-out infinite !important;
   transform-origin: center center !important;
 }
 

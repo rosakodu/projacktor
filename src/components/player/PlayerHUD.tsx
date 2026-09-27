@@ -137,82 +137,51 @@ export const PlayerHUD: FC<PlayerHUDProps> = ({
             }}
           />
 
-          {/* Контент: Графический логотип TMDB или текстовое название + Спиннер буферизации */}
-          <div
-            style={{
-              position: "relative",
-              zIndex: 3,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: "0 30px",
-              maxWidth: "85%",
-            }}
-          >
-            {logoPath && !logoFailed ? (
+          {/* Контент: Только графический логотип TMDB с анимацией пульсации по центру */}
+          {logoPath && !logoFailed ? (
+            <div
+              style={{
+                position: "relative",
+                zIndex: 3,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "0 30px",
+                maxWidth: "85%",
+              }}
+            >
               <img
-                className="projacktor-buffering-logo"
+                className="projacktor-buffering-heartbeat"
                 src={getLogoUrl(logoPath)}
                 alt={title}
                 onError={() => setLogoFailed(true)}
                 style={{
-                  maxWidth: 380,
-                  maxHeight: 120,
+                  maxWidth: 420,
+                  maxHeight: 160,
                   width: "auto",
                   height: "auto",
                   objectFit: "contain",
-                  filter: "drop-shadow(0 4px 16px rgba(0, 0, 0, 0.75)) drop-shadow(0 1px 4px rgba(0, 0, 0, 0.5))",
+                  filter: "drop-shadow(0 8px 24px rgba(0, 0, 0, 0.95)) drop-shadow(0 2px 6px rgba(0, 0, 0, 0.8))",
                   userSelect: "none",
                 }}
               />
-            ) : (
-              <div
-                style={{
-                  fontSize: 28,
-                  fontWeight: 700,
-                  color: "#fff",
-                  textAlign: "center",
-                  textShadow: "0 4px 16px rgba(0, 0, 0, 0.9)",
-                }}
-              >
-                {title}
-              </div>
-            )}
-
-            {/* Анимированный спиннер буферизации и статус */}
+            </div>
+          ) : (
             <div
               style={{
-                marginTop: 24,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: 12,
+                position: "relative",
+                zIndex: 3,
+                fontSize: 28,
+                fontWeight: 700,
+                color: "#fff",
+                textAlign: "center",
+                textShadow: "0 4px 16px rgba(0, 0, 0, 0.9)",
               }}
             >
-              <div
-                style={{
-                  width: 36,
-                  height: 36,
-                  border: "3px solid rgba(255, 255, 255, 0.15)",
-                  borderTop: "3px solid var(--ds-accent)",
-                  borderRadius: "50%",
-                  animation: "projacktor-spin 0.9s linear infinite",
-                }}
-              />
-              <div
-                style={{
-                  color: "rgba(255, 255, 255, 0.85)",
-                  fontSize: 13,
-                  fontWeight: 500,
-                  letterSpacing: 0.3,
-                  textShadow: "0 2px 8px rgba(0, 0, 0, 0.9)",
-                }}
-              >
-                {isOnline ? t("bufferingTorrent") : t("bufferingStream")}
-              </div>
+              {title}
             </div>
-          </div>
+          )}
         </div>
       )}
 
