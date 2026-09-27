@@ -477,28 +477,28 @@ export async function fetchMovieLogo(
     const fallbackLang = isEn ? "ru" : "en";
 
     // Функция оценки качества логотипа:
-    // Предпочитает официальные высококачественные логотипы с правильными пропорциями
+    // Предпочитает официальные высококачественные логотипы с положительными оценками и правильными пропорциями
     const scoreLogo = (logo: any) => {
       let score = 0;
       const va = logo.vote_average || 0;
       const vc = logo.vote_count || 0;
-      score += va * 15;
-      score += Math.min(vc, 10) * 8;
+      score += va * 40;
+      score += Math.min(vc, 10) * 10;
 
       const w = logo.width || 0;
       const h = logo.height || 0;
-      if (w >= 1600) score += 40;
-      else if (w >= 1100) score += 30;
-      else if (w >= 750) score += 20;
-      else if (w < 500) score -= 50;
+      if (w >= 1200) score += 20;
+      else if (w >= 700) score += 15;
+      else if (w >= 450) score += 10;
+      else if (w < 400) score -= 40;
 
-      if (h >= 220) score += 25;
-      else if (h >= 140) score += 15;
-      else if (h < 85) score -= 40;
+      if (h >= 180) score += 15;
+      else if (h >= 90) score += 10;
+      else if (h < 70) score -= 30;
 
       const ratio = logo.aspect_ratio || (h > 0 ? w / h : 3.0);
-      if (ratio >= 2.0 && ratio <= 6.0) score += 30;
-      else if (ratio < 1.4 || ratio > 8.0) score -= 40;
+      if (ratio >= 2.0 && ratio <= 6.0) score += 20;
+      else if (ratio < 1.3 || ratio > 8.5) score -= 30;
 
       return score;
     };
@@ -507,7 +507,7 @@ export async function fetchMovieLogo(
       const w = l.width || 0;
       const h = l.height || 0;
       const ratio = l.aspect_ratio || (h > 0 ? w / h : 3.0);
-      if (w < 450 || h < 75) return false;
+      if (w < 400 || h < 70) return false;
       if (ratio < 1.2 || ratio > 9.5) return false;
       return true;
     };
