@@ -10,7 +10,7 @@ import threading
 import json
 
 from .db import CONFIG_DIR, get_user_home, logger
-from .common import get_bin_path, _clean_env
+from .common import get_bin_path, _clean_env, write_pid_file, terminate_process
 
 def extract_hash_from_magnet(magnet):
     if not magnet:
@@ -32,6 +32,7 @@ class TorrServerManager:
     def __init__(self, port=8095):
         self.port = port
         self.base_url = f"http://127.0.0.1:{self.port}"
+        self.pid_file = os.path.join(CONFIG_DIR, "torrserver.pid")
         self.process = None
         self._running = False
         self._lock = threading.Lock()
@@ -59,21 +60,13 @@ class TorrServerManager:
                 self._running = True
                 return True
 
-            # 1. Clean up dead child process if present to prevent zombies (<defunct>)
-            if self.process:
-                try:
-                    self.process.poll()
-                except Exception:
-                    pass
-                self.process = None
-
-            # 2. Terminate any orphan projacktor-ts processes on this port
-            try:
-                subprocess.run(["pkill", "-9", "-f", f"projacktor-ts.*-p {self.port}"],
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                time.sleep(1.0)
-            except Exception:
-                pass
+            # 1. Gracefully terminate any previous or orphan projacktor-ts processes
+            terminate_process(
+                proc=self.process,
+                pid_file=self.pid_file,
+                pattern=f"projacktor-ts.*-p {self.port}"
+            )
+            self.process = None
 
             # 3. Locate binary: prefer 'projacktor-ts' (isolated from lampa-deck's killall TorrServer)
             bin_path = get_bin_path("projacktor-ts")
@@ -167,6 +160,8 @@ class TorrServerManager:
                     env=env,
                     start_new_session=True
                 )
+                if self.process and self.process.pid:
+                    write_pid_file(self.pid_file, self.process.pid)
                 logger.info(f"TorrServer started with {bin_path} on port {self.port} (PID {self.process.pid}).")
             except Exception as e:
                 logger.error(f"Failed to spawn TorrServer: {e}")
@@ -192,26 +187,13 @@ class TorrServerManager:
 
     def stop(self):
         self._running = False
-        if self.process:
-            logger.info("Stopping TorrServer...")
-            try:
-                self.process.terminate()
-                self.process.wait(timeout=0.8)
-            except subprocess.TimeoutExpired:
-                try:
-                    self.process.kill()
-                    self.process.wait(timeout=0.4)
-                except Exception:
-                    pass
-            except Exception:
-                pass
-            self.process = None
-
-        try:
-            subprocess.run(["pkill", "-9", "-f", f"projacktor-ts.*-p {self.port}"],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except Exception:
-            pass
+        logger.info("Stopping TorrServer...")
+        terminate_process(
+            proc=self.process,
+            pid_file=self.pid_file,
+            pattern=f"projacktor-ts.*-p {self.port}"
+        )
+        self.process = None
         logger.info("TorrServer stopped.")
 
     def add_torrent(self, magnet_or_link, title="", poster=""):

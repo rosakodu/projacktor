@@ -10,13 +10,14 @@ import subprocess
 import shutil
 import secrets
 from .db import CONFIG_DIR, get_db, DB_LOCK, logger
-from .common import get_bin_path, _clean_env, POPULAR_TRACKERS, is_executable_release
+from .common import get_bin_path, _clean_env, POPULAR_TRACKERS, is_executable_release, write_pid_file, terminate_process
 from .stream import is_header_ready
 
 class DownloadManager:
     def __init__(self, port):
         self.port = port
         self.rpc_url = f"http://127.0.0.1:{self.port}/jsonrpc"
+        self.pid_file = os.path.join(CONFIG_DIR, "aria2c.pid")
         self.process = None
         self._running = False
         self._sync_thread = None
@@ -54,19 +55,13 @@ class DownloadManager:
             self._sync_thread.start()
             return True
 
-        if self.process:
-            try:
-                self.process.poll()
-            except Exception:
-                pass
-            self.process = None
-
-        try:
-            subprocess.run(["pkill", "-f", f"aria2c.*--rpc-listen-port={self.port}"],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            time.sleep(0.3)
-        except Exception:
-            pass
+        # 1. Gracefully terminate any previous or orphan aria2c processes
+        terminate_process(
+            proc=self.process,
+            pid_file=self.pid_file,
+            pattern=f"aria2c.*--rpc-listen-port={self.port}"
+        )
+        self.process = None
 
         aria2c_path = get_bin_path("aria2c")
         if not os.path.isfile(aria2c_path) and not shutil.which("aria2c"):
@@ -107,6 +102,8 @@ class DownloadManager:
         
         env = _clean_env()
         self.process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env, start_new_session=True)
+        if self.process and self.process.pid:
+            write_pid_file(self.pid_file, self.process.pid)
         
         # Wait for aria2c to start responding
         for _ in range(10):
@@ -122,25 +119,13 @@ class DownloadManager:
 
     def stop(self):
         self._running = False
-        if self.process:
-            try:
-                self.process.terminate()
-                self.process.wait(timeout=0.8)
-            except subprocess.TimeoutExpired:
-                try:
-                    self.process.kill()
-                    self.process.wait(timeout=0.4)
-                except Exception:
-                    pass
-            except Exception:
-                pass
-            self.process = None
-
-        try:
-            subprocess.run(["pkill", "-9", "-f", f"aria2c.*--rpc-listen-port={self.port}"],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except Exception:
-            pass
+        logger.info("Stopping Aria2c...")
+        terminate_process(
+            proc=self.process,
+            pid_file=self.pid_file,
+            pattern=f"aria2c.*--rpc-listen-port={self.port}"
+        )
+        self.process = None
         logger.info("Aria2c stopped.")
 
     def _rpc_call(self, method, params=None):

@@ -3,8 +3,9 @@ import { Focusable, GamepadButton } from "@decky/ui";
 import {
   rpcResumeAllDownloads,
   rpcDropStream,
-  rpcSaveWatchProgress,
   fetchMovieLogo,
+  API_BASE,
+  API_HOST,
 } from "../api";
 import { PlayerMediaInfo } from "../types";
 import { getActiveDocument, isOverlayActiveOrRecent } from "../runtime/activeDoc";
@@ -17,6 +18,8 @@ import { triggerHaptic } from "../runtime/haptics";
 import { setPlayerActive } from "../runtime/homeInputBus";
 import { useI18n } from "../i18n";
 import { useScreensaverInhibitor } from "../runtime/screensaverInhibitor";
+import { SubtitleCue, parseWebVTT, mergeCues } from "./player/vttParser";
+import { usePlayerZoom, usePlayerProgress } from "./player";
 
 export type { AudioTrack, SubtitleTrack };
 
@@ -29,79 +32,6 @@ interface PlayerModalProps {
   initialTime?: number;
   closeModal?: () => void;
 }
-
-interface SubtitleCue {
-  start: number;
-  end: number;
-  text: string;
-}
-
-const parseVttTimestamp = (timeStr: string): number => {
-  const parts = timeStr.trim().split(":");
-  let hours = 0;
-  let minutes = 0;
-  let seconds = 0;
-  if (parts.length === 3) {
-    hours = parseFloat(parts[0]) || 0;
-    minutes = parseFloat(parts[1]) || 0;
-    seconds = parseFloat(parts[2]) || 0;
-  } else if (parts.length === 2) {
-    minutes = parseFloat(parts[0]) || 0;
-    seconds = parseFloat(parts[1]) || 0;
-  } else {
-    seconds = parseFloat(parts[0]) || 0;
-  }
-  return hours * 3600 + minutes * 60 + seconds;
-};
-
-const parseWebVTT = (vtt: string): SubtitleCue[] => {
-  const cues: SubtitleCue[] = [];
-  if (!vtt) return cues;
-  const lines = vtt.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i].trim();
-    if (line.includes("-->")) {
-      const parts = line.split("-->");
-      if (parts.length === 2) {
-        const startRaw = parts[0].trim();
-        const endRaw = parts[1].trim().split(/\s+/)[0];
-        const start = parseVttTimestamp(startRaw);
-        const end = parseVttTimestamp(endRaw);
-        i++;
-        const textLines: string[] = [];
-        while (i < lines.length && lines[i].trim() !== "") {
-          const clean = lines[i]
-            .replace(/<[^>]+>/g, "")
-            .replace(/\{[^}]+\}/g, "")
-            .replace(/&amp;/g, "&")
-            .replace(/&lt;/g, "<")
-            .replace(/&gt;/g, ">")
-            .replace(/&quot;/g, '"')
-            .replace(/&#39;/g, "'")
-            .trim();
-          if (clean) textLines.push(clean);
-          i++;
-        }
-        if (textLines.length > 0 && end > start) {
-          cues.push({ start, end, text: textLines.join("\n") });
-        }
-        continue;
-      }
-    }
-    i++;
-  }
-  return cues;
-};
-
-const mergeCues = (prev: SubtitleCue[], next: SubtitleCue[]): SubtitleCue[] => {
-  if (prev.length === 0) return next;
-  if (next.length === 0) return prev;
-  const map = new Map<string, SubtitleCue>();
-  for (const c of prev) map.set(`${c.start.toFixed(2)}_${c.end.toFixed(2)}`, c);
-  for (const c of next) map.set(`${c.start.toFixed(2)}_${c.end.toFixed(2)}`, c);
-  return Array.from(map.values()).sort((a, b) => a.start - b.start);
-};
 
 export const PlayerModal: FC<PlayerModalProps> = ({
   filePath,
@@ -128,39 +58,29 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     return filePath.startsWith("http://") || filePath.startsWith("https://") ? null : filePath;
   })();
 
-  const getSavedProgress = useCallback((): number => {
-    try {
-      if (initialTime !== undefined && initialTime > 0) {
-        return Math.floor(initialTime);
-      }
-      const fileTarget = actualFilePath || filePath;
-      const rawFileName = fileTarget.split(/[\/\\]/).pop() || fileTarget;
-      const fileName = rawFileName.split("?")[0];
-      const raw = localStorage.getItem(`projacktor_progress_${fileName}`);
-      if (raw) {
-        const val = parseFloat(raw);
-        if (!isNaN(val) && val > 15) return Math.floor(val);
-      }
-      const cleanTitle = title.replace(/\s*\((?:Онлайн|Online)\)\s*/i, "").trim();
-      if (cleanTitle) {
-        const rawTitle = localStorage.getItem(`projacktor_progress_t_${cleanTitle}`);
-        if (rawTitle) {
-          const val = parseFloat(rawTitle);
-          if (!isNaN(val) && val > 15) return Math.floor(val);
-        }
-      }
-    } catch {}
-    return 0;
-  }, [actualFilePath, filePath, title, initialTime]);
-
   const isOnlineOrProxied = isOnline || filePath.startsWith("http://") || filePath.startsWith("https://") || filePath.includes("/api/stream?url=");
-  const savedStartTimeRef = useRef<number>(getSavedProgress());
+  const [duration, setDuration] = useState<number>(mediaInfo?.duration || 0);
+  const durationRef = useRef<number>(duration);
+  durationRef.current = duration;
+
+  const {
+    savedStartTimeRef,
+    saveProgressRef,
+  } = usePlayerProgress({
+    filePath,
+    actualFilePath,
+    title,
+    initialTime,
+    mediaInfo,
+    torrentHash,
+    isOnline,
+    duration,
+  });
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
   useScreensaverInhibitor(isPlaying);
   const [isDirectStream, setIsDirectStream] = useState<boolean>(false);
   const [baseTime, setBaseTime] = useState<number>(() => savedStartTimeRef.current);
   const [videoTime, setVideoTime] = useState<number>(0);
-  const [duration, setDuration] = useState<number>(mediaInfo?.duration || 0);
   const [volume, setVolume] = useState<number>(1);
   const [audioTracks, setAudioTracks] = useState<AudioTrack[]>([]);
   const [selectedAudio, setSelectedAudio] = useState<number | undefined>(undefined);
@@ -178,17 +98,13 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   const seekCommitTimerRef = useRef<number | null>(null);
   const targetSeekTimeRef = useRef<number | null>(null);
 
-  const [zoom, setZoom] = useState<number>(1);
-  const zoomRef = useRef<number>(1);
-  const [zoomHudVisible, setZoomHudVisible] = useState<boolean>(false);
-  const zoomHudTimerRef = useRef<number | null>(null);
-  const zoomHudTextRef = useRef<HTMLSpanElement>(null);
-  const zoomHudBarRef = useRef<HTMLDivElement>(null);
-  const l2HeldRef = useRef<boolean>(false);
-  const r2HeldRef = useRef<boolean>(false);
-  const l2PressStartRef = useRef<number>(0);
-  const r2PressStartRef = useRef<number>(0);
-  const zoomAnimFrameRef = useRef<number | null>(null);
+  const zoomControls = usePlayerZoom(videoRef);
+  const {
+    zoom,
+    zoomHudVisible,
+    zoomHudTextRef,
+    zoomHudBarRef,
+  } = zoomControls;
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isBuffering, setIsBuffering] = useState<boolean>(true);
   const [logoPath, setLogoPath] = useState<string | null>(null);
@@ -435,153 +351,6 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     }, 1200);
   }, []);
 
-  const showZoomHud = useCallback(() => {
-    setZoomHudVisible(true);
-    if (zoomHudTimerRef.current !== null) {
-      window.clearTimeout(zoomHudTimerRef.current);
-    }
-    zoomHudTimerRef.current = window.setTimeout(() => {
-      setZoomHudVisible(false);
-    }, 1200);
-  }, []);
-
-  const resetZoom = useCallback(() => {
-    zoomRef.current = 1.0;
-    setZoom(1.0);
-    triggerHaptic("click", "both", true);
-    if (videoRef.current) {
-      videoRef.current.style.transform = "scale(1)";
-    }
-    if (zoomHudTextRef.current) {
-      zoomHudTextRef.current.textContent = "100%";
-    }
-    if (zoomHudBarRef.current) {
-      zoomHudBarRef.current.style.width = "20%";
-      zoomHudBarRef.current.style.background = "var(--ds-accent)";
-    }
-    showZoomHud();
-  }, [showZoomHud]);
-
-  // Одиночный дискретный шаг масштаба (ровно 1% за нажатие)
-  const applyZoomStep = useCallback(
-    (step: number) => {
-      const nextZoom = Math.max(0.5, Math.min(3.0, Math.round((zoomRef.current + step) * 100) / 100));
-      if (nextZoom === 1.0) {
-        triggerHaptic("click", "both", true);
-      } else {
-        triggerHaptic("light", "both");
-      }
-
-      zoomRef.current = nextZoom;
-      setZoom(nextZoom);
-
-      if (videoRef.current) {
-        videoRef.current.style.transform = `scale(${nextZoom.toFixed(3)})`;
-      }
-
-      if (zoomHudTextRef.current) {
-        zoomHudTextRef.current.textContent = `${Math.round(nextZoom * 100)}%`;
-      }
-      if (zoomHudBarRef.current) {
-        const pct = Math.round(((nextZoom - 0.5) / 2.5) * 100);
-        zoomHudBarRef.current.style.width = `${pct}%`;
-        zoomHudBarRef.current.style.background =
-          nextZoom === 1.0 ? "var(--ds-accent)" : nextZoom > 1.0 ? "#38bdf8" : "#a855f7";
-      }
-
-      showZoomHud();
-    },
-    [showZoomHud]
-  );
-
-  const stopZoomLoop = useCallback(() => {
-    l2HeldRef.current = false;
-    r2HeldRef.current = false;
-    if (zoomAnimFrameRef.current !== null) {
-      cancelAnimationFrame(zoomAnimFrameRef.current);
-      zoomAnimFrameRef.current = null;
-    }
-    setZoom(zoomRef.current);
-    if (zoomHudTimerRef.current !== null) {
-      window.clearTimeout(zoomHudTimerRef.current);
-    }
-    zoomHudTimerRef.current = window.setTimeout(() => {
-      setZoomHudVisible(false);
-      zoomHudTimerRef.current = null;
-    }, 1200);
-  }, []);
-
-  const startZoomLoop = useCallback(() => {
-    setZoomHudVisible(true);
-    if (zoomHudTimerRef.current !== null) {
-      window.clearTimeout(zoomHudTimerRef.current);
-      zoomHudTimerRef.current = null;
-    }
-
-    if (zoomAnimFrameRef.current !== null) return;
-
-    const HOLD_DELAY_MS = 250;
-    let lastTime = performance.now();
-
-    const loop = (currentTime: number) => {
-      if (!l2HeldRef.current && !r2HeldRef.current) {
-        stopZoomLoop();
-        return;
-      }
-
-      const dt = Math.min((currentTime - lastTime) / 1000, 0.08);
-      lastTime = currentTime;
-
-      const l2Duration = l2HeldRef.current ? (currentTime - l2PressStartRef.current) : 0;
-      const r2Duration = r2HeldRef.current ? (currentTime - r2PressStartRef.current) : 0;
-
-      const l2Active = l2HeldRef.current && l2Duration >= HOLD_DELAY_MS;
-      const r2Active = r2HeldRef.current && r2Duration >= HOLD_DELAY_MS;
-
-      if (l2Active || r2Active) {
-        const heldTimeSec = Math.max(
-          l2Active ? (l2Duration - HOLD_DELAY_MS) / 1000 : 0,
-          r2Active ? (r2Duration - HOLD_DELAY_MS) / 1000 : 0
-        );
-        const speed = Math.min(1.60, 0.85 + heldTimeSec * 1.00);
-
-        const effR2 = r2Active ? 1 : 0;
-        const effL2 = l2Active ? 1 : 0;
-        const delta = (effR2 - effL2) * speed * dt;
-
-        let nextZoom = zoomRef.current + delta;
-        nextZoom = Math.max(0.5, Math.min(3.0, nextZoom));
-
-        if (Math.abs(nextZoom - 1.0) < 0.02) {
-          if (Math.abs(zoomRef.current - 1.0) >= 0.02) {
-            nextZoom = 1.0;
-            triggerHaptic("click", "both", true);
-          }
-        }
-
-        zoomRef.current = nextZoom;
-
-        if (videoRef.current) {
-          videoRef.current.style.transform = `scale(${nextZoom.toFixed(3)})`;
-        }
-
-        if (zoomHudTextRef.current) {
-          zoomHudTextRef.current.textContent = `${Math.round(nextZoom * 100)}%`;
-        }
-        if (zoomHudBarRef.current) {
-          const pct = Math.round(((nextZoom - 0.5) / 2.5) * 100);
-          zoomHudBarRef.current.style.width = `${pct}%`;
-          zoomHudBarRef.current.style.background =
-            nextZoom === 1.0 ? "var(--ds-accent)" : nextZoom > 1.0 ? "#38bdf8" : "#a855f7";
-        }
-      }
-
-      zoomAnimFrameRef.current = requestAnimationFrame(loop);
-    };
-
-    zoomAnimFrameRef.current = requestAnimationFrame(loop);
-  }, [stopZoomLoop]);
-
   const selectSubtitleTrack = useCallback((trackIndex: number | string | null) => {
     userInteractedWithSubtitlesRef.current = true;
     setSelectedSubtitle(trackIndex);
@@ -696,7 +465,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   const getStreamUrl = useCallback(
     (startTime: number = 0, track?: number) => {
       const isHttp = filePath.startsWith("http://") || filePath.startsWith("https://");
-      let base = isHttp ? filePath : `http://127.0.0.1:8400/api/stream?file=${encodeURIComponent(filePath)}`;
+      let base = isHttp ? filePath : `${API_BASE}/stream?file=${encodeURIComponent(filePath)}`;
       // Strip any existing start= or audio= params to avoid duplicates
       base = base.replace(/([?&])start=\d+(&|$)/g, "$1").replace(/([?&])audio=\d+(&|$)/g, "$1").replace(/[?&]$/, "");
       const separator = base.includes("?") ? "&" : "?";
@@ -722,60 +491,6 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   const currentPlayheadRef = useRef<number>(savedStartTimeRef.current);
   currentPlayheadRef.current = isDirectStream ? videoTime : (baseTime + videoTime);
 
-  const durationRef = useRef<number>(duration);
-  durationRef.current = duration;
-
-  const saveProgress = useCallback(
-    (sec: number, totalDur?: number) => {
-      try {
-        const fileTarget = actualFilePath || filePath;
-        const rawFileName = fileTarget.split(/[\/\\]/).pop() || fileTarget;
-        const fileName = rawFileName.split("?")[0];
-        const cleanTitle = title.replace(/\s*\((?:Онлайн|Online)\)\s*/i, "").trim();
-        const dur = totalDur ?? durationRef.current;
-        if (dur && dur > 0 && sec >= dur - 60) {
-          localStorage.removeItem(`projacktor_progress_${fileName}`);
-          if (cleanTitle) {
-            localStorage.removeItem(`projacktor_progress_t_${cleanTitle}`);
-          }
-        } else if (sec > 15) {
-          localStorage.setItem(`projacktor_progress_${fileName}`, String(Math.floor(sec)));
-          if (cleanTitle) {
-            localStorage.setItem(`projacktor_progress_t_${cleanTitle}`, String(Math.floor(sec)));
-          }
-        }
-
-        if (sec >= 0) {
-          rpcSaveWatchProgress(
-            JSON.stringify({
-              media_id: mediaInfo?.mediaId,
-              tmdb_id: mediaInfo?.tmdbId,
-              title: mediaInfo?.title || cleanTitle,
-              original_title: mediaInfo?.originalTitle,
-              media_type: mediaInfo?.mediaType || "movie",
-              year: mediaInfo?.year,
-              poster_path: mediaInfo?.posterPath,
-              backdrop_path: mediaInfo?.backdropPath,
-              overview: mediaInfo?.overview,
-              file_path: actualFilePath || filePath,
-              stream_url: filePath.startsWith("http") ? filePath : undefined,
-              torrent_hash: torrentHash,
-              is_online: isOnline,
-              episode_name: mediaInfo?.episodeName,
-              season_number: mediaInfo?.seasonNumber,
-              episode_number: mediaInfo?.episodeNumber,
-              current_time: sec,
-              duration: dur || 0,
-            })
-          ).catch(() => {});
-        }
-      } catch {}
-    },
-    [actualFilePath, filePath, title, mediaInfo, isOnline, torrentHash]
-  );
-
-  const saveProgressRef = useRef(saveProgress);
-  saveProgressRef.current = saveProgress;
   const torrentHashRef = useRef(torrentHash);
   torrentHashRef.current = torrentHash;
 
@@ -996,19 +711,10 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     seekRelative,
     commitPendingSeek,
     changeVolume,
-    applyZoomStep,
-    resetZoom,
-    startZoomLoop,
-    stopZoomLoop,
     resetControlsTimer,
     toggleControls,
     handleMenuDirection,
-    l2HeldRef,
-    r2HeldRef,
-    l2PressStartRef,
-    r2PressStartRef,
-    zoomAnimFrameRef,
-    zoomHudTimerRef,
+    zoom: zoomControls,
   });
 
   // Request fullscreen on mount to overlay all Steam UI
@@ -1055,7 +761,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     let target = actualFilePath || filePath;
     if (target.includes("/api/stream?")) {
       try {
-        const u = new URL(target, "http://127.0.0.1:8400");
+        const u = new URL(target, API_HOST);
         const inner = u.searchParams.get("url") || u.searchParams.get("file");
         if (inner) target = inner;
       } catch {}
@@ -1064,7 +770,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     const probeQuery = isHttp ? `url=${encodeURIComponent(target)}` : `file=${encodeURIComponent(target)}`;
 
     const runProbe = () => {
-      fetch(`http://127.0.0.1:8400/api/stream/probe?${probeQuery}`)
+      fetch(`${API_BASE}/stream/probe?${probeQuery}`)
         .then((r) => r.json())
         .then((data) => {
           if (cancelled) return;
@@ -1143,7 +849,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     const trackParam = activeTrack?.url ? "" : `&track=${selectedSubtitle}`;
     const curPos = isDirectStream ? videoTime : (baseTime + videoTime);
     const startParam = (curPos > 15 && isOnline) ? `&start=${Math.max(0, Math.floor(curPos - 10))}` : "";
-    const subUrl = `http://127.0.0.1:8400/api/stream/subtitles?${isHttpSub ? "url" : "file"}=${encodeURIComponent(subTarget)}${trackParam}${startParam}`;
+    const subUrl = `${API_BASE}/stream/subtitles?${isHttpSub ? "url" : "file"}=${encodeURIComponent(subTarget)}${trackParam}${startParam}`;
 
     let cancelled = false;
     let retryTimer: any = null;
@@ -1197,7 +903,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
       const isHttpSub = subTarget.startsWith("http://") || subTarget.startsWith("https://");
       const trackParam = activeTrack?.url ? "" : `&track=${selectedSubtitle}`;
       const startParam = isOnline ? `&start=${Math.max(0, Math.floor(curTime - 10))}` : "";
-      const subUrl = `http://127.0.0.1:8400/api/stream/subtitles?${isHttpSub ? "url" : "file"}=${encodeURIComponent(subTarget)}${trackParam}${startParam}`;
+      const subUrl = `${API_BASE}/stream/subtitles?${isHttpSub ? "url" : "file"}=${encodeURIComponent(subTarget)}${trackParam}${startParam}`;
 
       fetch(subUrl)
         .then((res) => (res.ok ? res.text() : ""))

@@ -8,6 +8,8 @@ import urllib.error
 import ssl
 import re
 import subprocess
+import signal
+import time
 
 
 # Decky Loader API
@@ -19,7 +21,8 @@ except ImportError:
     import logging
     logger = logging.getLogger("Projacktor")
     logger.setLevel(logging.DEBUG)
-    DECKY_USER_HOME = os.environ.get("DECKY_USER_HOME", "/home/deck")
+    _fallback_home = "/home/deck" if os.path.isdir("/home/deck") else os.path.expanduser("~")
+    DECKY_USER_HOME = os.environ.get("DECKY_USER_HOME", _fallback_home)
 
 from .db import (
     CONFIG_DIR,
@@ -34,6 +37,8 @@ from .db import (
     db_set_setting,
     db_get_all_settings
 )
+from .constants import DEFAULT_TMDB_API_KEY
+
 
 def get_ssl_context():
     try:
@@ -525,7 +530,8 @@ def search_tmdb_metadata(title: str, year: int = None, media_type: str = "movie"
         return None
 
     target_year = year or parsed_year
-    api_key = "4ef0d7355d9ffb5151e987764708ce96"
+    sett = load_settings()
+    api_key = sett.get('tmdb_api_key') or DEFAULT_TMDB_API_KEY
 
     types_to_try = [media_type]
     if media_type == "movie":
@@ -670,3 +676,79 @@ def auto_enrich_library_metadata(conn=None) -> int:
 
     return enriched
 
+
+def write_pid_file(pid_file: str, pid: int):
+    """Safely saves process PID to a pidfile."""
+    try:
+        with open(pid_file, "w") as f:
+            f.write(str(pid))
+    except Exception as e:
+        logger.warning(f"Failed to write pid file {pid_file}: {e}")
+
+
+def terminate_process(proc=None, pid=None, pid_file=None, timeout=1.5, pattern=None):
+    """
+    Gracefully stops a daemon process using SIGTERM with timeout, falling back to SIGKILL.
+    Supports tracking via subprocess.Popen instance, PID number, and pid_file path.
+    Only falls back to pattern pkill as an absolute last resort if process was not found.
+    """
+    target_pid = None
+    if proc and hasattr(proc, "pid"):
+        target_pid = proc.pid
+    elif pid:
+        target_pid = pid
+    elif pid_file and os.path.isfile(pid_file):
+        try:
+            with open(pid_file, "r") as f:
+                target_pid = int(f.read().strip())
+        except Exception:
+            target_pid = None
+
+    # 1. Try terminating via Popen object first
+    if proc:
+        try:
+            proc.terminate()
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            try:
+                proc.kill()
+                proc.wait(timeout=0.5)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    # 2. If target_pid is known and still alive, send SIGTERM then SIGKILL
+    if target_pid:
+        try:
+            os.kill(target_pid, 0)
+            os.kill(target_pid, signal.SIGTERM)
+            deadline = time.time() + timeout
+            while time.time() < deadline:
+                time.sleep(0.1)
+                try:
+                    os.kill(target_pid, 0)
+                except OSError:
+                    break
+            else:
+                try:
+                    os.kill(target_pid, signal.SIGKILL)
+                except OSError:
+                    pass
+        except OSError:
+            pass
+
+    if pid_file and os.path.isfile(pid_file):
+        try:
+            os.remove(pid_file)
+        except Exception:
+            pass
+
+    # 3. Optional pattern fallback for untracked orphan processes
+    if pattern:
+        try:
+            subprocess.run(["pkill", "-15", "-f", pattern], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(0.2)
+            subprocess.run(["pkill", "-9", "-f", pattern], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass

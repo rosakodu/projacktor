@@ -3,6 +3,7 @@ import { RawButton, subscribeControllerInput } from "../runtime/controllerInput"
 import { getActiveDocument, getActiveWindow, isOverlayActiveOrRecent } from "../runtime/activeDoc";
 import { AudioTrack, SubtitleTrack } from "../components/player/types";
 import { triggerHaptic } from "../runtime/haptics";
+import type { UsePlayerZoomReturn } from "../components/player/usePlayerZoom";
 
 interface UsePlayerGamepadParams {
   containerRef: RefObject<HTMLDivElement | null>;
@@ -28,60 +29,68 @@ interface UsePlayerGamepadParams {
   seekRelative: (delta: number, step?: number) => void;
   commitPendingSeek?: () => void;
   changeVolume: (delta: number) => void;
-  applyZoomStep: (step: number) => void;
-  resetZoom: () => void;
-  startZoomLoop: () => void;
-  stopZoomLoop: () => void;
   resetControlsTimer: () => void;
   toggleControls?: () => void;
   handleMenuDirection: (dir: "up" | "down", menuKey: "sub" | "audio") => void;
-  l2HeldRef: RefObject<boolean | null | undefined> | { current: boolean };
-  r2HeldRef: RefObject<boolean | null | undefined> | { current: boolean };
-  l2PressStartRef: RefObject<number | null | undefined> | { current: number };
-  r2PressStartRef: RefObject<number | null | undefined> | { current: number };
-  zoomAnimFrameRef: RefObject<number | null>;
-  zoomHudTimerRef: RefObject<number | null>;
+
+  // Zoom controls can be passed as a single hook object
+  zoom?: UsePlayerZoomReturn;
+
+  // Or as legacy separate fields
+  applyZoomStep?: (step: number) => void;
+  resetZoom?: () => void;
+  startZoomLoop?: () => void;
+  stopZoomLoop?: () => void;
+  l2HeldRef?: RefObject<boolean | null | undefined> | { current: boolean };
+  r2HeldRef?: RefObject<boolean | null | undefined> | { current: boolean };
+  l2PressStartRef?: RefObject<number | null | undefined> | { current: number };
+  r2PressStartRef?: RefObject<number | null | undefined> | { current: number };
+  zoomAnimFrameRef?: RefObject<number | null>;
+  zoomHudTimerRef?: RefObject<number | null>;
   overlayReturnCooldownRef?: any;
 }
 
-export function usePlayerGamepad({
-  containerRef,
-  playBtnRef,
-  subtitleBtnRef,
-  audioBtnRef,
-  showControlsRef,
-  showAudioMenuRef,
-  showSubtitleMenuRef,
-  setShowAudioMenu,
-  setShowSubtitleMenu,
-  setShowControls,
-  closeModalRef,
-  audioTracksRef,
-  subtitleTracksRef,
-  activeAudioMenuIdxRef,
-  activeSubMenuIdxRef,
-  togglePlay,
-  toggleAudioMenu,
-  toggleSubtitleMenu,
-  selectAudioTrack,
-  selectSubtitleTrack,
-  seekRelative,
-  commitPendingSeek,
-  changeVolume,
-  applyZoomStep,
-  resetZoom,
-  startZoomLoop,
-  stopZoomLoop,
-  resetControlsTimer,
-  toggleControls,
-  handleMenuDirection,
-  l2HeldRef,
-  r2HeldRef,
-  l2PressStartRef,
-  r2PressStartRef,
-  zoomAnimFrameRef,
-  zoomHudTimerRef,
-}: UsePlayerGamepadParams) {
+export function usePlayerGamepad(props: UsePlayerGamepadParams) {
+  const {
+    containerRef,
+    playBtnRef,
+    subtitleBtnRef,
+    audioBtnRef,
+    showControlsRef,
+    showAudioMenuRef,
+    showSubtitleMenuRef,
+    setShowAudioMenu,
+    setShowSubtitleMenu,
+    setShowControls,
+    closeModalRef,
+    audioTracksRef,
+    subtitleTracksRef,
+    activeAudioMenuIdxRef,
+    activeSubMenuIdxRef,
+    togglePlay,
+    toggleAudioMenu,
+    toggleSubtitleMenu,
+    selectAudioTrack,
+    selectSubtitleTrack,
+    seekRelative,
+    commitPendingSeek,
+    changeVolume,
+    resetControlsTimer,
+    toggleControls,
+    handleMenuDirection,
+    zoom,
+  } = props;
+
+  const applyZoomStep = zoom?.applyZoomStep ?? props.applyZoomStep ?? (() => {});
+  const resetZoom = zoom?.resetZoom ?? props.resetZoom ?? (() => {});
+  const startZoomLoop = zoom?.startZoomLoop ?? props.startZoomLoop ?? (() => {});
+  const stopZoomLoop = zoom?.stopZoomLoop ?? props.stopZoomLoop ?? (() => {});
+  const l2HeldRef = zoom?.l2HeldRef ?? props.l2HeldRef ?? { current: false };
+  const r2HeldRef = zoom?.r2HeldRef ?? props.r2HeldRef ?? { current: false };
+  const l2PressStartRef = zoom?.l2PressStartRef ?? props.l2PressStartRef ?? { current: 0 };
+  const r2PressStartRef = zoom?.r2PressStartRef ?? props.r2PressStartRef ?? { current: 0 };
+  const zoomAnimFrameRef = zoom?.zoomAnimFrameRef ?? props.zoomAnimFrameRef;
+  const zoomHudTimerRef = zoom?.zoomHudTimerRef ?? props.zoomHudTimerRef;
   useEffect(() => {
     const handleActivity = () => {
       resetControlsTimer();
@@ -654,11 +663,11 @@ export function usePlayerGamepad({
 
     return () => {
       unController();
-      if (zoomAnimFrameRef.current !== null) {
+      if (zoomAnimFrameRef && zoomAnimFrameRef.current !== null) {
         cancelAnimationFrame(zoomAnimFrameRef.current);
         (zoomAnimFrameRef as any).current = null;
       }
-      if (zoomHudTimerRef.current !== null) {
+      if (zoomHudTimerRef && zoomHudTimerRef.current !== null) {
         clearTimeout(zoomHudTimerRef.current);
         (zoomHudTimerRef as any).current = null;
       }

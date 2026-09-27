@@ -9,6 +9,7 @@ import { RawButton, subscribeControllerInput } from "../runtime/controllerInput"
 import { isModalOpen, isUserInTabs, isPlayerActive } from "../runtime/homeInputBus";
 import { playCardNavSound } from "../runtime/navSound";
 import { setBackdropMovie } from "../runtime/backdropBus";
+import { useEnsureFocus } from "../hooks/useEnsureFocus";
 import { useI18n } from "../i18n";
 
 interface SearchViewProps {
@@ -83,45 +84,26 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
   }, []);
 
   // Авто-фокус на поле ввода при переходе в поиск
-  useEffect(() => {
-    let cancelled = false;
-    const focusSearch = () => {
-      if (cancelled) return true;
-      if (isModalOpen() || isUserInTabs()) return true;
-      const root = rootRef.current;
-      if (!root) return false;
-      const doc = getActiveDocument(root);
-      const active = doc?.activeElement;
-      if (active && active !== doc?.body && root.contains(active)) {
-        return true;
-      }
-
-      const input = root.querySelector<HTMLElement>("input, button, .ds-btn");
-      if (input) {
-        try {
-          doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-          input.focus();
-          input.classList.add("gpfocus");
-        } catch {}
-        return true;
-      }
-      return false;
-    };
-
-    if (!focusSearch()) {
-      const t1 = setTimeout(focusSearch, 40);
-      const t2 = setTimeout(focusSearch, 120);
-      const t3 = setTimeout(focusSearch, 260);
-      return () => {
-        cancelled = true;
-        clearTimeout(t1);
-        clearTimeout(t2);
-        clearTimeout(t3);
-      };
+  useEnsureFocus(() => {
+    if (isModalOpen() || isUserInTabs()) return true;
+    const root = rootRef.current;
+    if (!root) return false;
+    const doc = getActiveDocument(root);
+    const active = doc?.activeElement;
+    if (active && active !== doc?.body && root.contains(active)) {
+      return true;
     }
-    return () => {
-      cancelled = true;
-    };
+
+    const input = root.querySelector<HTMLElement>("input, button, .ds-btn");
+    if (input) {
+      try {
+        doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+        input.focus();
+        input.classList.add("gpfocus");
+      } catch {}
+      return true;
+    }
+    return false;
   }, []);
 
   const handleSearch = useCallback(

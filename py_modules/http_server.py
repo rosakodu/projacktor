@@ -13,7 +13,14 @@ import select
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 import threading
+from collections import deque
 
+from .constants import (
+    DEFAULT_HTTP_HOST,
+    DEFAULT_HTTP_PORT,
+    DEFAULT_TMDB_API_KEY,
+    FFMPEG_STDERR_MAX_LINES
+)
 from .db import CONFIG_DIR, get_user_home, get_db, logger
 from .common import load_settings, save_settings, ping_jacred, normalize_jacred_url, get_ssl_context, get_bin_path, _clean_env, has_vaapi_support, is_executable_release
 from .stream import unwrap_stream_source, is_header_ready, probe_media_file
@@ -523,7 +530,7 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
     
     def _handle_tmdb(self, path, query):
         sett = load_settings()
-        api_key = sett.get('tmdb_api_key', '4ef0d7355d9ffb5151e987764708ce96')
+        api_key = sett.get('tmdb_api_key') or DEFAULT_TMDB_API_KEY
         lang = sett.get('language', 'ru')
         
         endpoint = path.replace('/api/tmdb', '')
@@ -1055,8 +1062,7 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             )
 
             # Drain stderr in a background thread to prevent pipe buffer deadlock
-            stderr_lines = []
-            import threading
+            stderr_lines = deque(maxlen=FFMPEG_STDERR_MAX_LINES)
             def _drain_stderr():
                 try:
                     for line in proc.stderr:
@@ -1078,7 +1084,8 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                 import select
                 ready = select.select([proc.stdout], [], [], 15.0)
                 if not ready[0]:
-                    logger.error(f"[Stream] FFmpeg produced no output in 15s, killing. stderr: {'; '.join(stderr_lines[-5:])}")
+                    last_err = '; '.join(list(stderr_lines)[-5:])
+                    logger.error(f"[Stream] FFmpeg produced no output in 15s, killing. stderr: {last_err}")
                     proc.kill()
                     proc.wait(timeout=2)
                     return
@@ -1110,7 +1117,8 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                         pass
                     stderr_thread.join(timeout=1.0)
                     if stderr_lines:
-                        logger.info(f"[Stream] FFmpeg stderr summary ({len(stderr_lines)} lines): {'; '.join(stderr_lines[-3:])}")
+                        last_err = '; '.join(list(stderr_lines)[-3:])
+                        logger.info(f"[Stream] FFmpeg stderr summary ({len(stderr_lines)} lines): {last_err}")
             return
         else:
             if not must_transcode and is_http:

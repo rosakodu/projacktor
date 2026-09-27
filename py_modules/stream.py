@@ -2,11 +2,15 @@ import os
 import json
 import urllib.parse
 import subprocess
+import threading
 
 from .db import logger
 from .common import get_bin_path, _clean_env
+from .constants import PROBE_CACHE_MAX_SIZE
 
+_PROBE_LOCK = threading.Lock()
 PROBE_CACHE = {}
+
 
 def is_header_ready(filepath):
     try:
@@ -143,8 +147,10 @@ def _normalize_probe_key(filepath):
 
 def probe_media_file(filepath):
     cache_key = _normalize_probe_key(filepath)
-    if cache_key in PROBE_CACHE:
-        return PROBE_CACHE[cache_key]
+    with _PROBE_LOCK:
+        if cache_key in PROBE_CACHE:
+            cached = PROBE_CACHE[cache_key]
+            return cached.copy() if isinstance(cached, dict) else cached
     
     filepath = unwrap_stream_source(filepath)
     is_http = filepath.startswith("http://") or filepath.startswith("https://")
@@ -228,12 +234,14 @@ def probe_media_file(filepath):
             "status": "direct_play" if direct else "needs_transcode"
         }
         if vcodec or (is_http and duration > 0):
-            if len(PROBE_CACHE) >= 256:
-                try:
-                    PROBE_CACHE.pop(next(iter(PROBE_CACHE)))
-                except Exception:
-                    pass
-            PROBE_CACHE[filepath] = res
+            with _PROBE_LOCK:
+                if len(PROBE_CACHE) >= PROBE_CACHE_MAX_SIZE:
+                    try:
+                        oldest_key = next(iter(PROBE_CACHE))
+                        del PROBE_CACHE[oldest_key]
+                    except Exception:
+                        pass
+                PROBE_CACHE[cache_key] = res
         return res
     except subprocess.TimeoutExpired:
         logger.warning(f"probe_media_file timeout ({probe_timeout}s) for {filepath}")

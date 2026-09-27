@@ -13,6 +13,7 @@ import { playNavSound } from "../runtime/navSound";
 import { setBackdropMovie } from "../runtime/backdropBus";
 import { isModalOpen, isUserInTabs, isPlayerActive } from "../runtime/homeInputBus";
 import { useGridNavigation, scrollCardHorizontal } from "../hooks/useGridNavigation";
+import { useEnsureFocus } from "../hooks/useEnsureFocus";
 import { useI18n } from "../i18n";
 
 interface HistoryViewProps {
@@ -186,49 +187,30 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onNavigate
   }, []);
 
   // Авто-фокус на первом элементе истории
-  useEffect(() => {
-    let cancelled = false;
-    const focusFirst = () => {
-      if (cancelled) return true;
-      if (isModalOpen() || isUserInTabs()) return true;
-      const root = rootRef.current;
-      if (!root) return false;
-      const doc = getActiveDocument(root);
-      const active = doc?.activeElement;
-      if (active && active !== doc?.body && root.contains(active)) {
-        return true;
-      }
-      const target = root.querySelector<HTMLElement>(
-        ".projacktor-dl-poster-btn, .projacktor-empty-lib"
-      );
-      if (target) {
-        try {
-          doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-          target.focus();
-          target.classList.add("gpfocus");
-          if (items.length > 0) {
-            handleCardFocus(items[0], target.closest(".projacktor-dl-grid-card"));
-          }
-        } catch {}
-        return true;
-      }
-      return false;
-    };
-
-    if (!focusFirst()) {
-      const t1 = setTimeout(focusFirst, 50);
-      const t2 = setTimeout(focusFirst, 150);
-      const t3 = setTimeout(focusFirst, 300);
-      return () => {
-        cancelled = true;
-        clearTimeout(t1);
-        clearTimeout(t2);
-        clearTimeout(t3);
-      };
+  useEnsureFocus(() => {
+    if (isModalOpen() || isUserInTabs()) return true;
+    const root = rootRef.current;
+    if (!root) return false;
+    const doc = getActiveDocument(root);
+    const active = doc?.activeElement;
+    if (active && active !== doc?.body && root.contains(active)) {
+      return true;
     }
-    return () => {
-      cancelled = true;
-    };
+    const target = root.querySelector<HTMLElement>(
+      ".projacktor-dl-poster-btn, .projacktor-empty-lib"
+    );
+    if (target) {
+      try {
+        doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+        target.focus();
+        target.classList.add("gpfocus");
+        if (items.length > 0) {
+          handleCardFocus(items[0], target.closest(".projacktor-dl-grid-card"));
+        }
+      } catch {}
+      return true;
+    }
+    return false;
   }, [items.length, handleCardFocus]);
 
   const { handleGamepadDirection } = useGridNavigation({

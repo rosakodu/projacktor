@@ -1,6 +1,8 @@
 import { getLocale } from "../i18n/state";
 
-export const API_BASE = "http://127.0.0.1:8400/api";
+export const API_PORT = 8400;
+export const API_HOST = `http://127.0.0.1:${API_PORT}`;
+export const API_BASE = `${API_HOST}/api`;
 
 export function getImageUrl(path: string | null | undefined): string {
   if (!path) {

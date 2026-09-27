@@ -4,6 +4,7 @@ import { FaPlay, FaPause, FaDownload, FaList, FaTrash, FaMoon, FaSync, FaFilm } 
 import { LibraryItem, PlayerMediaInfo } from "../types";
 import { formatSpeed, getImageUrl } from "../api";
 import { useLibrary } from "../hooks/useLibrary";
+import { useEnsureFocus } from "../hooks/useEnsureFocus";
 import { getActiveDocument } from "../runtime/activeDoc";
 import { isModalOpen, isUserInTabs, isPlayerActive } from "../runtime/homeInputBus";
 import { EpisodesModal } from "../components/EpisodesModal";
@@ -110,47 +111,28 @@ export const LibraryView: FC<LibraryViewProps> = memo(
     }, [library.length, isInitialLoading]);
 
     // Авто-фокус на элементе библиотеки при переходе во вкладку
-    useEffect(() => {
-      let cancelled = false;
-      const focusLib = () => {
-        if (cancelled) return true;
-        if (isModalOpen() || isUserInTabs() || isPlayerActive()) return true;
-        const root = rootRef.current;
-        if (!root) return false;
-        const doc = getActiveDocument(root);
-        const active = doc?.activeElement;
-        if (active && active !== doc?.body && root.contains(active)) {
-          return true;
-        }
-
-        const target = root.querySelector<HTMLElement>(
-          ".projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0'], .projacktor-empty-cta-btn, .projacktor-empty-lib"
-        );
-        if (target) {
-          try {
-            doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-            target.focus();
-            target.classList.add("gpfocus");
-          } catch {}
-          return true;
-        }
-        return false;
-      };
-
-      if (!focusLib()) {
-        const t1 = setTimeout(focusLib, 40);
-        const t2 = setTimeout(focusLib, 120);
-        const t3 = setTimeout(focusLib, 260);
-        return () => {
-          cancelled = true;
-          clearTimeout(t1);
-          clearTimeout(t2);
-          clearTimeout(t3);
-        };
+    useEnsureFocus(() => {
+      if (isModalOpen() || isUserInTabs() || isPlayerActive()) return true;
+      const root = rootRef.current;
+      if (!root) return false;
+      const doc = getActiveDocument(root);
+      const active = doc?.activeElement;
+      if (active && active !== doc?.body && root.contains(active)) {
+        return true;
       }
-      return () => {
-        cancelled = true;
-      };
+
+      const target = root.querySelector<HTMLElement>(
+        ".projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0'], .projacktor-empty-cta-btn, .projacktor-empty-lib"
+      );
+      if (target) {
+        try {
+          doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+          target.focus();
+          target.classList.add("gpfocus");
+        } catch {}
+        return true;
+      }
+      return false;
     }, [library.length]);
 
     // Строгая блокировка горизонтального скролла в контейнере библиотеки
