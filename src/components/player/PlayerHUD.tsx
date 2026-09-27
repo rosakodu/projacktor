@@ -137,20 +137,20 @@ export const PlayerHUD: FC<PlayerHUDProps> = ({
             }}
           />
 
-          {/* Контент: Только графический логотип TMDB по центру */}
-          {logoPath && !logoFailed && (
-            <div
-              style={{
-                position: "relative",
-                zIndex: 3,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: "0 30px",
-                maxWidth: "85%",
-              }}
-            >
+          {/* Контент: Графический логотип TMDB или текстовое название + Спиннер буферизации */}
+          <div
+            style={{
+              position: "relative",
+              zIndex: 3,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "0 30px",
+              maxWidth: "85%",
+            }}
+          >
+            {logoPath && !logoFailed ? (
               <img
                 className="projacktor-buffering-heartbeat"
                 src={getLogoUrl(logoPath)}
@@ -166,8 +166,53 @@ export const PlayerHUD: FC<PlayerHUDProps> = ({
                   userSelect: "none",
                 }}
               />
+            ) : (
+              <div
+                style={{
+                  fontSize: 28,
+                  fontWeight: 700,
+                  color: "#fff",
+                  textAlign: "center",
+                  textShadow: "0 4px 16px rgba(0, 0, 0, 0.9)",
+                }}
+              >
+                {title}
+              </div>
+            )}
+
+            {/* Анимированный спиннер буферизации и статус */}
+            <div
+              style={{
+                marginTop: 24,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 12,
+              }}
+            >
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  border: "3px solid rgba(255, 255, 255, 0.15)",
+                  borderTop: "3px solid var(--ds-accent)",
+                  borderRadius: "50%",
+                  animation: "projacktor-spin 0.9s linear infinite",
+                }}
+              />
+              <div
+                style={{
+                  color: "rgba(255, 255, 255, 0.85)",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  letterSpacing: 0.3,
+                  textShadow: "0 2px 8px rgba(0, 0, 0, 0.9)",
+                }}
+              >
+                {isOnline ? t("bufferingTorrent") : t("bufferingStream")}
+              </div>
             </div>
-          )}
+          </div>
         </div>
       )}
 

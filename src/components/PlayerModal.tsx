@@ -109,6 +109,10 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   const [isBuffering, setIsBuffering] = useState<boolean>(true);
   const [logoPath, setLogoPath] = useState<string | null>(null);
   const [hasStartedPlayback, setHasStartedPlayback] = useState<boolean>(false);
+  const hasStartedPlaybackRef = useRef<boolean>(false);
+  hasStartedPlaybackRef.current = hasStartedPlayback;
+  const retryCountRef = useRef<number>(0);
+  const retryTimeoutRef = useRef<any>(null);
   const hasInitialSeekedRef = useRef<boolean>(false);
 
   // Фоновая загрузка официального логотипа с TMDB для заставки буферизации
@@ -523,6 +527,31 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     resetControlsTimer();
   }, [resetControlsTimer]);
 
+  const retryPlayback = useCallback(() => {
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+    setErrorMsg(null);
+    setIsBuffering(true);
+    setStreamUrl((curUrl) => {
+      return curUrl.includes("t=")
+        ? curUrl.replace(/t=\d+/, `t=${Date.now()}`)
+        : `${curUrl}${curUrl.includes("?") ? "&" : "?"}t=${Date.now()}`;
+    });
+    setTimeout(() => {
+      const video = videoRef.current;
+      if (video) {
+        try {
+          video.load();
+          video.play().catch(() => {});
+        } catch (e) {
+          console.warn("[PlayerModal] retryPlayback error:", e);
+        }
+      }
+    }, 50);
+  }, []);
+
   const commitPendingSeek = useCallback(() => {
     if (seekCommitTimerRef.current !== null) {
       window.clearTimeout(seekCommitTimerRef.current);
@@ -746,6 +775,10 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   // Сохраняем прогресс, возобновляем загрузки и сбрасываем стрим TorrServer при закрытии плеера
   useEffect(() => {
     return () => {
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
+      }
       saveProgressRef.current(currentPlayheadRef.current, durationRef.current);
       rpcResumeAllDownloads().catch(() => {});
       if (torrentHashRef.current) {
@@ -815,13 +848,31 @@ export const PlayerModal: FC<PlayerModalProps> = ({
           }
 
           const hasExtSubs = hasSubs && data.subtitle_tracks.some((s: SubtitleTrack) => String(s.index).startsWith("ext_"));
-          if ((!hasSubs || !hasExtSubs) && isHttp && retryCount < 4) {
+
+          // Автоматическое восстановление воспроизведения, если probe вернул метаданные (файл на бэкенде готов и читается),
+          // но видеоплеер упал в ошибку или ещё не стартовал
+          const video = videoRef.current;
+          if (data && (data.duration > 0 || data.vcodec) && video && (!hasStartedPlaybackRef.current || video.error)) {
+            if (video.error) {
+              console.log("[PlayerModal] Probe succeeded while video was in error state; auto-recovering video playback");
+              setErrorMsg(null);
+              retryCountRef.current = 0;
+              try {
+                video.load();
+                video.play().catch(() => {});
+              } catch {}
+            }
+          }
+
+          // Если probe вернул timeout или duration <= 0, продолжаем опрос до 8 раз (до ~16с)
+          const isPendingProbe = isHttp && (!data.duration || data.duration <= 0 || data.status === "timeout");
+          if (((!hasSubs || !hasExtSubs) || isPendingProbe) && isHttp && retryCount < 8) {
             retryCount++;
             retryTimer = setTimeout(runProbe, 2000);
           }
         })
         .catch(() => {
-          if (!cancelled && retryCount < 4) {
+          if (!cancelled && retryCount < 8) {
             retryCount++;
             retryTimer = setTimeout(runProbe, 2000);
           }
@@ -972,25 +1023,35 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   const handleVideoError = useCallback(() => {
     const video = videoRef.current;
     const err = video?.error;
-    if (err) {
-      const codeMap: Record<number, string> = {
-        1: "MEDIA_ERR_ABORTED",
-        2: "MEDIA_ERR_NETWORK",
-        3: "MEDIA_ERR_DECODE",
-        4: "MEDIA_ERR_SRC_NOT_SUPPORTED",
-      };
-      const codeName = codeMap[err.code] || `ERR_${err.code}`;
-      console.error(`[PlayerModal] Video error: ${codeName} - ${err.message || "no details"}`);
-      if (err.code === 2) {
-        // Сетевая ошибка — поток не доступен или TorrServer не отдаёт данные
-        setErrorMsg(t("streamPlaybackError") + ` (${codeName})`);
-      } else {
-        setErrorMsg(t("streamPlaybackError") + ` (${codeName})`);
-      }
-    } else {
-      setErrorMsg(t("streamPlaybackError"));
+    const codeMap: Record<number, string> = {
+      1: "MEDIA_ERR_ABORTED",
+      2: "MEDIA_ERR_NETWORK",
+      3: "MEDIA_ERR_DECODE",
+      4: "MEDIA_ERR_SRC_NOT_SUPPORTED",
+    };
+    const codeName = err ? (codeMap[err.code] || `ERR_${err.code}`) : "UNKNOWN";
+    console.error(`[PlayerModal] Video error: ${codeName} - ${err?.message || "no details"}`);
+
+    // Если воспроизведение ещё не началось и это сетевой/онлайн поток (например, торрент ещё качает чанки),
+    // пробуем авто-повтор до 4 раз с паузой 2.5 секунды
+    if (!hasStartedPlaybackRef.current && (isOnline || filePath.includes("/api/stream") || filePath.startsWith("http")) && retryCountRef.current < 4) {
+      retryCountRef.current += 1;
+      console.log(`[PlayerModal] Auto-retrying stream playback (attempt ${retryCountRef.current}/4) in 2.5s...`);
+      setIsBuffering(true);
+      if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = setTimeout(() => {
+        retryPlayback();
+      }, 2500);
+      return;
     }
-  }, [t]);
+
+    if (err && err.code === 2) {
+      setErrorMsg(t("streamPlaybackError") + ` (${codeName})`);
+    } else {
+      setErrorMsg(t("streamPlaybackError") + (err ? ` (${codeName})` : ""));
+    }
+    setIsBuffering(false);
+  }, [filePath, isOnline, retryPlayback, t]);
 
   useEffect(() => {
     setErrorMsg(null);
@@ -1005,6 +1066,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
       if (vTime > 0.05) {
         setHasStartedPlayback(true);
         setErrorMsg(null);
+        retryCountRef.current = 0;
       }
       const totalCur = Math.floor(isDirectStream ? vTime : (baseTime + vTime));
       if (Math.abs(totalCur - lastSaveSec) >= 5) {
@@ -1028,7 +1090,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     const onLoadedMetadata = () => {
       const vDur = video.duration;
       const isLiveTranscode = isOnline || filePath.includes("/api/stream");
-      if ((!duration || duration <= 0) && vDur && !isNaN(vDur) && isFinite(vDur) && vDur > 0 && (!isLiveTranscode || vDur >= 180)) {
+      if ((durationRef.current <= 0) && vDur && !isNaN(vDur) && isFinite(vDur) && vDur > 0 && (!isLiveTranscode || vDur >= 180)) {
         setDuration(vDur);
       }
       if (isDirectStream && savedStartTimeRef.current > 0 && !hasInitialSeekedRef.current) {
@@ -1047,6 +1109,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
       if (video.currentTime > 0.05) {
         setHasStartedPlayback(true);
         setErrorMsg(null);
+        retryCountRef.current = 0;
       }
     };
     const onPlaying = () => {
@@ -1054,6 +1117,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
       setIsBuffering(false);
       setHasStartedPlayback(true);
       setErrorMsg(null);
+      retryCountRef.current = 0;
     };
     const onPause = () => {
       setIsPlaying(false);
@@ -1071,7 +1135,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
         if (cleanTitle) {
           localStorage.removeItem(`projacktor_progress_t_${cleanTitle}`);
         }
-        saveProgressRef.current(0, durationRef.current || duration);
+        saveProgressRef.current(0, durationRef.current);
       } catch {}
     };
 
@@ -1094,7 +1158,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
       video.removeEventListener("canplay", onCanPlay);
       video.removeEventListener("ended", onEnded);
     };
-  }, [streamUrl, duration, baseTime]);
+  }, [streamUrl, baseTime]);
 
   const currentPlayhead = isDirectStream ? videoTime : (baseTime + videoTime);
   const progressPercent = duration > 0 ? Math.min(100, Math.max(0, (currentPlayhead / duration) * 100)) : 0;
@@ -1280,18 +1344,99 @@ export const PlayerModal: FC<PlayerModalProps> = ({
                   style={{
                     position: "absolute",
                     inset: 0,
-                    zIndex: 30,
+                    zIndex: 35,
                     display: "flex",
+                    flexDirection: "column",
                     alignItems: "center",
                     justifyContent: "center",
-                    background: "rgba(10, 13, 20, 0.88)",
+                    background: "rgba(10, 13, 20, 0.92)",
+                    backdropFilter: "blur(8px)",
                     textAlign: "center",
-                    color: "var(--ds-danger)",
-                    fontSize: 14,
-                    padding: 24,
+                    padding: 32,
                   }}
                 >
-                  {errorMsg}
+                  <div
+                    style={{
+                      maxWidth: 480,
+                      background: "rgba(22, 27, 38, 0.95)",
+                      border: "1px solid rgba(255, 255, 255, 0.12)",
+                      borderRadius: 12,
+                      padding: "24px 32px",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 16,
+                      boxShadow: "0 16px 32px rgba(0, 0, 0, 0.6)",
+                    }}
+                  >
+                    <div style={{ color: "var(--ds-danger, #e53e3e)", fontSize: 16, fontWeight: 600, lineHeight: 1.4 }}>
+                      {errorMsg}
+                    </div>
+
+                    <Focusable
+                      flow-children="horizontal"
+                      style={{
+                        display: "flex",
+                        gap: 12,
+                        marginTop: 8,
+                      }}
+                      onFocusCapture={(e: any) => {
+                        const target = e?.target as HTMLElement | null;
+                        if (!target) return;
+                        const doc = getActiveDocument(target) || document;
+                        doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => {
+                          if (el !== target) el.classList.remove("gpfocus");
+                        });
+                        if (target.classList?.contains("ds-btn")) {
+                          target.classList.add("gpfocus");
+                        }
+                      }}
+                      onBlurCapture={(e: any) => {
+                        const target = e?.target as HTMLElement | null;
+                        if (target && target.classList?.contains("ds-btn")) {
+                          target.classList.remove("gpfocus");
+                        }
+                      }}
+                    >
+                      <Focusable
+                        className="ds-btn ds-btn--primary"
+                        onActivate={() => {
+                          retryCountRef.current = 0;
+                          retryPlayback();
+                        }}
+                        onClick={() => {
+                          retryCountRef.current = 0;
+                          retryPlayback();
+                        }}
+                        style={{
+                          padding: "10px 20px",
+                          fontSize: 14,
+                          fontWeight: 600,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {t("retry")}
+                      </Focusable>
+
+                      <Focusable
+                        className="ds-btn ds-btn--secondary"
+                        onActivate={() => {
+                          closeModalRef.current?.();
+                        }}
+                        onClick={() => {
+                          closeModalRef.current?.();
+                        }}
+                        style={{
+                          padding: "10px 20px",
+                          fontSize: 14,
+                          fontWeight: 500,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {t("closePlayer")}
+                      </Focusable>
+                    </Focusable>
+                  </div>
                 </div>
               )}
 

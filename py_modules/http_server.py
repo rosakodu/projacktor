@@ -1082,10 +1082,11 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                 chunk_size = 128 * 1024
                 # Wait for first chunk with a timeout to detect dead streams early
                 import select
-                ready = select.select([proc.stdout], [], [], 15.0)
+                chunk_timeout = 30.0 if is_online else 15.0
+                ready = select.select([proc.stdout], [], [], chunk_timeout)
                 if not ready[0]:
                     last_err = '; '.join(list(stderr_lines)[-5:])
-                    logger.error(f"[Stream] FFmpeg produced no output in 15s, killing. stderr: {last_err}")
+                    logger.error(f"[Stream] FFmpeg produced no output in {int(chunk_timeout)}s, killing. stderr: {last_err}")
                     proc.kill()
                     proc.wait(timeout=2)
                     return
