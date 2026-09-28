@@ -171,7 +171,13 @@ def resolve_transcode_plan(
 
     # Determine hardware acceleration method
     hw_accel = "none"
-    if video_needs_transcode:
+    # Hardware decoding via VA-API / NVENC on modern GPUs only supports modern video codecs.
+    # Legacy codecs (MPEG-4 / XviD / DivX, MPEG-2, VC-1, WMV) lack hardware decoding support
+    # and must use CPU software transcoding (libx264) to avoid FFmpeg initialization crash.
+    HW_SUPPORTED_VCODECS = {"hevc", "h265", "h264", "avc1", "vp9", "av1"}
+    can_hw_accel = vcodec in HW_SUPPORTED_VCODECS
+
+    if video_needs_transcode and can_hw_accel:
         if has_nvenc_support():
             hw_accel = "nvenc"
         elif has_vaapi_support():
