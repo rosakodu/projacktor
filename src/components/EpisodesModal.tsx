@@ -80,7 +80,9 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
     };
   }, [item.id]);
 
-  // Фокус на первой кнопке при загрузке серий
+  const modalOpenedTimeRef = useRef<number>(Date.now());
+
+  // Фокус на первой кнопке при загрузке серий (с безопасной задержкой 250мс для предотвращения случайного нажатия A)
   useEffect(() => {
     if (loading || episodes.length === 0) return;
     const t = setTimeout(() => {
@@ -99,11 +101,22 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
           (first as any).TakeFocus?.(0);
         } catch {}
       }
-    }, 60);
+    }, 250);
     return () => clearTimeout(t);
   }, [loading, episodes.length]);
 
+  const handleWatchOnline = (epIndex: number) => {
+    // Защита от фантомного клика / удержания кнопки A при открытии списка серий
+    if (Date.now() - modalOpenedTimeRef.current < 450) {
+      return;
+    }
+    onWatchOnline(item, epIndex);
+  };
+
   const handleDownload = async (ep: EpisodeItem) => {
+    if (Date.now() - modalOpenedTimeRef.current < 450) {
+      return;
+    }
     setDownloadingEpIdx(ep.index);
     try {
       await onDownloadEpisode(item, ep);
@@ -369,8 +382,8 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                         <Focusable
                           className="ds-btn ds-btn--compact ds-btn--success"
                           noFocusRing
-                          onActivate={() => onWatchOnline(item, ep.index)}
-                          onClick={() => onWatchOnline(item, ep.index)}
+                          onActivate={() => handleWatchOnline(ep.index)}
+                          onClick={() => handleWatchOnline(ep.index)}
                           onCancelButton={closeModal}
                           title={t("watchFile")}
                           style={{ padding: "4px 10px", fontSize: 11 }}

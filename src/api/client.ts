@@ -200,7 +200,7 @@ function extractYears(title: string): number[] {
   return matches ? matches.map(Number) : [];
 }
 
-function isTvRelease(title: string): boolean {
+export function isTvRelease(title: string): boolean {
   const tvPatterns = [
     /\b[sS]\d+/i,
     /\b\d+\s*[xX]\s*\d+\b/i,

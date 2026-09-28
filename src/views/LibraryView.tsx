@@ -306,7 +306,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
       {library.length > 0 && (
         <div ref={rowRef} className="projacktor-downloads-grid">
             {library.map((item, index) => {
-              const isTv = item.media_type === "tv";
+              const isTv = item.media_type === "tv" || (item.files && item.files.length > 1) || (item.total_episodes_count !== undefined && item.total_episodes_count > 1);
               const isDownloading = item.download_status === "downloading";
               const isPaused = item.download_status === "paused";
               const hasLocalFiles = !!(item.files && item.files.length > 0);
@@ -330,7 +330,8 @@ export const LibraryView: FC<LibraryViewProps> = memo(
 
               const handlePrimaryAction = () => {
                 lastInteractedItemIdRef.current = item.id;
-                if (isTv && totalEps > 1) {
+                if (isTv) {
+                  // Для сериалов ВСЕГДА открываем список серий, чтобы не включать случайно первую попавшуюся серию
                   handleOpenEpisodes(item);
                 } else if (localFilePath) {
                   const mediaInfo: PlayerMediaInfo = {
@@ -343,8 +344,6 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                     overview: item.overview,
                   };
                   onPlayVideo(localFilePath, item.title, false, undefined, mediaInfo);
-                } else if (isTv) {
-                  handleOpenEpisodes(item);
                 }
               };
 
@@ -476,12 +475,12 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                         onFocus={() => setBackdropMovie(item as any)}
                         onMouseEnter={() => setBackdropMovie(item as any)}
                         onGamepadDirection={handleGamepadDir}
-                        title={(canPlayDirect || hasLocalFiles) ? t("watchFile") : t("episodes")}
+                        title={isTv ? t("episodes") : ((canPlayDirect || hasLocalFiles) ? t("watchFile") : t("episodes"))}
                       >
-                        {(canPlayDirect || hasLocalFiles) && (!isTv || totalEps <= 1) ? (
-                          <FaPlay style={{ fontSize: 10, marginLeft: 1 }} />
-                        ) : (
+                        {isTv ? (
                           <FaList style={{ fontSize: 10 }} />
+                        ) : (
+                          <FaPlay style={{ fontSize: 10, marginLeft: 1 }} />
                         )}
                       </Focusable>
                     )}

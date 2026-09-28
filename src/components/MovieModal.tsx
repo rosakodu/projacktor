@@ -24,6 +24,7 @@ import {
   formatBytes,
   sortEpisodes,
   isExecutableRelease,
+  isTvRelease,
 } from "../api";
 import { useI18n } from "../i18n";
 
@@ -60,6 +61,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
   const [loadingEpisodesMap, setLoadingEpisodesMap] = useState<Record<string, boolean>>({});
   const [streamingEpIdx, setStreamingEpIdx] = useState<number | null>(null);
   const [downloadingEpIdx, setDownloadingEpIdx] = useState<number | null>(null);
+  const lastEpisodesToggleTimeRef = useRef<number>(0);
 
   const torrentsRef = useRef<HTMLDivElement>(null);
   const closeModalRef = useRef(closeModal);
@@ -311,7 +313,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
         tmdb_id: movie.id,
         title,
         year,
-        media_type: movie.media_type || "movie",
+        media_type: (movie.media_type === "tv" || isTvRelease(torrent.title)) ? "tv" : (movie.media_type || "movie"),
         quality: torrent.quality || "",
         torrent_title: torrent.title || `${title} (${torrent.quality || ""})`.trim(),
         poster_path: movie.poster_path || "",
@@ -411,6 +413,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
   );
 
   const handleToggleEpisodes = async (torrent: TorrentItem) => {
+    lastEpisodesToggleTimeRef.current = Date.now();
     const tId = torrent.id || torrent.magnet;
     const isCurrentlyOpen = expandedTorrentId === tId;
 
@@ -428,6 +431,10 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
 
   // 4. Watch single episode online (Requirement 1a & 4: does NOT appear in library)
   const handleWatchEpisodeOnline = async (torrent: TorrentItem, ep: EpisodeItem) => {
+    // Защита от фантомного клика / удержания кнопки A при открытии списка серий
+    if (Date.now() - lastEpisodesToggleTimeRef.current < 450) {
+      return;
+    }
     if (streamingEpIdx !== null || downloadingEpIdx !== null) return;
     setStreamingEpIdx(ep.index);
     try {
@@ -483,6 +490,10 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
 
   // 5. Download single episode (appears in library and begins downloading)
   const handleDownloadEpisode = async (torrent: TorrentItem, ep: EpisodeItem) => {
+    // Защита от фантомного клика / удержания кнопки A при открытии списка серий
+    if (Date.now() - lastEpisodesToggleTimeRef.current < 450) {
+      return;
+    }
     if (downloadingEpIdx !== null) return;
     setDownloadingEpIdx(ep.index);
     try {
@@ -498,6 +509,10 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
 
   // 5b. Download single episode with MagicBlack OLED screen-off mode
   const handleDownloadEpisodeWithMagicBlack = async (torrent: TorrentItem, ep: EpisodeItem) => {
+    // Защита от фантомного клика / удержания кнопки A при открытии списка серий
+    if (Date.now() - lastEpisodesToggleTimeRef.current < 450) {
+      return;
+    }
     if (downloadingEpIdx !== null) return;
     setDownloadingEpIdx(ep.index);
     try {
@@ -742,6 +757,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                       tor.quality.startsWith("TC"));
 
                   const isFocused = focusedTorrentId === tId;
+                  const isTorTv = isTv || isTvRelease(tor.title);
 
                   return (
                     <div
@@ -784,7 +800,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
 
                         {/* Strict Fixed-Size Action Buttons (Requirement 1 & 1b) */}
                         <Focusable flow-children="horizontal" noFocusRing className="projacktor-torrent-actions">
-                          {isTv ? (
+                          {isTorTv ? (
                             /* TV Series: Toggle Episodes button */
                             <Focusable
                               className={`projacktor-icon-btn ${isExpanded ? "projacktor-icon-btn--primary" : ""}`}
@@ -845,7 +861,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                       </div>
 
                       {/* Inline Episode Selection for TV Series (Requirement 1a) */}
-                      {isTv && isExpanded && (
+                      {isTorTv && isExpanded && (
                         <div className="projacktor-torrent-episodes">
                           {isEpLoading ? (
                             <div style={{ padding: "8px 4px", fontSize: 11, color: "var(--ds-text-dim)", display: "flex", alignItems: "center", gap: 8 }}>
