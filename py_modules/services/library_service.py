@@ -226,11 +226,14 @@ class LibraryService:
                                 break
 
                     if af:
+                        is_selected = (af.get('selected') == 'true')
                         c_len = int(af.get('completedLength', 0))
                         t_len = int(af.get('length', 0)) or expected_sz
                         is_complete = (t_len > 0 and c_len >= t_len)
                         ep['downloaded'] = is_complete
-                        ep['completed'] = c_len
+                        ep['selected'] = is_selected
+                        # If not selected and not completed, bytes are boundary/unrelated pieces
+                        ep['completed'] = c_len if (is_selected or is_complete) else 0
                         if af.get('path') and os.path.isabs(af['path']):
                             ep['path'] = af['path']
                         continue

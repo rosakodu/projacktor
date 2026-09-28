@@ -46,21 +46,37 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
   useEffect(() => {
     let active = true;
     setLoading(true);
-    rpcGetEpisodes(item.id)
-      .then((eps) => {
-        if (active && Array.isArray(eps)) {
-          setEpisodes(sortEpisodes(eps));
-        }
-      })
-      .catch((err) => {
-        console.error("Error loading episodes:", err);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
+    const fetch = () => {
+      rpcGetEpisodes(item.id)
+        .then((eps) => {
+          if (active && Array.isArray(eps)) {
+            setEpisodes(sortEpisodes(eps));
+          }
+        })
+        .catch((err) => {
+          console.error("Error loading episodes:", err);
+        })
+        .finally(() => {
+          if (active) setLoading(false);
+        });
+    };
+
+    fetch();
+    const interval = setInterval(() => {
+      if (active) {
+        rpcGetEpisodes(item.id)
+          .then((eps) => {
+            if (active && Array.isArray(eps)) {
+              setEpisodes(sortEpisodes(eps));
+            }
+          })
+          .catch(() => {});
+      }
+    }, 2500);
 
     return () => {
       active = false;
+      clearInterval(interval);
     };
   }, [item.id]);
 
@@ -286,7 +302,8 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
               episodes.map((ep: EpisodeItem) => {
                 const isEpCompleted =
                   ep.downloaded || (ep.size > 0 && ep.completed >= ep.size);
-                const isEpPartial = ep.completed > 0 && !isEpCompleted;
+                const isEpSelected = ep.selected !== false;
+                const isEpPartial = isEpSelected && ep.completed > 0 && !isEpCompleted;
                 const isEpDownloading = downloadingEpIdx === ep.index;
 
                 return (

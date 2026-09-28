@@ -273,7 +273,17 @@ class DownloadService:
             target_name = target_ep.get('name', '') if target_ep else ''
             target_season, target_ep_num, _ = library_service._episode_sort_key(target_name) if (target_name and library_service) else (1, 999999, '')
 
-            start_res = await self.start_download(mid, "", dm)
+            # Check if this media already has an active task in aria2
+            dl = db.execute("SELECT * FROM downloads WHERE media_id=?", (mid,)).fetchone()
+            existing_gid = dl['aria2_gid'] if dl else None
+            existing_st = dm.get_status(existing_gid) if (existing_gid and dm) else None
+
+            # If fresh download, pass target file index so aria2 downloads ONLY this episode from the start
+            initial_indices = ""
+            if not existing_st and target_ep and target_ep.get('index'):
+                initial_indices = str(target_ep['index'])
+
+            start_res = await self.start_download(mid, initial_indices, dm)
             gid = start_res.get('gid')
             if not gid or not dm:
                 return start_res
