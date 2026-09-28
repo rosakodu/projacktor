@@ -1,16 +1,47 @@
 import os
 import sys
 
-# Ensure system Python paths and http package path are available in PyInstaller sandbox
+# Ensure system Python paths and standard packages (http, email, urllib) are available in PyInstaller sandbox
+import glob
+
+candidate_libs = []
 py_ver = f"{sys.version_info.major}.{sys.version_info.minor}"
-sys_lib = f"/usr/lib/python{py_ver}"
-for p in [sys_lib, f"{sys_lib}/lib-dynload", f"{sys_lib}/site-packages"]:
-    if os.path.isdir(p) and p not in sys.path:
-        sys.path.append(p)
+for base in ["/usr/lib", "/usr/lib64"]:
+    candidate_libs.append(f"{base}/python{py_ver}")
+for p in sorted(glob.glob("/usr/lib/python3*") + glob.glob("/usr/lib64/python3*"), reverse=True):
+    if os.path.isdir(p) and p not in candidate_libs:
+        candidate_libs.append(p)
+
+for sys_lib in candidate_libs:
+    if not os.path.isdir(sys_lib):
+        continue
+    for p in [sys_lib, f"{sys_lib}/lib-dynload", f"{sys_lib}/site-packages"]:
+        if os.path.isdir(p) and p not in sys.path:
+            sys.path.append(p)
 
 import http
-if hasattr(http, "__path__") and f"{sys_lib}/http" not in http.__path__:
-    http.__path__.append(f"{sys_lib}/http")
+for sys_lib in candidate_libs:
+    http_dir = os.path.join(sys_lib, "http")
+    if hasattr(http, "__path__") and os.path.isdir(http_dir) and http_dir not in http.__path__:
+        http.__path__.append(http_dir)
+
+try:
+    import email
+    for sys_lib in candidate_libs:
+        email_dir = os.path.join(sys_lib, "email")
+        if hasattr(email, "__path__") and os.path.isdir(email_dir) and email_dir not in email.__path__:
+            email.__path__.append(email_dir)
+except Exception:
+    pass
+
+try:
+    import urllib
+    for sys_lib in candidate_libs:
+        urllib_dir = os.path.join(sys_lib, "urllib")
+        if hasattr(urllib, "__path__") and os.path.isdir(urllib_dir) and urllib_dir not in urllib.__path__:
+            urllib.__path__.append(urllib_dir)
+except Exception:
+    pass
 
 _plugin_dir = os.path.dirname(os.path.abspath(__file__))
 if _plugin_dir not in sys.path:
