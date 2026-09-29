@@ -4,6 +4,7 @@ import {
   rpcResumeAllDownloads,
   rpcDropStream,
   fetchMovieLogo,
+  getLogoUrl,
   API_BASE,
   API_HOST,
 } from "../api";
@@ -107,7 +108,8 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   } = zoomControls;
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isBuffering, setIsBuffering] = useState<boolean>(true);
-  const [logoPath, setLogoPath] = useState<string | null>(null);
+  const [logoPath, setLogoPath] = useState<string | null>(() => mediaInfo?.logoPath || null);
+  const [headerLogoFailed, setHeaderLogoFailed] = useState<boolean>(false);
   const [hasStartedPlayback, setHasStartedPlayback] = useState<boolean>(false);
   const hasStartedPlaybackRef = useRef<boolean>(false);
   hasStartedPlaybackRef.current = hasStartedPlayback;
@@ -118,11 +120,17 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   // Фоновая загрузка официального логотипа с TMDB для заставки буферизации
   useEffect(() => {
     let active = true;
+    if (mediaInfo?.logoPath) {
+      setLogoPath(mediaInfo.logoPath);
+      setHeaderLogoFailed(false);
+      return;
+    }
     if (mediaInfo?.tmdbId) {
       fetchMovieLogo(mediaInfo.tmdbId, mediaInfo.mediaType || "movie")
         .then((path) => {
           if (active && path) {
             setLogoPath(path);
+            setHeaderLogoFailed(false);
           }
         })
         .catch(() => {});
@@ -130,7 +138,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     return () => {
       active = false;
     };
-  }, [mediaInfo?.tmdbId, mediaInfo?.mediaType]);
+  }, [mediaInfo?.tmdbId, mediaInfo?.mediaType, mediaInfo?.logoPath]);
 
   const [showAudioMenu, setShowAudioMenu] = useState<boolean>(false);
   const [showControls, setShowControls] = useState<boolean>(true);
@@ -1319,7 +1327,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
           cursor: showControls ? "default" : "none",
         }}
       >
-        {/* Top Header Bar: ТОЛЬКО НАЗВАНИЕ */}
+        {/* Top Header Bar: Логотип фильма или название (только когда идет воспроизведение) */}
         <div
           style={{
             position: "absolute",
@@ -1331,24 +1339,60 @@ export const PlayerModal: FC<PlayerModalProps> = ({
             alignItems: "center",
             padding: "16px 24px 28px",
             background: "linear-gradient(to bottom, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.4) 60%, transparent 100%)",
-            opacity: showControls ? 1 : 0,
-            pointerEvents: showControls ? "auto" : "none",
-            transition: "opacity 0.3s ease",
+            opacity: showControls && hasStartedPlayback ? 1 : 0,
+            visibility: showControls && hasStartedPlayback ? "visible" : "hidden",
+            pointerEvents: showControls && hasStartedPlayback ? "auto" : "none",
+            transition: "opacity 0.3s ease, visibility 0.3s ease",
           }}
         >
-          <div
-            style={{
-              fontSize: 16,
-              fontWeight: 700,
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              color: "#ffffff",
-              letterSpacing: 0.2,
-            }}
-          >
-            {title}
-          </div>
+          {logoPath && !headerLogoFailed ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 14, minHeight: 38, maxWidth: "80%" }}>
+              <img
+                src={getLogoUrl(logoPath)}
+                alt={title}
+                onError={() => setHeaderLogoFailed(true)}
+                style={{
+                  maxHeight: 38,
+                  maxWidth: 240,
+                  width: "auto",
+                  height: "auto",
+                  objectFit: "contain",
+                  filter: "drop-shadow(0 2px 8px rgba(0, 0, 0, 0.85))",
+                }}
+              />
+              {mediaInfo?.episodeName && (
+                <span
+                  style={{
+                    fontSize: 15,
+                    fontWeight: 600,
+                    color: "rgba(255, 255, 255, 0.85)",
+                    letterSpacing: 0.2,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  {mediaInfo.seasonNumber !== undefined && mediaInfo.episodeNumber !== undefined
+                    ? `S${mediaInfo.seasonNumber}E${mediaInfo.episodeNumber} · ${mediaInfo.episodeName}`
+                    : mediaInfo.episodeName}
+                </span>
+              )}
+            </div>
+          ) : (
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 700,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                color: "#ffffff",
+                letterSpacing: 0.2,
+              }}
+            >
+              {title}
+            </div>
+          )}
         </div>
 
         {/* Video Canvas */}

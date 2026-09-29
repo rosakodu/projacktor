@@ -37,7 +37,23 @@ export const PlayerHUD: FC<PlayerHUDProps> = ({
 }) => {
   const { t } = useI18n();
   const [logoFailed, setLogoFailed] = useState(false);
-  useEffect(() => { setLogoFailed(false); }, [logoPath]);
+  const [logoRetry, setLogoRetry] = useState(0);
+
+  useEffect(() => {
+    setLogoFailed(false);
+    setLogoRetry(0);
+  }, [logoPath]);
+
+  const handleLogoError = () => {
+    if (logoRetry < 3) {
+      setTimeout(() => {
+        setLogoRetry((r) => r + 1);
+      }, 1000);
+    } else {
+      setLogoFailed(true);
+    }
+  };
+
   return (
     <>
       {/* HUD громкости (Справа) */}
@@ -152,17 +168,18 @@ export const PlayerHUD: FC<PlayerHUDProps> = ({
               }}
             >
               <img
+                key={`logo-${logoPath}-${logoRetry}`}
                 className="projacktor-buffering-heartbeat"
-                src={getLogoUrl(logoPath)}
+                src={`${getLogoUrl(logoPath)}${logoRetry > 0 ? `&retry=${logoRetry}` : ""}`}
                 alt={title}
-                onError={() => setLogoFailed(true)}
+                onError={handleLogoError}
                 style={{
-                  maxWidth: 420,
-                  maxHeight: 160,
+                  maxWidth: 440,
+                  maxHeight: 170,
                   width: "auto",
                   height: "auto",
                   objectFit: "contain",
-                  filter: "drop-shadow(0 0 16px rgba(255, 255, 255, 0.22)) drop-shadow(0 8px 24px rgba(0, 0, 0, 0.95)) drop-shadow(0 2px 6px rgba(0, 0, 0, 0.8))",
+                  filter: "drop-shadow(0 0 18px rgba(255, 255, 255, 0.25)) drop-shadow(0 8px 24px rgba(0, 0, 0, 0.95)) drop-shadow(0 2px 6px rgba(0, 0, 0, 0.8))",
                   userSelect: "none",
                 }}
               />
@@ -172,14 +189,23 @@ export const PlayerHUD: FC<PlayerHUDProps> = ({
               style={{
                 position: "relative",
                 zIndex: 3,
-                fontSize: 28,
-                fontWeight: 700,
-                color: "#fff",
-                textAlign: "center",
-                textShadow: "0 4px 16px rgba(0, 0, 0, 0.9)",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
               }}
             >
-              {title}
+              <div
+                style={{
+                  width: 52,
+                  height: 52,
+                  border: "4px solid rgba(255, 255, 255, 0.15)",
+                  borderTop: "4px solid var(--ds-accent)",
+                  borderRadius: "50%",
+                  animation: "projacktor-spin 0.9s linear infinite",
+                  boxShadow: "0 0 20px rgba(0, 0, 0, 0.5)",
+                }}
+              />
             </div>
           )}
         </div>

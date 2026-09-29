@@ -25,6 +25,8 @@ import {
   sortEpisodes,
   isExecutableRelease,
   isTvRelease,
+  fetchMovieLogo,
+  getLogoUrl,
 } from "../api";
 import { useI18n } from "../i18n";
 
@@ -138,12 +140,22 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
 
   const [inWatchlist, setInWatchlist] = useState<boolean>(false);
   const [watchlistLoading, setWatchlistLoading] = useState<boolean>(false);
+  const [movieLogoPath, setMovieLogoPath] = useState<string | null>(null);
 
   useEffect(() => {
     if (movie.id) {
       rpcIsInWatchlist(movie.id).then((inList) => setInWatchlist(!!inList)).catch(() => {});
+      fetchMovieLogo(movie.id, (movie.media_type as any) || "movie")
+        .then((path) => {
+          if (path) {
+            setMovieLogoPath(path);
+            const img = new Image();
+            img.src = getLogoUrl(path);
+          }
+        })
+        .catch(() => {});
     }
-  }, [movie.id]);
+  }, [movie.id, movie.media_type]);
 
   const handleToggleWatchlist = useCallback(async () => {
     if (watchlistLoading || !movie.id) return;
@@ -184,6 +196,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
     year,
     posterPath: movie.poster_path,
     backdropPath: movie.backdrop_path,
+    logoPath: movieLogoPath,
     overview: movie.overview,
   };
 

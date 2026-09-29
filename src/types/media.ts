@@ -139,6 +139,7 @@ export interface PlayerMediaInfo {
   year?: string;
   posterPath?: string | null;
   backdropPath?: string | null;
+  logoPath?: string | null;
   overview?: string;
   episodeName?: string;
   seasonNumber?: number;
