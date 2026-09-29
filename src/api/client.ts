@@ -255,6 +255,15 @@ export function isExecutableRelease(title: string, magnet?: string): boolean {
   return false;
 }
 
+const UNSUPPORTED_MEDIA_REGEX =
+  /(?:\.(rar|zip|7z|tar|gz|bz2|xz|iso|img)(?:$|[\s\?&"'\)\]_#])|\bpart\d+\.rar\b|(?:^|[\s.\[\(_-])(?:rar|zip|7z|iso)(?:$|[\s.\]\)_-])|\b(?:bdmv|dvd-?9|dvd-?5|dvd9|dvd5)\b|(?:^|[\s.\[\(_-])(?:bdmv|dvd9|dvd5)(?:$|[\s.\]\)_-])|blu-?ray\s*(?:full|complete|образ)|полный\s*диск)/iu;
+
+export function isUnsupportedMediaRelease(title: string, magnet?: string): boolean {
+  if (!title && !magnet) return false;
+  const combined = `${title || ""} ${magnet || ""}`;
+  return UNSUPPORTED_MEDIA_REGEX.test(combined);
+}
+
 function filterTorrents(
   items: any[],
   targetTitle: string,
@@ -270,6 +279,9 @@ function filterTorrents(
     const title = t.title || "";
 
     if (isExecutableRelease(title, t.magnet)) {
+      return false;
+    }
+    if (isUnsupportedMediaRelease(title, t.magnet)) {
       return false;
     }
 
@@ -428,12 +440,15 @@ export async function searchTorrents(
 
     for (const t of filtered) {
       if (isExecutableRelease(t.title, t.magnet)) continue;
+      if (isUnsupportedMediaRelease(t.title, t.magnet)) continue;
+      const sCount = Number(t.seeds ?? t.seeders ?? 0);
+      if (sCount <= 0) continue;
       const key = t.magnet || t.title;
       if (!key || seen.has(key)) continue;
       seen.add(key);
       deduplicated.push({
         ...t,
-        seeds: t.seeds ?? t.seeders ?? 0,
+        seeds: sCount,
         peers: t.peers ?? 0,
         size: typeof t.size === "number" ? formatBytes(t.size) : t.size,
         quality: parseQuality(t.title || "", t.quality),

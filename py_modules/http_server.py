@@ -22,7 +22,7 @@ from .constants import (
     FFMPEG_STDERR_MAX_LINES
 )
 from .db import CONFIG_DIR, get_user_home, get_db, logger
-from .common import load_settings, save_settings, ping_jacred, normalize_jacred_url, get_ssl_context, get_bin_path, _clean_env, has_vaapi_support, is_executable_release
+from .common import load_settings, save_settings, ping_jacred, normalize_jacred_url, get_ssl_context, get_bin_path, _clean_env, has_vaapi_support, is_executable_release, is_unsupported_media_release
 from .stream import unwrap_stream_source, is_header_ready, probe_media_file
 from .torrserver import extract_hash_from_magnet, extract_ts_files
 from .transcoder import resolve_transcode_plan, build_ffmpeg_stream_command
@@ -772,8 +772,17 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                         logger.warning(f"JacRed search blocked suspicious/executable torrent: {title}")
                         continue
 
+                    # Строгий запрет на архивы (RAR, ZIP, 7Z) и полные образы дисков (ISO, BDMV)
+                    if is_unsupported_media_release(title, magnet) or is_unsupported_media_release(details):
+                        logger.info(f"JacRed search blocked unsupported archive/disc image torrent: {title}")
+                        continue
+
                     s_count = int(seeders) if str(seeders).isdigit() else 0
                     p_count = int(peers) if str(peers).isdigit() else 0
+
+                    # Строгий запрет на показ раздач с 0 сидеров
+                    if s_count <= 0:
+                        continue
                     normalized.append({
                         "title": title,
                         "size": size,

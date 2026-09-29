@@ -64,6 +64,24 @@ def is_executable_release(title: str, magnet: str = "") -> bool:
     combined = f"{title or ''} {magnet or ''}"
     return bool(DANGEROUS_EXT_REGEX.search(combined))
 
+UNSUPPORTED_MEDIA_REGEX = re.compile(
+    r'(?i)('
+    r'\.(rar|zip|7z|tar|gz|bz2|xz|iso|img)(?:$|[\s\?&"\'\)\]_#])|'
+    r'\bpart\d+\.rar\b|'
+    r'(?:^|[\s.\[\(_-])(?:rar|zip|7z|iso)(?:$|[\s.\]\)_-])|'
+    r'\b(?:bdmv|dvd-?9|dvd-?5|dvd9|dvd5)\b|'
+    r'(?:^|[\s.\[\(_-])(?:bdmv|dvd9|dvd5)(?:$|[\s.\]\)_-])|'
+    r'blu-?ray\s*(?:full|complete|образ)|'
+    r'полный\s*диск'
+    r')'
+)
+
+def is_unsupported_media_release(title: str, magnet: str = "") -> bool:
+    if not title and not magnet:
+        return False
+    combined = f"{title or ''} {magnet or ''}"
+    return bool(UNSUPPORTED_MEDIA_REGEX.search(combined))
+
 def normalize_jacred_url(url: str) -> str:
     if not url:
         return ""

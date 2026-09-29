@@ -24,6 +24,7 @@ import {
   formatBytes,
   sortEpisodes,
   isExecutableRelease,
+  isUnsupportedMediaRelease,
   isTvRelease,
   fetchMovieLogo,
   getLogoUrl,
@@ -206,7 +207,12 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
     searchTorrents(title, year, movie.media_type || "movie", origTitle)
       .then((results) => {
         if (active) {
-          const safeResults = results.filter((r) => !isExecutableRelease(r.title, r.magnet));
+          const safeResults = results.filter(
+            (r) =>
+              !isExecutableRelease(r.title, r.magnet) &&
+              !isUnsupportedMediaRelease(r.title, r.magnet) &&
+              Number(r.seeds ?? 0) > 0
+          );
           setTorrents(safeResults);
           setLoading(false);
         }
