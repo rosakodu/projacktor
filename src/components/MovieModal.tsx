@@ -118,43 +118,97 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
     return list.sort((a, b) => (b.seeds || 0) - (a.seeds || 0));
   }, [torrents, sortMode]);
 
+  const SORT_MODES: TorrentSortMode[] = ["seeds", "newest", "oldest"];
+
+  const focusEl = useCallback((el: HTMLElement) => {
+    const doc = getActiveDocument(el) || document;
+    doc.querySelectorAll(".gpfocus").forEach((item) => item.classList.remove("gpfocus"));
+    el.focus();
+    el.classList.add("gpfocus");
+    el.classList.add("gpfocuswithin");
+    try {
+      (el as any).TakeFocus?.(0);
+    } catch {}
+  }, []);
+
+  const stepSort = useCallback((delta: -1 | 1) => {
+    setSortMode((prev) => {
+      const curIdx = SORT_MODES.indexOf(prev);
+      const nextIdx = Math.max(0, Math.min(SORT_MODES.length - 1, curIdx + delta));
+      const nextMode = SORT_MODES[nextIdx];
+      try {
+        localStorage.setItem("projacktor_torrent_sort", nextMode);
+      } catch {}
+
+      setTimeout(() => {
+        const doc = getActiveDocument(torrentsRef.current) || document;
+        const pills = Array.from(doc.querySelectorAll<HTMLElement>(".projacktor-sort-pill"));
+        if (pills[nextIdx]) {
+          focusEl(pills[nextIdx]);
+        }
+      }, 10);
+
+      return nextMode;
+    });
+  }, [focusEl]);
+
+  const navigateDownToTorrents = useCallback(() => {
+    const root = torrentsRef.current;
+    const firstAction = root?.querySelector<HTMLElement>(
+      ".projacktor-torrent-actions .projacktor-icon-btn, .projacktor-icon-btn, .projacktor-torrent-ep-row, .ds-btn--primary, .ds-btn, button, [tabindex='0']"
+    );
+    if (firstAction) {
+      focusEl(firstAction);
+    }
+  }, [focusEl]);
+
+  const navigateUpToWatchlist = useCallback(() => {
+    const doc = getActiveDocument(torrentsRef.current) || document;
+    const wBtn = doc.querySelector<HTMLElement>(".projacktor-watchlist-btn");
+    if (wBtn) {
+      focusEl(wBtn);
+    }
+  }, [focusEl]);
+
+  const sortedTorrentsRef = useRef(sortedTorrents);
+  sortedTorrentsRef.current = sortedTorrents;
+
+  const navigateUpToSortBar = useCallback(() => {
+    const doc = getActiveDocument(torrentsRef.current) || document;
+    const sortBar = doc.querySelector<HTMLElement>(".projacktor-torrent-sort-bar");
+    const activePill = doc.querySelector<HTMLElement>(".projacktor-sort-pill--active") || doc.querySelector<HTMLElement>(".projacktor-sort-pill");
+    if (sortBar && activePill && sortedTorrentsRef.current.length > 1) {
+      focusEl(activePill);
+    } else {
+      navigateUpToWatchlist();
+    }
+  }, [focusEl, navigateUpToWatchlist]);
+
   const handleSortPillGamepad = useCallback((evt: any) => {
-    const btn = evt?.detail?.button;
     const dir = evt?.detail?.dir;
-    if (btn === 10 || dir === "down") {
-      const root = torrentsRef.current;
-      const firstAction = root?.querySelector<HTMLElement>(
-        ".projacktor-torrent-actions .projacktor-icon-btn, .projacktor-icon-btn, .projacktor-torrent-ep-row, .ds-btn--primary, .ds-btn, button, [tabindex='0']"
-      );
-      if (firstAction) {
-        try {
-          evt?.preventDefault?.();
-          evt?.stopPropagation?.();
-        } catch {}
-        const doc = getActiveDocument(firstAction) || document;
-        doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-        firstAction.focus();
-        firstAction.classList.add("gpfocus");
-        firstAction.classList.add("gpfocuswithin");
-        return false;
-      }
-    } else if (btn === 9 || dir === "up") {
-      const doc = getActiveDocument(torrentsRef.current) || document;
-      const wBtn = doc.querySelector<HTMLElement>(".projacktor-watchlist-btn");
-      if (wBtn) {
-        try {
-          evt?.preventDefault?.();
-          evt?.stopPropagation?.();
-        } catch {}
-        doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-        wBtn.focus();
-        wBtn.classList.add("gpfocus");
-        wBtn.classList.add("gpfocuswithin");
-        return false;
-      }
+    const btn = evt?.detail?.button;
+    if (dir === "left" || btn === 7 || btn === 12 || btn === 22) {
+      try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+      stepSort(-1);
+      return false;
+    }
+    if (dir === "right" || btn === 5 || btn === 13 || btn === 23) {
+      try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+      stepSort(1);
+      return false;
+    }
+    if (dir === "down" || btn === 6 || btn === 11 || btn === 21) {
+      try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+      navigateDownToTorrents();
+      return false;
+    }
+    if (dir === "up" || btn === 4 || btn === 10 || btn === 20) {
+      try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+      navigateUpToWatchlist();
+      return false;
     }
     return undefined;
-  }, []);
+  }, [stepSort, navigateDownToTorrents, navigateUpToWatchlist]);
 
   const torrentsRef = useRef<HTMLDivElement>(null);
   const closeModalRef = useRef(closeModal);
@@ -167,7 +221,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
     };
   }, []);
 
-  // Обработка кнопки B геймпада и клавиш Escape/Backspace для выхода из модалки
+  // Обработка кнопки B геймпада, D-pad навигации и клавиш клавиатуры
   useEffect(() => {
     let lastCloseAt = 0;
     const triggerClose = () => {
@@ -182,8 +236,80 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
     const un = subscribeControllerInput((e) => {
       if (!e.pressed) return;
       if (isPlayerActive()) return;
+
       if (e.button === RawButton.B || e.button === 1) {
         triggerClose();
+        return;
+      }
+
+      const doc = getActiveDocument(torrentsRef.current) || document;
+      const active = doc?.activeElement as HTMLElement | null;
+      if (!active) return;
+
+      const isSortPill = !!(active.classList.contains("projacktor-sort-pill") || active.closest(".projacktor-torrent-sort-bar"));
+      const isWatchlist = !!(active.classList.contains("projacktor-watchlist-btn") || active.closest(".projacktor-watchlist-btn"));
+      const root = torrentsRef.current;
+      const isInTorrents = !!(root && root.contains(active));
+
+      const isLeft =
+        e.button === RawButton.DPAD_LEFT ||
+        e.button === RawButton.LEFTSTICK_LEFT ||
+        e.button === RawButton.LEFTPAD_LEFT ||
+        e.button === 7 ||
+        e.button === 22 ||
+        e.button === 12;
+
+      const isRight =
+        e.button === RawButton.DPAD_RIGHT ||
+        e.button === RawButton.LEFTSTICK_RIGHT ||
+        e.button === RawButton.LEFTPAD_RIGHT ||
+        e.button === 5 ||
+        e.button === 23 ||
+        e.button === 13;
+
+      const isUp =
+        e.button === RawButton.DPAD_UP ||
+        e.button === RawButton.LEFTSTICK_UP ||
+        e.button === RawButton.LEFTPAD_UP ||
+        e.button === 4 ||
+        e.button === 20 ||
+        e.button === 10;
+
+      const isDown =
+        e.button === RawButton.DPAD_DOWN ||
+        e.button === RawButton.LEFTSTICK_DOWN ||
+        e.button === RawButton.LEFTPAD_DOWN ||
+        e.button === 6 ||
+        e.button === 21 ||
+        e.button === 11;
+
+      if (isSortPill) {
+        if (isLeft) {
+          stepSort(-1);
+        } else if (isRight) {
+          stepSort(1);
+        } else if (isDown) {
+          navigateDownToTorrents();
+        } else if (isUp) {
+          navigateUpToWatchlist();
+        }
+      } else if (isWatchlist) {
+        if (isDown) {
+          const sortBar = doc.querySelector<HTMLElement>(".projacktor-torrent-sort-bar");
+          const activePill = doc.querySelector<HTMLElement>(".projacktor-sort-pill--active") || doc.querySelector<HTMLElement>(".projacktor-sort-pill");
+          if (sortBar && activePill && sortedTorrentsRef.current.length > 1) {
+            focusEl(activePill);
+          } else {
+            navigateDownToTorrents();
+          }
+        }
+      } else if (isInTorrents) {
+        if (isUp) {
+          const firstCard = root?.querySelector<HTMLElement>(".projacktor-torrent-card, .projacktor-torrent-item");
+          if (firstCard && firstCard.contains(active)) {
+            navigateUpToSortBar();
+          }
+        }
       }
     });
 
@@ -194,6 +320,56 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
         e.preventDefault();
         e.stopPropagation();
         triggerClose();
+        return;
+      }
+
+      const active = doc?.activeElement as HTMLElement | null;
+      if (!active) return;
+
+      const isSortPill = !!(active.classList.contains("projacktor-sort-pill") || active.closest(".projacktor-torrent-sort-bar"));
+      const isWatchlist = !!(active.classList.contains("projacktor-watchlist-btn") || active.closest(".projacktor-watchlist-btn"));
+      const root = torrentsRef.current;
+      const isInTorrents = !!(root && root.contains(active));
+
+      if (isSortPill) {
+        if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          e.stopPropagation();
+          stepSort(-1);
+        } else if (e.key === "ArrowRight") {
+          e.preventDefault();
+          e.stopPropagation();
+          stepSort(1);
+        } else if (e.key === "ArrowDown") {
+          e.preventDefault();
+          e.stopPropagation();
+          navigateDownToTorrents();
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          e.stopPropagation();
+          navigateUpToWatchlist();
+        }
+      } else if (isWatchlist) {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          e.stopPropagation();
+          const sortBar = doc?.querySelector<HTMLElement>(".projacktor-torrent-sort-bar");
+          const activePill = doc?.querySelector<HTMLElement>(".projacktor-sort-pill--active") || doc?.querySelector<HTMLElement>(".projacktor-sort-pill");
+          if (sortBar && activePill && sortedTorrentsRef.current.length > 1) {
+            focusEl(activePill);
+          } else {
+            navigateDownToTorrents();
+          }
+        }
+      } else if (isInTorrents) {
+        if (e.key === "ArrowUp") {
+          const firstCard = root?.querySelector<HTMLElement>(".projacktor-torrent-card, .projacktor-torrent-item");
+          if (firstCard && firstCard.contains(active)) {
+            e.preventDefault();
+            e.stopPropagation();
+            navigateUpToSortBar();
+          }
+        }
       }
     };
 
@@ -207,7 +383,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
         doc.removeEventListener("keydown", handleKeyDown, true);
       }
     };
-  }, []);
+  }, [stepSort, navigateDownToTorrents, navigateUpToWatchlist, navigateUpToSortBar, focusEl]);
 
   const handleTorrentFocus = useCallback((e: FocusEvent) => {
     const item = (e.target as HTMLElement)?.closest?.(".projacktor-torrent-card, .projacktor-torrent-item") as HTMLElement | null;
@@ -733,7 +909,19 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
             onActivate={handleToggleWatchlist}
             onGamepadDirection={(evt: any) => {
               const btn = evt?.detail?.button;
-              if (btn === 10 || evt?.detail?.dir === "down") {
+              const dir = evt?.detail?.dir;
+              if (dir === "down" || btn === 6 || btn === 11 || btn === 21) {
+                const doc = getActiveDocument(torrentsRef.current) || document;
+                const sortBar = doc.querySelector<HTMLElement>(".projacktor-torrent-sort-bar");
+                const activePill = doc.querySelector<HTMLElement>(".projacktor-sort-pill--active") || doc.querySelector<HTMLElement>(".projacktor-sort-pill");
+                if (sortBar && activePill && sortedTorrents.length > 1) {
+                  try {
+                    evt?.preventDefault?.();
+                    evt?.stopPropagation?.();
+                  } catch {}
+                  focusEl(activePill);
+                  return false;
+                }
                 const root = torrentsRef.current;
                 const firstAction = root?.querySelector<HTMLElement>(
                   ".projacktor-torrent-actions .projacktor-icon-btn, .projacktor-icon-btn, .projacktor-torrent-ep-row, .ds-btn--primary, .ds-btn, button, [tabindex='0']"
@@ -743,11 +931,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                     evt?.preventDefault?.();
                     evt?.stopPropagation?.();
                   } catch {}
-                  const doc = getActiveDocument(firstAction) || document;
-                  doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-                  firstAction.focus();
-                  firstAction.classList.add("gpfocus");
-                  firstAction.classList.add("gpfocuswithin");
+                  focusEl(firstAction);
                   return false;
                 }
               }
@@ -813,6 +997,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
               >
                 <Focusable
                   noFocusRing
+                  tabIndex={0}
                   className={`projacktor-sort-pill ${sortMode === "seeds" ? "projacktor-sort-pill--active" : ""}`}
                   onClick={() => handleSortChange("seeds")}
                   onActivate={() => handleSortChange("seeds")}
@@ -822,6 +1007,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                 </Focusable>
                 <Focusable
                   noFocusRing
+                  tabIndex={0}
                   className={`projacktor-sort-pill ${sortMode === "newest" ? "projacktor-sort-pill--active" : ""}`}
                   onClick={() => handleSortChange("newest")}
                   onActivate={() => handleSortChange("newest")}
@@ -831,6 +1017,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                 </Focusable>
                 <Focusable
                   noFocusRing
+                  tabIndex={0}
                   className={`projacktor-sort-pill ${sortMode === "oldest" ? "projacktor-sort-pill--active" : ""}`}
                   onClick={() => handleSortChange("oldest")}
                   onActivate={() => handleSortChange("oldest")}

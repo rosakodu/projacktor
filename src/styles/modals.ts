@@ -192,22 +192,22 @@ div:has(> .projacktor-modal-root) {
 .projacktor-torrent-sort-bar {
   display: flex !important;
   align-items: center !important;
-  gap: 3px !important;
-  background: rgba(0, 0, 0, 0.35) !important;
-  padding: 2px 4px !important;
-  border-radius: 6px !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  gap: 2px !important;
+  background: rgba(0, 0, 0, 0.45) !important;
+  padding: 2px !important;
+  border-radius: 0 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
 }
 
 .projacktor-sort-pill {
   font-size: 9.5px !important;
   font-weight: 500 !important;
-  padding: 2px 7px !important;
-  border-radius: 4px !important;
+  padding: 3px 8px !important;
+  border-radius: 0 !important;
   color: rgba(255, 255, 255, 0.6) !important;
   background: transparent !important;
   cursor: pointer !important;
-  transition: all 0.15s ease !important;
+  transition: all 0.12s ease !important;
   user-select: none !important;
   white-space: nowrap !important;
   border: none !important;
@@ -223,19 +223,18 @@ div:has(> .projacktor-modal-root) {
   color: #fff !important;
   background: #1a9fff !important;
   font-weight: 700 !important;
-  box-shadow: 0 0 8px rgba(26, 159, 255, 0.45) !important;
 }
 
 .projacktor-sort-pill.gpfocus {
   outline: 2px solid #fff !important;
-  outline-offset: 1px !important;
+  outline-offset: -1px !important;
   background: rgba(255, 255, 255, 0.25) !important;
   color: #fff !important;
 }
 
 .projacktor-sort-pill--active.gpfocus {
   outline: 2px solid #fff !important;
-  outline-offset: 1px !important;
+  outline-offset: -1px !important;
   background: #1a9fff !important;
   color: #fff !important;
 }
