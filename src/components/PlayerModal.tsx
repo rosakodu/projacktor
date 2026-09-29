@@ -4,7 +4,6 @@ import {
   rpcResumeAllDownloads,
   rpcDropStream,
   fetchMovieLogo,
-  getLogoUrl,
   API_BASE,
   API_HOST,
 } from "../api";
@@ -109,7 +108,6 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isBuffering, setIsBuffering] = useState<boolean>(true);
   const [logoPath, setLogoPath] = useState<string | null>(() => mediaInfo?.logoPath || null);
-  const [headerLogoFailed, setHeaderLogoFailed] = useState<boolean>(false);
   const [hasStartedPlayback, setHasStartedPlayback] = useState<boolean>(false);
   const hasStartedPlaybackRef = useRef<boolean>(false);
   hasStartedPlaybackRef.current = hasStartedPlayback;
@@ -122,7 +120,6 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     let active = true;
     if (mediaInfo?.logoPath) {
       setLogoPath(mediaInfo.logoPath);
-      setHeaderLogoFailed(false);
       return;
     }
     if (mediaInfo?.tmdbId) {
@@ -130,7 +127,6 @@ export const PlayerModal: FC<PlayerModalProps> = ({
         .then((path) => {
           if (active && path) {
             setLogoPath(path);
-            setHeaderLogoFailed(false);
           }
         })
         .catch(() => {});
@@ -1345,54 +1341,19 @@ export const PlayerModal: FC<PlayerModalProps> = ({
             transition: "opacity 0.3s ease, visibility 0.3s ease",
           }}
         >
-          {logoPath && !headerLogoFailed ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 14, minHeight: 38, maxWidth: "80%" }}>
-              <img
-                src={getLogoUrl(logoPath)}
-                alt={title}
-                onError={() => setHeaderLogoFailed(true)}
-                style={{
-                  maxHeight: 38,
-                  maxWidth: 240,
-                  width: "auto",
-                  height: "auto",
-                  objectFit: "contain",
-                  filter: "drop-shadow(0 2px 8px rgba(0, 0, 0, 0.85))",
-                }}
-              />
-              {mediaInfo?.episodeName && (
-                <span
-                  style={{
-                    fontSize: 15,
-                    fontWeight: 600,
-                    color: "rgba(255, 255, 255, 0.85)",
-                    letterSpacing: 0.2,
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}
-                >
-                  {mediaInfo.seasonNumber !== undefined && mediaInfo.episodeNumber !== undefined
-                    ? `S${mediaInfo.seasonNumber}E${mediaInfo.episodeNumber} · ${mediaInfo.episodeName}`
-                    : mediaInfo.episodeName}
-                </span>
-              )}
-            </div>
-          ) : (
-            <div
-              style={{
-                fontSize: 16,
-                fontWeight: 700,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                color: "#ffffff",
-                letterSpacing: 0.2,
-              }}
-            >
-              {title}
-            </div>
-          )}
+          <div
+            style={{
+              fontSize: 16,
+              fontWeight: 700,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              color: "#ffffff",
+              letterSpacing: 0.2,
+            }}
+          >
+            {title}
+          </div>
         </div>
 
         {/* Video Canvas */}
