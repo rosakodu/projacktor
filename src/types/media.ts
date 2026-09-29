@@ -25,6 +25,7 @@ export interface TorrentItem {
   quality: string;
   voice: string;
   magnet: string;
+  pub_date?: string;
 }
 
 export interface DownloadItem {

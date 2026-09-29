@@ -456,6 +456,7 @@ export async function searchTorrents(
         peers: t.peers ?? 0,
         size: typeof t.size === "number" ? formatBytes(t.size) : t.size,
         quality: parseQuality(t.title || "", t.quality),
+        pub_date: t.pub_date || t.PublishDate || t.pubdate || "",
       });
     }
 

@@ -1,4 +1,4 @@
-import { FC, useState, useEffect, useRef, useCallback } from "react";
+import { FC, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { ModalRoot, Focusable, Spinner } from "@decky/ui";
 import { FaPlay, FaDownload, FaList, FaSpinner, FaMoon, FaBookmark, FaCheck } from "react-icons/fa";
 import { PROJACKTOR_STYLES } from "../styles";
@@ -31,6 +31,8 @@ import {
 } from "../api";
 import { useI18n } from "../i18n";
 
+export type TorrentSortMode = "seeds" | "newest" | "oldest";
+
 interface MovieModalProps {
   movie: MediaItem;
   closeModal?: () => void;
@@ -54,6 +56,24 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
   const [downloadingTorrentId, setDownloadingTorrentId] = useState<string | null>(null);
   const [focusedTorrentId, setFocusedTorrentId] = useState<string | null>(null);
 
+  // Sorting state (seeds / newest / oldest)
+  const [sortMode, setSortMode] = useState<TorrentSortMode>(() => {
+    try {
+      const saved = localStorage.getItem("projacktor_torrent_sort");
+      if (saved === "newest" || saved === "oldest" || saved === "seeds") {
+        return saved;
+      }
+    } catch {}
+    return "seeds";
+  });
+
+  const handleSortChange = useCallback((mode: TorrentSortMode) => {
+    setSortMode(mode);
+    try {
+      localStorage.setItem("projacktor_torrent_sort", mode);
+    } catch {}
+  }, []);
+
   // Series inline episodes state
   const isTv = movie.media_type === "tv";
   const [expandedTorrentId, setExpandedTorrentId] = useState<string | null>(null);
@@ -65,6 +85,76 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
   const [streamingEpIdx, setStreamingEpIdx] = useState<number | null>(null);
   const [downloadingEpIdx, setDownloadingEpIdx] = useState<number | null>(null);
   const lastEpisodesToggleTimeRef = useRef<number>(0);
+
+  const sortedTorrents = useMemo(() => {
+    if (!torrents || torrents.length === 0) return [];
+    const list = [...torrents];
+    if (sortMode === "newest") {
+      return list.sort((a, b) => {
+        const ta = a.pub_date ? new Date(a.pub_date).getTime() : 0;
+        const tb = b.pub_date ? new Date(b.pub_date).getTime() : 0;
+        const valA = isNaN(ta) ? 0 : ta;
+        const valB = isNaN(tb) ? 0 : tb;
+        if (valA !== valB) return valB - valA;
+        return (b.seeds || 0) - (a.seeds || 0);
+      });
+    }
+    if (sortMode === "oldest") {
+      return list.sort((a, b) => {
+        const ta = a.pub_date ? new Date(a.pub_date).getTime() : 0;
+        const tb = b.pub_date ? new Date(b.pub_date).getTime() : 0;
+        const valA = isNaN(ta) ? 0 : ta;
+        const valB = isNaN(tb) ? 0 : tb;
+        if (valA > 0 && valB > 0) {
+          if (valA !== valB) return valA - valB;
+          return (b.seeds || 0) - (a.seeds || 0);
+        }
+        if (valA > 0) return -1;
+        if (valB > 0) return 1;
+        return (b.seeds || 0) - (a.seeds || 0);
+      });
+    }
+    // Default: "seeds"
+    return list.sort((a, b) => (b.seeds || 0) - (a.seeds || 0));
+  }, [torrents, sortMode]);
+
+  const handleSortPillGamepad = useCallback((evt: any) => {
+    const btn = evt?.detail?.button;
+    const dir = evt?.detail?.dir;
+    if (btn === 10 || dir === "down") {
+      const root = torrentsRef.current;
+      const firstAction = root?.querySelector<HTMLElement>(
+        ".projacktor-torrent-actions .projacktor-icon-btn, .projacktor-icon-btn, .projacktor-torrent-ep-row, .ds-btn--primary, .ds-btn, button, [tabindex='0']"
+      );
+      if (firstAction) {
+        try {
+          evt?.preventDefault?.();
+          evt?.stopPropagation?.();
+        } catch {}
+        const doc = getActiveDocument(firstAction) || document;
+        doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+        firstAction.focus();
+        firstAction.classList.add("gpfocus");
+        firstAction.classList.add("gpfocuswithin");
+        return false;
+      }
+    } else if (btn === 9 || dir === "up") {
+      const doc = getActiveDocument(torrentsRef.current) || document;
+      const wBtn = doc.querySelector<HTMLElement>(".projacktor-watchlist-btn");
+      if (wBtn) {
+        try {
+          evt?.preventDefault?.();
+          evt?.stopPropagation?.();
+        } catch {}
+        doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+        wBtn.focus();
+        wBtn.classList.add("gpfocus");
+        wBtn.classList.add("gpfocuswithin");
+        return false;
+      }
+    }
+    return undefined;
+  }, []);
 
   const torrentsRef = useRef<HTMLDivElement>(null);
   const closeModalRef = useRef(closeModal);
@@ -708,9 +798,47 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
               color: "#fff",
             }}
           >
-            <span>{t("torrents")}</span>
-            {torrents.length > 0 && (
-              <span style={{ fontSize: 10, opacity: 0.5 }}>{t("foundCount")}: {torrents.length}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span>{t("torrents")}</span>
+              {sortedTorrents.length > 0 && (
+                <span style={{ fontSize: 10, opacity: 0.5 }}>({sortedTorrents.length})</span>
+              )}
+            </div>
+
+            {sortedTorrents.length > 1 && (
+              <Focusable
+                flow-children="horizontal"
+                noFocusRing
+                className="projacktor-torrent-sort-bar"
+              >
+                <Focusable
+                  noFocusRing
+                  className={`projacktor-sort-pill ${sortMode === "seeds" ? "projacktor-sort-pill--active" : ""}`}
+                  onClick={() => handleSortChange("seeds")}
+                  onActivate={() => handleSortChange("seeds")}
+                  onGamepadDirection={handleSortPillGamepad}
+                >
+                  {t("sortBySeeds")}
+                </Focusable>
+                <Focusable
+                  noFocusRing
+                  className={`projacktor-sort-pill ${sortMode === "newest" ? "projacktor-sort-pill--active" : ""}`}
+                  onClick={() => handleSortChange("newest")}
+                  onActivate={() => handleSortChange("newest")}
+                  onGamepadDirection={handleSortPillGamepad}
+                >
+                  {t("sortByNewest")}
+                </Focusable>
+                <Focusable
+                  noFocusRing
+                  className={`projacktor-sort-pill ${sortMode === "oldest" ? "projacktor-sort-pill--active" : ""}`}
+                  onClick={() => handleSortChange("oldest")}
+                  onActivate={() => handleSortChange("oldest")}
+                  onGamepadDirection={handleSortPillGamepad}
+                >
+                  {t("sortByOldest")}
+                </Focusable>
+              </Focusable>
             )}
           </div>
 
@@ -733,7 +861,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                 <Spinner />
                 <span style={{ fontSize: 12, opacity: 0.6 }}>{t("searchingTorrents")}</span>
               </Focusable>
-            ) : torrents.length === 0 ? (
+            ) : sortedTorrents.length === 0 ? (
               <div
                 style={{
                   textAlign: "center",
@@ -768,7 +896,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
               </div>
             ) : (
               <Focusable noFocusRing className="projacktor-torrents-list">
-                {torrents.map((tor, idx) => {
+                {sortedTorrents.map((tor, idx) => {
                   const tId = tor.id || tor.magnet;
                   const isCurrentStream = streamingTorrentId === tId;
                   const isCurrentDl = downloadingTorrentId === tId;

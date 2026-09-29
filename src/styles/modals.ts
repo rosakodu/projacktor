@@ -176,16 +176,68 @@ div:has(> .projacktor-modal-root) {
 .projacktor-torrent-card:hover .projacktor-torrent-title--marquee .projacktor-torrent-title-inner,
 .projacktor-torrent-title--active.projacktor-torrent-title--marquee .projacktor-torrent-title-inner {
   will-change: transform;
-  animation: projacktor-marquee var(--marquee-dur, 8s) cubic-bezier(0.4, 0, 0.2, 1) infinite alternate;
+  animation: projacktor-marquee var(--marquee-dur, 12s) cubic-bezier(0.35, 0, 0.25, 1) infinite alternate;
 }
 
 @keyframes projacktor-marquee {
-  0%, 18% {
+  0%, 22% {
     transform: translateX(0px);
   }
-  82%, 100% {
+  78%, 100% {
     transform: translateX(var(--marquee-dist, -40px));
   }
+}
+
+/* ───── Torrent Sorting Bar ───── */
+.projacktor-torrent-sort-bar {
+  display: flex !important;
+  align-items: center !important;
+  gap: 3px !important;
+  background: rgba(0, 0, 0, 0.35) !important;
+  padding: 2px 4px !important;
+  border-radius: 6px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.projacktor-sort-pill {
+  font-size: 9.5px !important;
+  font-weight: 500 !important;
+  padding: 2px 7px !important;
+  border-radius: 4px !important;
+  color: rgba(255, 255, 255, 0.6) !important;
+  background: transparent !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+  user-select: none !important;
+  white-space: nowrap !important;
+  border: none !important;
+  outline: none !important;
+}
+
+.projacktor-sort-pill:hover {
+  color: #fff !important;
+  background: rgba(255, 255, 255, 0.12) !important;
+}
+
+.projacktor-sort-pill--active {
+  color: #fff !important;
+  background: #1a9fff !important;
+  font-weight: 700 !important;
+  box-shadow: 0 0 8px rgba(26, 159, 255, 0.45) !important;
+}
+
+.projacktor-sort-pill.gpfocus {
+  outline: 2px solid #fff !important;
+  outline-offset: 1px !important;
+  background: rgba(255, 255, 255, 0.25) !important;
+  color: #fff !important;
+}
+
+.projacktor-sort-pill--active.gpfocus {
+  outline: 2px solid #fff !important;
+  outline-offset: 1px !important;
+  background: #1a9fff !important;
+  color: #fff !important;
 }
 
 .projacktor-torrent-meta {

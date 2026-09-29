@@ -36,8 +36,8 @@ export const MarqueeTitle: FC<MarqueeTitleProps> = ({ title, isFocused, classNam
   }, [title]);
 
   const hasOverflow = overflowPx > 0;
-  // Speed: ~28px/second, smoothly bounded between 4s and 16s
-  const durationSec = Math.max(4, Math.min(16, (overflowPx + 40) / 28));
+  // Slower, comfortable reading speed: ~13px/second, smoothly bounded between 8s and 28s
+  const durationSec = Math.max(8, Math.min(28, (overflowPx + 40) / 13));
 
   return (
     <div

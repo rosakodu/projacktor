@@ -783,6 +783,9 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                     # Строгий запрет на показ раздач с 0 сидеров
                     if s_count <= 0:
                         continue
+
+                    pub_date = str(item.get("PublishDate") or item.get("pubdate") or item.get("PubDate") or item.get("date") or "")
+
                     normalized.append({
                         "title": title,
                         "size": size,
@@ -792,7 +795,8 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                         "quality": quality,
                         "magnet": magnet,
                         "tracker": tracker,
-                        "details": details
+                        "details": details,
+                        "pub_date": pub_date
                     })
                 self._send_json(normalized)
         except Exception as e:
