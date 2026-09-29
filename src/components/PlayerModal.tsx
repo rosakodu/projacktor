@@ -504,6 +504,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   );
 
   const [streamUrl, setStreamUrl] = useState<string>(() => getStreamUrl(savedStartTimeRef.current));
+  const [bufferedPercent, setBufferedPercent] = useState<number>(0);
 
   const currentPlayheadRef = useRef<number>(savedStartTimeRef.current);
   currentPlayheadRef.current = isDirectStream ? videoTime : (baseTime + videoTime);
@@ -517,15 +518,44 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     if (now - lastToggleAtRef.current < 250) return;
     lastToggleAtRef.current = now;
     if (!videoRef.current) return;
-    if (videoRef.current.paused) {
-      videoRef.current.play().catch(() => {});
-      setIsPlaying(true);
+    const video = videoRef.current;
+    if (video.paused) {
+      // Проверяем запас буфера перед возобновлением, чтобы исключить скачок и фриз кадров
+      const cur = video.currentTime;
+      let bufferedAhead = 0;
+      if (video.buffered && video.buffered.length > 0) {
+        for (let i = 0; i < video.buffered.length; i++) {
+          if (video.buffered.start(i) <= cur + 0.3 && video.buffered.end(i) > cur) {
+            bufferedAhead = video.buffered.end(i) - cur;
+            break;
+          }
+        }
+      }
+
+      // Если данных меньше 0.5с на онлайн/транскод потоке и readyState < 3 — даем буферу наполниться
+      if (bufferedAhead < 0.5 && video.readyState < 3 && (isOnline || !isDirectStream)) {
+        setIsBuffering(true);
+        let started = false;
+        const startPlayback = () => {
+          if (started) return;
+          started = true;
+          video.removeEventListener("canplay", startPlayback);
+          video.play().catch(() => {});
+          setIsPlaying(true);
+          setIsBuffering(false);
+        };
+        video.addEventListener("canplay", startPlayback, { once: true });
+        setTimeout(startPlayback, 400);
+      } else {
+        video.play().catch(() => {});
+        setIsPlaying(true);
+      }
     } else {
-      videoRef.current.pause();
+      video.pause();
       setIsPlaying(false);
     }
     resetControlsTimer();
-  }, [resetControlsTimer]);
+  }, [isDirectStream, isOnline, resetControlsTimer]);
 
   const retryPlayback = useCallback(() => {
     if (retryTimeoutRef.current) {
@@ -566,6 +596,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
       } else {
         setBaseTime(target);
         setVideoTime(0);
+        setBufferedPercent(0);
         setStreamUrl(getStreamUrl(target, selectedAudio));
       }
     }
@@ -665,6 +696,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     } else {
       setBaseTime(newTime);
       setVideoTime(0);
+      setBufferedPercent(0);
       setStreamUrl(getStreamUrl(newTime, selectedAudio));
     }
     resetControlsTimer();
@@ -1058,11 +1090,34 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     const video = videoRef.current;
     if (!video) return;
 
+    const updateBuffered = () => {
+      const v = videoRef.current;
+      if (!v || !v.buffered || v.buffered.length === 0) return;
+      const cur = v.currentTime;
+      const b = v.buffered;
+      let endSec = 0;
+      for (let i = 0; i < b.length; i++) {
+        if (b.start(i) <= cur + 0.5 && b.end(i) >= cur) {
+          endSec = b.end(i);
+          break;
+        }
+      }
+      if (endSec === 0 && b.length > 0) {
+        endSec = b.end(b.length - 1);
+      }
+      if (endSec > 0 && durationRef.current > 0) {
+        const totalBufferedSec = isDirectStream ? endSec : (baseTime + endSec);
+        const pct = Math.min(100, Math.max(0, (totalBufferedSec / durationRef.current) * 100));
+        setBufferedPercent(pct);
+      }
+    };
+
     let lastSaveSec = 0;
     const onTimeUpdate = () => {
       const vTime = video.currentTime;
       setVideoTime(vTime);
       setIsBuffering(false);
+      updateBuffered();
       if (vTime > 0.05) {
         setHasStartedPlayback(true);
         setErrorMsg(null);
@@ -1101,11 +1156,13 @@ export const PlayerModal: FC<PlayerModalProps> = ({
         } catch {}
       }
       setIsBuffering(false);
+      updateBuffered();
       video.play().catch(() => {});
     };
     const onPlay = () => {
       setIsPlaying(true);
       setIsBuffering(false);
+      updateBuffered();
       if (video.currentTime > 0.05) {
         setHasStartedPlayback(true);
         setErrorMsg(null);
@@ -1115,16 +1172,24 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     const onPlaying = () => {
       setIsPlaying(true);
       setIsBuffering(false);
+      updateBuffered();
       setHasStartedPlayback(true);
       setErrorMsg(null);
       retryCountRef.current = 0;
     };
     const onPause = () => {
       setIsPlaying(false);
+      updateBuffered();
       saveProgressRef.current(isDirectStream ? video.currentTime : (baseTime + video.currentTime), durationRef.current);
     };
     const onWaiting = () => setIsBuffering(true);
-    const onCanPlay = () => setIsBuffering(false);
+    const onCanPlay = () => {
+      setIsBuffering(false);
+      updateBuffered();
+    };
+    const onProgress = () => {
+      updateBuffered();
+    };
     const onEnded = () => {
       setIsPlaying(false);
       try {
@@ -1146,6 +1211,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     video.addEventListener("pause", onPause);
     video.addEventListener("waiting", onWaiting);
     video.addEventListener("canplay", onCanPlay);
+    video.addEventListener("progress", onProgress);
     video.addEventListener("ended", onEnded);
 
     return () => {
@@ -1156,6 +1222,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
       video.removeEventListener("pause", onPause);
       video.removeEventListener("waiting", onWaiting);
       video.removeEventListener("canplay", onCanPlay);
+      video.removeEventListener("progress", onProgress);
       video.removeEventListener("ended", onEnded);
     };
   }, [streamUrl, baseTime]);
@@ -1325,6 +1392,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
                 ref={videoRef}
                 src={streamUrl}
                 autoPlay
+                preload="auto"
                 onError={handleVideoError}
                 crossOrigin="anonymous"
                 style={{
@@ -1462,6 +1530,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
           currentPlayhead={currentPlayhead}
           duration={duration}
           progressPercent={progressPercent}
+          bufferedPercent={bufferedPercent}
           isOnline={isOnline}
           playBtnRef={playBtnRef}
           subtitleBtnRef={subtitleBtnRef}

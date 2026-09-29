@@ -327,6 +327,7 @@ def build_ffmpeg_stream_command(
             cmd += [
                 "-vf", plan["vf_filter"],
                 "-c:v", "h264_vaapi",
+                "-g", "60",
                 "-b:v", plan["target_bitrate"],
                 "-maxrate", plan["max_rate"],
                 "-bufsize", f"{buf_mb}M"
@@ -335,6 +336,7 @@ def build_ffmpeg_stream_command(
             cmd += [
                 "-vf", plan["vf_filter"],
                 "-c:v", "h264_nvenc",
+                "-g", "60",
                 "-preset", "p4",
                 "-tune", "ll",
                 "-b:v", plan["target_bitrate"],
@@ -346,6 +348,7 @@ def build_ffmpeg_stream_command(
             cmd += [
                 "-vf", plan["vf_filter"],
                 "-c:v", "libx264",
+                "-g", "60",
                 "-preset", "ultrafast",
                 "-tune", "zerolatency",
                 "-crf", "23"
@@ -363,6 +366,7 @@ def build_ffmpeg_stream_command(
         "-avoid_negative_ts", "make_zero",
         "-max_muxing_queue_size", "2048",
         "-movflags", "frag_keyframe+empty_moov+default_base_moof+delay_moov",
+        "-frag_duration", "1000000",
         "-f", "mp4",
         "pipe:1"
     ]

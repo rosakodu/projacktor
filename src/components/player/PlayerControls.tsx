@@ -32,6 +32,7 @@ interface PlayerControlsProps {
   currentPlayhead: number;
   duration: number;
   progressPercent: number;
+  bufferedPercent?: number;
   isOnline: boolean;
   playBtnRef: RefObject<HTMLDivElement | null>;
   subtitleBtnRef: RefObject<HTMLDivElement | null>;
@@ -67,6 +68,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
   currentPlayhead,
   duration,
   progressPercent,
+  bufferedPercent = 0,
   isOnline,
   playBtnRef,
   subtitleBtnRef,
@@ -365,15 +367,37 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
             cursor: "pointer",
             position: "relative",
             borderRadius: 0,
+            overflow: "hidden",
           }}
         >
+          {/* Буферная полоса кэширования (YouTube / Кинопоиск стиль) */}
+          {bufferedPercent > 0 && (
+            <div
+              style={{
+                position: "absolute",
+                left: 0,
+                top: 0,
+                height: "100%",
+                width: `${Math.max(progressPercent, Math.min(100, bufferedPercent))}%`,
+                background: "rgba(255, 255, 255, 0.4)",
+                borderRadius: 0,
+                transition: "width 0.25s ease",
+                pointerEvents: "none",
+              }}
+            />
+          )}
+          {/* Текущая позиция воспроизведения */}
           <div
             style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
               height: "100%",
               width: `${progressPercent}%`,
               background: "var(--ds-accent)",
               borderRadius: 0,
-              transition: "width 0.2s ease",
+              transition: "width 0.15s ease",
+              pointerEvents: "none",
             }}
           />
         </div>
