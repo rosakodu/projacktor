@@ -31,6 +31,10 @@ export const rpcAddDownload = callable<[string], { success: boolean; id?: number
 export const rpcAddToLibrary = callable<[string], { success: boolean; id?: number; error?: string }>("add_to_library");
 export const rpcStartDownload = callable<[number, string?], { success: boolean; gid?: string; error?: string }>("start_download");
 export const rpcGetEpisodes = callable<[number], EpisodeItem[]>("get_episodes");
+export const rpcGetTorrentEpisodes = callable<
+  [magnet: string, title?: string, poster_path?: string],
+  EpisodeItem[]
+>("get_torrent_episodes");
 export const rpcDownloadEpisode = callable<[number, number], { success: boolean; gid?: string; error?: string }>("download_episode");
 export const rpcPrepareStream = callable<
   [mid: number, file_index?: number, force_online?: boolean, magnet?: string],

@@ -291,6 +291,9 @@ class Plugin:
     async def get_episodes(self, mid: int):
         return await self.library.get_episodes(mid, ts=self.ts, dm=self.dm)
 
+    async def get_torrent_episodes(self, magnet: str, title: str = "", poster_path: str = ""):
+        return await self.library.get_torrent_episodes(magnet, title=title, poster_path=poster_path, ts=self.ts)
+
     async def add_to_library(self, payload_json: str):
         return await self.library.add_to_library(
             payload_json,

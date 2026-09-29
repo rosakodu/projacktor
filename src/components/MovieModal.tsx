@@ -16,7 +16,7 @@ import {
   rpcAddToLibrary,
   rpcStartDownload,
   rpcPrepareStream,
-  rpcGetEpisodes,
+  rpcGetTorrentEpisodes,
   rpcDownloadEpisode,
   rpcAddToWatchlist,
   rpcRemoveFromWatchlist,
@@ -405,8 +405,11 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
       const tId = torrent.id || torrent.magnet;
       setLoadingEpisodesMap((prev) => ({ ...prev, [tId]: true }));
       try {
-        const mid = await getOrCreateMediaId(torrent, false);
-        const eps = await rpcGetEpisodes(mid);
+        const eps = await rpcGetTorrentEpisodes(
+          torrent.magnet,
+          torrent.title || title,
+          movie.poster_path || ""
+        );
         if (Array.isArray(eps) && eps.length > 0) {
           setEpisodesMap((prev) => ({ ...prev, [tId]: sortEpisodes(eps) }));
         } else if ((torrent.seeds || 0) > 0) {
@@ -414,7 +417,11 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
           setTimeout(async () => {
             if (expandedTorrentIdRef.current === tId) {
               try {
-                const retryEps = await rpcGetEpisodes(mid);
+                const retryEps = await rpcGetTorrentEpisodes(
+                  torrent.magnet,
+                  torrent.title || title,
+                  movie.poster_path || ""
+                );
                 if (Array.isArray(retryEps) && retryEps.length > 0) {
                   setEpisodesMap((prev) => ({ ...prev, [tId]: sortEpisodes(retryEps) }));
                 }
@@ -428,7 +435,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
         setLoadingEpisodesMap((prev) => ({ ...prev, [tId]: false }));
       }
     },
-    [getOrCreateMediaId]
+    [title, movie.poster_path]
   );
 
   const handleToggleEpisodes = async (torrent: TorrentItem) => {

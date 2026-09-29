@@ -56,23 +56,35 @@ class StreamService:
             
             video_exts = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov', '.m4v'}
 
+            target_magnet = magnet or m.get('magnet_uri')
+            thash = extract_hash_from_magnet(target_magnet) if target_magnet else None
+            if thash:
+                thash = thash.lower()
+
             expected_ep_name = ""
             expected_season = 1
             expected_ep_num = 999999
             expected_size = 0
-            cached_json = m.get('episodes_json')
-            if cached_json and file_idx > 0:
-                try:
-                    c_eps = json.loads(cached_json) or []
-                    for cep in c_eps:
-                        if cep.get('index') == file_idx:
-                            expected_ep_name = cep.get('name', '')
-                            expected_size = int(cep.get('size', 0))
-                            if sort_key_fn:
-                                expected_season, expected_ep_num, _ = sort_key_fn(expected_ep_name)
-                            break
-                except Exception:
-                    pass
+
+            c_eps = []
+            if thash and library_service and getattr(library_service, '_torrent_episodes_cache', None) and thash in library_service._torrent_episodes_cache:
+                c_eps = library_service._torrent_episodes_cache[thash]
+            else:
+                cached_json = m.get('episodes_json')
+                if cached_json:
+                    try:
+                        c_eps = json.loads(cached_json) or []
+                    except Exception:
+                        pass
+
+            if c_eps and file_idx > 0:
+                for cep in c_eps:
+                    if cep.get('index') == file_idx:
+                        expected_ep_name = cep.get('name', '')
+                        expected_size = int(cep.get('size', 0))
+                        if sort_key_fn:
+                            expected_season, expected_ep_num, _ = sort_key_fn(expected_ep_name)
+                        break
 
             # 1. Check if local files are already downloaded (ONLY if not force_online)
             if not force_online:

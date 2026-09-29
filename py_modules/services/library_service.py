@@ -19,6 +19,7 @@ from ..db import (
 from ..common import (
     load_settings,
     is_executable_release,
+    is_unsupported_media_release,
     clean_media_title,
     auto_enrich_library_metadata
 )
@@ -69,6 +70,9 @@ def _episode_sort_key(ep):
 
 
 class LibraryService:
+    def __init__(self):
+        self._torrent_episodes_cache: dict[str, list[dict]] = {}
+
     @staticmethod
     def _natural_keys(text):
         return _natural_keys(text)
@@ -76,6 +80,72 @@ class LibraryService:
     @staticmethod
     def _episode_sort_key(ep):
         return _episode_sort_key(ep)
+
+    async def get_torrent_episodes(self, magnet: str, title: str = "", poster_path: str = "", ts=None) -> list[dict]:
+        if not magnet:
+            return []
+
+        thash = extract_hash_from_magnet(magnet)
+        if thash:
+            thash = thash.lower()
+            if thash in self._torrent_episodes_cache:
+                return [dict(ep) for ep in self._torrent_episodes_cache[thash]]
+
+        if not ts:
+            sett = load_settings()
+            ts = TorrServerManager(port=sett.get('torrserver_port', 8095))
+
+        if not ts or not ts.ensure_running():
+            logger.error("TorrServer is not running for get_torrent_episodes")
+            return []
+
+        video_exts = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov', '.m4v'}
+        extra_re = re.compile(r'(?i)\b(sample|trailer|bonus|featurette|preview)\b')
+
+        add_res = ts.add_torrent(magnet, title=title, poster=poster_path)
+        if add_res and isinstance(add_res, dict) and add_res.get('hash'):
+            thash = add_res['hash'].lower()
+
+        t_info = None
+        files = extract_ts_files(add_res)
+        if files:
+            t_info = add_res
+        else:
+            for _ in range(30):
+                if thash:
+                    t_info = ts.get_torrent(thash)
+                    files = extract_ts_files(t_info)
+                    if files:
+                        break
+                await asyncio.sleep(0.5)
+
+        files = extract_ts_files(t_info)
+        episodes = []
+        if t_info and files:
+            for f in files:
+                f_path = f.get('path', '')
+                ext = os.path.splitext(f_path)[1].lower()
+                length = int(f.get('length', 0))
+                if (ext in video_exts and 
+                        not extra_re.search(f_path) and 
+                        not is_executable_release(f_path) and 
+                        not is_unsupported_media_release(f_path)):
+                    if length < 25 * 1024 * 1024 and len(files) > 1:
+                        continue
+                    episodes.append({
+                        "index": int(f.get('id', 0)),
+                        "name": os.path.basename(f_path),
+                        "path": f_path,
+                        "size": length,
+                        "completed": 0,
+                        "selected": True,
+                        "downloaded": False
+                    })
+            episodes.sort(key=_episode_sort_key)
+            if thash and episodes:
+                self._torrent_episodes_cache[thash] = episodes
+
+        return episodes
 
     async def get_episodes(self, mid: int, ts=None, dm=None) -> list[dict]:
         try:
@@ -107,65 +177,31 @@ class LibraryService:
                 episodes.sort(key=_episode_sort_key)
                 return episodes
 
-            # 2. Get episodes list: from cached_json or via TorrServer
+            # 2. Get episodes list: from in-memory cache, DB cache, or TorrServer
             episodes = []
-            cached_json = m['episodes_json'] if 'episodes_json' in m.keys() else None
-            if cached_json:
-                try:
-                    episodes = json.loads(cached_json) or []
-                except Exception as e:
-                    logger.error(f"Error reading cached episodes: {e}")
+            magnet = m.get('magnet_uri')
+            thash = extract_hash_from_magnet(magnet) if magnet else None
+            if thash:
+                thash = thash.lower()
 
-            if not episodes:
-                magnet = m.get('magnet_uri')
-                thash = extract_hash_from_magnet(magnet)
-                if not ts:
-                    sett = load_settings()
-                    ts = TorrServerManager(port=sett.get('torrserver_port', 8095))
-                if ts and magnet:
-                    ts.ensure_running()
-                    add_res = ts.add_torrent(magnet, title=m['title'], poster=m.get('poster_path', ''))
-                    if add_res and isinstance(add_res, dict) and add_res.get('hash'):
-                        thash = add_res['hash'].lower()
+            if thash and thash in self._torrent_episodes_cache:
+                episodes = [dict(ep) for ep in self._torrent_episodes_cache[thash]]
+            else:
+                cached_json = m['episodes_json'] if 'episodes_json' in m.keys() else None
+                if cached_json:
+                    try:
+                        episodes = json.loads(cached_json) or []
+                    except Exception as e:
+                        logger.error(f"Error reading cached episodes: {e}")
 
-                    t_info = None
-                    files = extract_ts_files(add_res)
-                    if files:
-                        t_info = add_res
-                    else:
-                        for _ in range(30):
-                            if thash:
-                                t_info = ts.get_torrent(thash)
-                                files = extract_ts_files(t_info)
-                                if files:
-                                    break
-                            await asyncio.sleep(0.5)
-                    
-                    files = extract_ts_files(t_info)
-                    if t_info and files:
-                        extra_re = re.compile(r'(?i)\b(sample|trailer|bonus|featurette|preview)\b')
-                        for f in files:
-                            f_path = f.get('path', '')
-                            ext = os.path.splitext(f_path)[1].lower()
-                            length = int(f.get('length', 0))
-                            if ext in video_exts and not extra_re.search(f_path):
-                                if length < 25 * 1024 * 1024 and len(files) > 1:
-                                    continue
-                                episodes.append({
-                                    "index": int(f.get('id', 0)),
-                                    "name": os.path.basename(f_path),
-                                    "path": f_path,
-                                    "size": length,
-                                    "completed": 0,
-                                    "selected": True,
-                                    "downloaded": False
-                                })
-                        if episodes:
-                            try:
-                                db.execute("UPDATE media SET episodes_json=? WHERE id=?", (json.dumps(episodes), mid))
-                                db.commit()
-                            except Exception as e:
-                                logger.error(f"Error caching episodes in DB: {e}")
+            if not episodes and magnet:
+                episodes = await self.get_torrent_episodes(magnet, title=m.get('title', ''), poster_path=m.get('poster_path', ''), ts=ts)
+                if episodes:
+                    try:
+                        db.execute("UPDATE media SET episodes_json=? WHERE id=?", (json.dumps(episodes), mid))
+                        db.commit()
+                    except Exception as e:
+                        logger.error(f"Error caching episodes in DB: {e}")
 
             # 3. Check aria2 active files first for exact download progress
             af_map = {}
@@ -395,16 +431,39 @@ class LibraryService:
                 else:
                     mid = row['id']
                     final_in_lib = 1 if (row['in_library'] == 1 or in_lib == 1) else 0
-                    cursor.execute("""
-                        UPDATE media 
-                        SET title=?, year=?, media_type=?,
-                            poster_path=COALESCE(NULLIF(poster_path, ''), ?),
-                            backdrop_path=COALESCE(NULLIF(backdrop_path, ''), ?),
-                            overview=COALESCE(NULLIF(overview, ''), ?),
-                            magnet_uri=?, torrent_title=?, quality=?, download_dir=?, in_library=?
-                        WHERE id=?
-                    """, (title, year, mtype, poster_path, backdrop_path, overview,
-                          magnet, torrent_title, quality, ddir, final_in_lib, mid))
+                    old_mag = row.get('magnet_uri') or ''
+                    old_hash = extract_hash_from_magnet(old_mag) if old_mag else ''
+                    new_hash = extract_hash_from_magnet(magnet) if magnet else ''
+                    if old_hash: old_hash = old_hash.lower()
+                    if new_hash: new_hash = new_hash.lower()
+
+                    torrent_changed = bool(old_hash and new_hash and old_hash != new_hash)
+
+                    if torrent_changed:
+                        new_eps = self._torrent_episodes_cache.get(new_hash)
+                        eps_json_val = json.dumps(new_eps) if new_eps else None
+                        cursor.execute("""
+                            UPDATE media 
+                            SET title=?, year=?, media_type=?,
+                                poster_path=COALESCE(NULLIF(poster_path, ''), ?),
+                                backdrop_path=COALESCE(NULLIF(backdrop_path, ''), ?),
+                                overview=COALESCE(NULLIF(overview, ''), ?),
+                                magnet_uri=?, torrent_title=?, quality=?, download_dir=?, in_library=?,
+                                episodes_json=?
+                            WHERE id=?
+                        """, (title, year, mtype, poster_path, backdrop_path, overview,
+                              magnet, torrent_title, quality, ddir, final_in_lib, eps_json_val, mid))
+                    else:
+                        cursor.execute("""
+                            UPDATE media 
+                            SET title=?, year=?, media_type=?,
+                                poster_path=COALESCE(NULLIF(poster_path, ''), ?),
+                                backdrop_path=COALESCE(NULLIF(backdrop_path, ''), ?),
+                                overview=COALESCE(NULLIF(overview, ''), ?),
+                                magnet_uri=?, torrent_title=?, quality=?, download_dir=?, in_library=?
+                            WHERE id=?
+                        """, (title, year, mtype, poster_path, backdrop_path, overview,
+                              magnet, torrent_title, quality, ddir, final_in_lib, mid))
                 
                 if in_lib:
                     cursor.execute("SELECT id, magnet_uri, aria2_gid FROM downloads WHERE media_id=?", (mid,))
