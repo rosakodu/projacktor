@@ -195,23 +195,40 @@ div:has(> .projacktor-modal-root) {
   gap: 2px !important;
   background: rgba(0, 0, 0, 0.45) !important;
   padding: 2px !important;
-  border-radius: 0 !important;
+  border-radius: 0px !important;
   border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-sizing: border-box !important;
+  height: 24px !important;
+  min-height: 24px !important;
+  max-height: 24px !important;
+  flex-shrink: 0 !important;
 }
 
 .projacktor-sort-pill {
-  font-size: 9.5px !important;
-  font-weight: 500 !important;
-  padding: 3px 8px !important;
-  border-radius: 0 !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  padding: 0 8px !important;
+  height: 18px !important;
+  line-height: 18px !important;
+  min-height: 18px !important;
+  max-height: 18px !important;
+  border-radius: 0px !important;
   color: rgba(255, 255, 255, 0.6) !important;
   background: transparent !important;
   cursor: pointer !important;
-  transition: all 0.12s ease !important;
   user-select: none !important;
   white-space: nowrap !important;
   border: none !important;
   outline: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+  transition: background 0.1s ease, color 0.1s ease !important;
+  text-align: center !important;
+  box-sizing: border-box !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0 !important;
 }
 
 .projacktor-sort-pill:hover {
@@ -222,21 +239,51 @@ div:has(> .projacktor-modal-root) {
 .projacktor-sort-pill--active {
   color: #fff !important;
   background: #1a9fff !important;
-  font-weight: 700 !important;
+  font-weight: 600 !important;
 }
 
-.projacktor-sort-pill.gpfocus {
-  outline: 2px solid #fff !important;
-  outline-offset: -1px !important;
+.projacktor-sort-pill::before,
+.projacktor-sort-pill::after,
+.projacktor-sort-pill:focus::before,
+.projacktor-sort-pill:focus::after,
+.projacktor-sort-pill.gpfocus::before,
+.projacktor-sort-pill.gpfocus::after,
+.projacktor-torrent-sort-bar::before,
+.projacktor-torrent-sort-bar::after {
+  display: none !important;
+  content: none !important;
+}
+
+.projacktor-sort-pill [class*="focus-ring"],
+.projacktor-sort-pill [class*="_1wPplsegQqCoe06wXPhzKT"],
+.projacktor-sort-pill [class*="_3FIjYetykQsFYR08l1v7Ls"],
+.projacktor-torrent-sort-bar [class*="focus-ring"],
+.projacktor-torrent-sort-bar [class*="_1wPplsegQqCoe06wXPhzKT"],
+.projacktor-torrent-sort-bar [class*="_3FIjYetykQsFYR08l1v7Ls"] {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.projacktor-sort-pill.gpfocus,
+.projacktor-sort-pill:focus {
+  outline: none !important;
+  box-shadow: inset 0 0 0 1.5px #ffffff !important;
   background: rgba(255, 255, 255, 0.25) !important;
   color: #fff !important;
+  transform: none !important;
 }
 
-.projacktor-sort-pill--active.gpfocus {
-  outline: 2px solid #fff !important;
-  outline-offset: -1px !important;
+.projacktor-sort-pill--active.gpfocus,
+.projacktor-sort-pill--active:focus {
+  outline: none !important;
+  box-shadow: inset 0 0 0 1.5px #ffffff !important;
   background: #1a9fff !important;
   color: #fff !important;
+  transform: none !important;
 }
 
 .projacktor-torrent-meta {
