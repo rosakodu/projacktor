@@ -1,5 +1,5 @@
 import { FC, useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { ModalRoot, Focusable, Spinner } from "@decky/ui";
+import { ModalRoot, Focusable, Spinner, GamepadButton } from "@decky/ui";
 import { FaPlay, FaDownload, FaList, FaSpinner, FaMoon, FaBookmark, FaCheck } from "react-icons/fa";
 import { PROJACKTOR_STYLES } from "../styles";
 import { MarqueeTitle } from "./MarqueeTitle";
@@ -32,6 +32,30 @@ import {
 import { useI18n } from "../i18n";
 
 export type TorrentSortMode = "seeds" | "newest" | "oldest";
+
+const isEvtUp = (evt: any) => {
+  const dir = evt?.detail?.dir;
+  const btn = evt?.detail?.button;
+  return dir === "up" || btn === 9 || btn === GamepadButton.DIR_UP;
+};
+
+const isEvtDown = (evt: any) => {
+  const dir = evt?.detail?.dir;
+  const btn = evt?.detail?.button;
+  return dir === "down" || btn === 10 || btn === GamepadButton.DIR_DOWN;
+};
+
+const isEvtLeft = (evt: any) => {
+  const dir = evt?.detail?.dir;
+  const btn = evt?.detail?.button;
+  return dir === "left" || btn === 11 || btn === GamepadButton.DIR_LEFT;
+};
+
+const isEvtRight = (evt: any) => {
+  const dir = evt?.detail?.dir;
+  const btn = evt?.detail?.button;
+  return dir === "right" || btn === 12 || btn === GamepadButton.DIR_RIGHT;
+};
 
 interface MovieModalProps {
   movie: MediaItem;
@@ -131,25 +155,26 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
     } catch {}
   }, []);
 
+  const sortModeRef = useRef(sortMode);
+  sortModeRef.current = sortMode;
+
   const stepSort = useCallback((delta: -1 | 1) => {
-    setSortMode((prev) => {
-      const curIdx = SORT_MODES.indexOf(prev);
-      const nextIdx = Math.max(0, Math.min(SORT_MODES.length - 1, curIdx + delta));
-      const nextMode = SORT_MODES[nextIdx];
+    const curIdx = SORT_MODES.indexOf(sortModeRef.current);
+    const nextIdx = Math.max(0, Math.min(SORT_MODES.length - 1, curIdx + delta));
+    const nextMode = SORT_MODES[nextIdx];
+
+    if (nextMode !== sortModeRef.current) {
+      setSortMode(nextMode);
       try {
         localStorage.setItem("projacktor_torrent_sort", nextMode);
       } catch {}
+    }
 
-      setTimeout(() => {
-        const doc = getActiveDocument(torrentsRef.current) || document;
-        const pills = Array.from(doc.querySelectorAll<HTMLElement>(".projacktor-sort-pill"));
-        if (pills[nextIdx]) {
-          focusEl(pills[nextIdx]);
-        }
-      }, 10);
-
-      return nextMode;
-    });
+    const doc = getActiveDocument(torrentsRef.current) || document;
+    const pills = Array.from(doc.querySelectorAll<HTMLElement>(".projacktor-sort-pill"));
+    if (pills[nextIdx]) {
+      focusEl(pills[nextIdx]);
+    }
   }, [focusEl]);
 
   const navigateDownToTorrents = useCallback(() => {
@@ -185,30 +210,40 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
   }, [focusEl, navigateUpToWatchlist]);
 
   const handleSortPillGamepad = useCallback((evt: any) => {
-    const dir = evt?.detail?.dir;
-    const btn = evt?.detail?.button;
-    if (dir === "left" || btn === 7 || btn === 12 || btn === 22) {
+    if (isEvtLeft(evt)) {
       try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
       stepSort(-1);
       return false;
     }
-    if (dir === "right" || btn === 5 || btn === 13 || btn === 23) {
+    if (isEvtRight(evt)) {
       try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
       stepSort(1);
       return false;
     }
-    if (dir === "down" || btn === 6 || btn === 11 || btn === 21) {
+    if (isEvtDown(evt)) {
       try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
       navigateDownToTorrents();
       return false;
     }
-    if (dir === "up" || btn === 4 || btn === 10 || btn === 20) {
+    if (isEvtUp(evt)) {
       try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
       navigateUpToWatchlist();
       return false;
     }
     return undefined;
   }, [stepSort, navigateDownToTorrents, navigateUpToWatchlist]);
+
+  const handleFirstTorrentGamepad = useCallback((evt: any) => {
+    if (isEvtUp(evt)) {
+      try {
+        evt?.preventDefault?.();
+        evt?.stopPropagation?.();
+      } catch {}
+      navigateUpToSortBar();
+      return false;
+    }
+    return undefined;
+  }, [navigateUpToSortBar]);
 
   const torrentsRef = useRef<HTMLDivElement>(null);
   const closeModalRef = useRef(closeModal);
@@ -221,7 +256,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
     };
   }, []);
 
-  // Обработка кнопки B геймпада, D-pad навигации и клавиш клавиатуры
+  // Обработка кнопки B геймпада и клавиш клавиатуры
   useEffect(() => {
     let lastCloseAt = 0;
     const triggerClose = () => {
@@ -240,76 +275,6 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
       if (e.button === RawButton.B || e.button === 1) {
         triggerClose();
         return;
-      }
-
-      const doc = getActiveDocument(torrentsRef.current) || document;
-      const active = doc?.activeElement as HTMLElement | null;
-      if (!active) return;
-
-      const isSortPill = !!(active.classList.contains("projacktor-sort-pill") || active.closest(".projacktor-torrent-sort-bar"));
-      const isWatchlist = !!(active.classList.contains("projacktor-watchlist-btn") || active.closest(".projacktor-watchlist-btn"));
-      const root = torrentsRef.current;
-      const isInTorrents = !!(root && root.contains(active));
-
-      const isLeft =
-        e.button === RawButton.DPAD_LEFT ||
-        e.button === RawButton.LEFTSTICK_LEFT ||
-        e.button === RawButton.LEFTPAD_LEFT ||
-        e.button === 7 ||
-        e.button === 22 ||
-        e.button === 12;
-
-      const isRight =
-        e.button === RawButton.DPAD_RIGHT ||
-        e.button === RawButton.LEFTSTICK_RIGHT ||
-        e.button === RawButton.LEFTPAD_RIGHT ||
-        e.button === 5 ||
-        e.button === 23 ||
-        e.button === 13;
-
-      const isUp =
-        e.button === RawButton.DPAD_UP ||
-        e.button === RawButton.LEFTSTICK_UP ||
-        e.button === RawButton.LEFTPAD_UP ||
-        e.button === 4 ||
-        e.button === 20 ||
-        e.button === 10;
-
-      const isDown =
-        e.button === RawButton.DPAD_DOWN ||
-        e.button === RawButton.LEFTSTICK_DOWN ||
-        e.button === RawButton.LEFTPAD_DOWN ||
-        e.button === 6 ||
-        e.button === 21 ||
-        e.button === 11;
-
-      if (isSortPill) {
-        if (isLeft) {
-          stepSort(-1);
-        } else if (isRight) {
-          stepSort(1);
-        } else if (isDown) {
-          navigateDownToTorrents();
-        } else if (isUp) {
-          navigateUpToWatchlist();
-        }
-      } else if (isWatchlist) {
-        if (isDown) {
-          const sortBar = doc.querySelector<HTMLElement>(".projacktor-torrent-sort-bar");
-          const activePill = doc.querySelector<HTMLElement>(".projacktor-sort-pill--active") || doc.querySelector<HTMLElement>(".projacktor-sort-pill");
-          if (sortBar && activePill && sortedTorrentsRef.current.length > 1) {
-            focusEl(activePill);
-          } else {
-            navigateDownToTorrents();
-          }
-        }
-      } else if (isInTorrents) {
-        if (isUp) {
-          const firstCard = root?.querySelector<HTMLElement>(".projacktor-torrent-card, .projacktor-torrent-item");
-          if (firstCard && firstCard.contains(active)) {
-            navigateUpToSortBar();
-          }
-        }
       }
     });
 
@@ -365,9 +330,18 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
         if (e.key === "ArrowUp") {
           const firstCard = root?.querySelector<HTMLElement>(".projacktor-torrent-card, .projacktor-torrent-item");
           if (firstCard && firstCard.contains(active)) {
-            e.preventDefault();
-            e.stopPropagation();
-            navigateUpToSortBar();
+            const epRow = active.closest(".projacktor-torrent-ep-row");
+            const firstEpRow = firstCard.querySelector(".projacktor-torrent-ep-row");
+            if (epRow && epRow === firstEpRow) {
+              e.preventDefault();
+              e.stopPropagation();
+              const actionBtn = firstCard.querySelector<HTMLElement>(".projacktor-torrent-actions .projacktor-icon-btn");
+              if (actionBtn) focusEl(actionBtn);
+            } else if (!epRow) {
+              e.preventDefault();
+              e.stopPropagation();
+              navigateUpToSortBar();
+            }
           }
         }
       }
@@ -908,32 +882,20 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
             onClick={handleToggleWatchlist}
             onActivate={handleToggleWatchlist}
             onGamepadDirection={(evt: any) => {
-              const btn = evt?.detail?.button;
-              const dir = evt?.detail?.dir;
-              if (dir === "down" || btn === 6 || btn === 11 || btn === 21) {
+              if (isEvtDown(evt)) {
+                try {
+                  evt?.preventDefault?.();
+                  evt?.stopPropagation?.();
+                } catch {}
                 const doc = getActiveDocument(torrentsRef.current) || document;
                 const sortBar = doc.querySelector<HTMLElement>(".projacktor-torrent-sort-bar");
                 const activePill = doc.querySelector<HTMLElement>(".projacktor-sort-pill--active") || doc.querySelector<HTMLElement>(".projacktor-sort-pill");
                 if (sortBar && activePill && sortedTorrents.length > 1) {
-                  try {
-                    evt?.preventDefault?.();
-                    evt?.stopPropagation?.();
-                  } catch {}
                   focusEl(activePill);
-                  return false;
+                } else {
+                  navigateDownToTorrents();
                 }
-                const root = torrentsRef.current;
-                const firstAction = root?.querySelector<HTMLElement>(
-                  ".projacktor-torrent-actions .projacktor-icon-btn, .projacktor-icon-btn, .projacktor-torrent-ep-row, .ds-btn--primary, .ds-btn, button, [tabindex='0']"
-                );
-                if (firstAction) {
-                  try {
-                    evt?.preventDefault?.();
-                    evt?.stopPropagation?.();
-                  } catch {}
-                  focusEl(firstAction);
-                  return false;
-                }
+                return false;
               }
               return undefined;
             }}
@@ -994,6 +956,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                 flow-children="horizontal"
                 noFocusRing
                 className="projacktor-torrent-sort-bar"
+                onGamepadDirection={handleSortPillGamepad}
               >
                 <Focusable
                   noFocusRing
@@ -1140,7 +1103,12 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                         </div>
 
                         {/* Strict Fixed-Size Action Buttons (Requirement 1 & 1b) */}
-                        <Focusable flow-children="horizontal" noFocusRing className="projacktor-torrent-actions">
+                        <Focusable
+                          flow-children="horizontal"
+                          noFocusRing
+                          className="projacktor-torrent-actions"
+                          onGamepadDirection={idx === 0 ? handleFirstTorrentGamepad : undefined}
+                        >
                           {isTorTv ? (
                             /* TV Series: Toggle Episodes button */
                             <Focusable
@@ -1148,6 +1116,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                               noFocusRing
                               onActivate={() => handleToggleEpisodes(tor)}
                               onClick={() => handleToggleEpisodes(tor)}
+                              onGamepadDirection={idx === 0 ? handleFirstTorrentGamepad : undefined}
                               title={isExpanded ? t("hideEpisodes") : t("selectEpisode")}
                             >
                               {isEpLoading ? (
@@ -1163,6 +1132,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                               noFocusRing
                               onActivate={() => handleWatchOnlineMovie(tor)}
                               onClick={() => handleWatchOnlineMovie(tor)}
+                              onGamepadDirection={idx === 0 ? handleFirstTorrentGamepad : undefined}
                               title={t("watchOnline")}
                             >
                               {isCurrentStream ? (
@@ -1179,6 +1149,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                             noFocusRing
                             onActivate={() => handleDownloadTorrent(tor)}
                             onClick={() => handleDownloadTorrent(tor)}
+                            onGamepadDirection={idx === 0 ? handleFirstTorrentGamepad : undefined}
                             title={t("download")}
                           >
                             {isCurrentDl ? (
@@ -1194,6 +1165,7 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                             noFocusRing
                             onActivate={() => handleDownloadWithMagicBlack(tor)}
                             onClick={() => handleDownloadWithMagicBlack(tor)}
+                            onGamepadDirection={idx === 0 ? handleFirstTorrentGamepad : undefined}
                             title={t("downloadSleepMagicBlack")}
                           >
                             <FaMoon style={{ fontSize: 11 }} />
