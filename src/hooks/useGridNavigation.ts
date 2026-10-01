@@ -4,7 +4,7 @@ import { playCardNavSound } from "../runtime/navSound";
 import { isModalOpen, isPlayerActive } from "../runtime/homeInputBus";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
 
-const NAV_COOLDOWN_MS = 110;
+const NAV_COOLDOWN_MS = 120;
 
 export function scrollCardHorizontal(row: HTMLElement | null, card: HTMLElement | null) {
   if (!row || !card) return;
@@ -32,19 +32,19 @@ export function useGridNavigation<T = any>({
   const lastNavAtRef = useRef<number>(0);
 
   const handleDirection = useCallback(
-    (dir: "up" | "down" | "left" | "right") => {
-      if (isModalOpen()) return;
+    (dir: "up" | "down" | "left" | "right"): boolean => {
+      if (isModalOpen() || isPlayerActive()) return false;
 
       const now = Date.now();
-      if (now - lastNavAtRef.current < NAV_COOLDOWN_MS) return;
+      if (now - lastNavAtRef.current < NAV_COOLDOWN_MS) return true;
 
       const root = rootRef.current;
-      if (!root) return;
+      if (!root) return false;
       const doc = getActiveDocument(root);
-      if (!doc) return;
+      if (!doc) return false;
 
       const active = doc.activeElement as HTMLElement | null;
-      if (!active || !root.contains(active)) return;
+      if (!active || !root.contains(active)) return false;
 
       const doFocus = (target: HTMLElement | null) => {
         if (!target) return;
@@ -63,97 +63,118 @@ export function useGridNavigation<T = any>({
       };
 
       if (active.classList.contains("projacktor-empty-lib") || active.closest(".projacktor-empty-lib")) {
-        return;
+        return false;
       }
 
       const cards = Array.from(root.querySelectorAll<HTMLElement>(".projacktor-dl-grid-card"));
-      if (!cards.length) return;
+      if (!cards.length) return false;
 
       const curCard = active.closest(".projacktor-dl-grid-card") as HTMLElement | null;
-      if (!curCard) return;
+      if (!curCard) return false;
 
       const cardIndex = cards.indexOf(curCard);
-      if (cardIndex === -1) return;
+      if (cardIndex === -1) return false;
 
       const isPoster = supportsPosterFocus && !!active.closest(".projacktor-dl-poster-btn");
       const isButton = !isPoster && !!active.closest(".projacktor-dl-card-btns");
 
       if (isPoster) {
         if (dir === "left") {
+          lastNavAtRef.current = Date.now();
           if (cards.length > 1) {
             const targetIndex = cardIndex > 0 ? cardIndex - 1 : cards.length - 1;
             const prevPoster = cards[targetIndex].querySelector<HTMLElement>(".projacktor-dl-poster-btn");
             doFocus(prevPoster);
             if (items[targetIndex] && onCardFocus) onCardFocus(items[targetIndex], cards[targetIndex]);
           }
+          return true;
         } else if (dir === "right") {
+          lastNavAtRef.current = Date.now();
           if (cards.length > 1) {
             const targetIndex = cardIndex < cards.length - 1 ? cardIndex + 1 : 0;
             const nextPoster = cards[targetIndex].querySelector<HTMLElement>(".projacktor-dl-poster-btn");
             doFocus(nextPoster);
             if (items[targetIndex] && onCardFocus) onCardFocus(items[targetIndex], cards[targetIndex]);
           }
+          return true;
         } else if (dir === "down") {
-          const playBtn = curCard.querySelector<HTMLElement>(
-            ".projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0']"
+          lastNavAtRef.current = Date.now();
+          const firstBtn = curCard.querySelector<HTMLElement>(
+            ".projacktor-dl-card-btns .projacktor-dl-btn-play, .projacktor-dl-card-btns .projacktor-dl-btn-icon, .projacktor-dl-card-btns [tabindex='0']"
           );
-          doFocus(playBtn);
+          if (firstBtn) {
+            doFocus(firstBtn);
+          }
+          return true;
         } else if (dir === "up") {
-          return;
+          // Allow bubbling up to top tabs header
+          return false;
         }
       } else if (isButton || !supportsPosterFocus) {
-        const cardButtons = Array.from(
+        const rawButtons = Array.from(
           curCard.querySelectorAll<HTMLElement>(
             ".projacktor-dl-card-btns .projacktor-dl-btn-play, .projacktor-dl-card-btns .projacktor-dl-btn-icon, .projacktor-dl-card-btns [tabindex='0']"
           )
         );
-        if (!cardButtons.length) return;
+        const cardButtons = rawButtons.filter((b) => !b.classList.contains("projacktor-dl-card-btns"));
+        if (!cardButtons.length) return false;
+
         const btnIndex = cardButtons.findIndex((b) => b === active || b.contains(active));
 
         if (dir === "up") {
+          lastNavAtRef.current = Date.now();
           if (supportsPosterFocus) {
             const poster = curCard.querySelector<HTMLElement>(".projacktor-dl-poster-btn");
-            if (poster && poster.getAttribute("tabindex") === "0") {
+            if (poster) {
               doFocus(poster);
               if (items[cardIndex] && onCardFocus) onCardFocus(items[cardIndex], curCard);
             }
           }
-          return;
+          return true;
         } else if (dir === "down") {
-          return;
+          lastNavAtRef.current = Date.now();
+          return true;
         } else if (dir === "left") {
+          lastNavAtRef.current = Date.now();
           if (btnIndex > 0) {
             doFocus(cardButtons[btnIndex - 1]);
           } else if (cards.length > 1) {
             const prevCardIndex = cardIndex > 0 ? cardIndex - 1 : cards.length - 1;
             const prevCard = cards[prevCardIndex];
-            const prevPoster = supportsPosterFocus ? prevCard.querySelector<HTMLElement>(".projacktor-dl-poster-btn") : null;
-            const prevBtns = prevCard.querySelectorAll<HTMLElement>(
-              ".projacktor-dl-card-btns .projacktor-dl-btn-play, .projacktor-dl-card-btns .projacktor-dl-btn-icon, .projacktor-dl-card-btns [tabindex='0']"
-            );
-            const targetEl = prevPoster || (prevBtns.length > 0 ? prevBtns[prevBtns.length - 1] : null);
+            const prevBtns = Array.from(
+              prevCard.querySelectorAll<HTMLElement>(
+                ".projacktor-dl-card-btns .projacktor-dl-btn-play, .projacktor-dl-card-btns .projacktor-dl-btn-icon, .projacktor-dl-card-btns [tabindex='0']"
+              )
+            ).filter((b) => !b.classList.contains("projacktor-dl-card-btns"));
+            const targetEl = prevBtns.length > 0 ? prevBtns[prevBtns.length - 1] : (supportsPosterFocus ? prevCard.querySelector<HTMLElement>(".projacktor-dl-poster-btn") : null);
             if (targetEl) {
               doFocus(targetEl);
               if (items[prevCardIndex] && onCardFocus) onCardFocus(items[prevCardIndex], prevCard);
             }
           }
+          return true;
         } else if (dir === "right") {
+          lastNavAtRef.current = Date.now();
           if (btnIndex !== -1 && btnIndex < cardButtons.length - 1) {
             doFocus(cardButtons[btnIndex + 1]);
           } else if (cards.length > 1) {
             const nextCardIndex = cardIndex < cards.length - 1 ? cardIndex + 1 : 0;
             const nextCard = cards[nextCardIndex];
-            const nextPoster = supportsPosterFocus ? nextCard.querySelector<HTMLElement>(".projacktor-dl-poster-btn") : null;
-            const nextBtn = nextPoster || nextCard.querySelector<HTMLElement>(
-              ".projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0']"
-            );
+            const nextBtns = Array.from(
+              nextCard.querySelectorAll<HTMLElement>(
+                ".projacktor-dl-card-btns .projacktor-dl-btn-play, .projacktor-dl-card-btns .projacktor-dl-btn-icon, .projacktor-dl-card-btns [tabindex='0']"
+              )
+            ).filter((b) => !b.classList.contains("projacktor-dl-card-btns"));
+            const nextBtn = nextBtns.length > 0 ? nextBtns[0] : (supportsPosterFocus ? nextCard.querySelector<HTMLElement>(".projacktor-dl-poster-btn") : null);
             if (nextBtn) {
               doFocus(nextBtn);
               if (items[nextCardIndex] && onCardFocus) onCardFocus(items[nextCardIndex], nextCard);
             }
           }
+          return true;
         }
       }
+      return false;
     },
     [items, onCardFocus, rootRef, rowRef, supportsPosterFocus]
   );
@@ -161,22 +182,18 @@ export function useGridNavigation<T = any>({
   const handleGamepadDirection = useCallback(
     (evt: any) => {
       const btn = evt?.detail?.button;
-      if (btn === 9) {
-        try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
-        handleDirection("up");
-        return false;
-      } else if (btn === 10) {
-        try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
-        handleDirection("down");
-        return false;
-      } else if (btn === 11) {
-        try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
-        handleDirection("left");
-        return false;
-      } else if (btn === 12) {
-        try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
-        handleDirection("right");
-        return false;
+      let handled = false;
+      if (btn === 9) handled = handleDirection("up");
+      else if (btn === 10) handled = handleDirection("down");
+      else if (btn === 11) handled = handleDirection("left");
+      else if (btn === 12) handled = handleDirection("right");
+
+      if (handled) {
+        try {
+          evt?.preventDefault?.();
+          evt?.stopPropagation?.();
+        } catch {}
+        return true;
       }
       return undefined;
     },
@@ -234,22 +251,15 @@ export function useGridNavigation<T = any>({
       const active = doc?.activeElement;
       if (!active || !root.contains(active)) return;
 
-      if (e.key === "ArrowUp") {
+      let handled = false;
+      if (e.key === "ArrowUp") handled = handleDirection("up");
+      else if (e.key === "ArrowDown") handled = handleDirection("down");
+      else if (e.key === "ArrowLeft") handled = handleDirection("left");
+      else if (e.key === "ArrowRight") handled = handleDirection("right");
+
+      if (handled) {
         e.preventDefault();
         e.stopPropagation();
-        handleDirection("up");
-      } else if (e.key === "ArrowDown") {
-        e.preventDefault();
-        e.stopPropagation();
-        handleDirection("down");
-      } else if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        e.stopPropagation();
-        handleDirection("left");
-      } else if (e.key === "ArrowRight") {
-        e.preventDefault();
-        e.stopPropagation();
-        handleDirection("right");
       }
     };
 

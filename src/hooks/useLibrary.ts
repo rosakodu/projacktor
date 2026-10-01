@@ -11,6 +11,7 @@ import {
   rpcStartDownload,
   rpcGetEpisodes,
   rpcDownloadEpisode,
+  rpcCancelEpisodeDownload,
   rpcPrepareStream,
   rpcRescanLibrary,
   sortEpisodes,
@@ -148,6 +149,22 @@ export function useLibrary(
     [refreshLibrary]
   );
 
+  const cancelEpisodeDownload = useCallback(
+    async (item: LibraryItem, ep: EpisodeItem) => {
+      try {
+        await rpcCancelEpisodeDownload(item.id, ep.index);
+        refreshLibrary();
+        const eps = await rpcGetEpisodes(item.id);
+        if (mountedRef.current && Array.isArray(eps)) {
+          setEpisodesMap((prev) => ({ ...prev, [item.id]: sortEpisodes(eps) }));
+        }
+      } catch (err: any) {
+        console.error("Не удалось отменить загрузку серии:", err);
+      }
+    },
+    [refreshLibrary]
+  );
+
   const watchOnline = useCallback(
     async (item: LibraryItem, fileIndex?: number) => {
       setStreamLoading(item.id);
@@ -208,6 +225,7 @@ export function useLibrary(
     startDownload,
     toggleEpisodes,
     downloadEpisode,
+    cancelEpisodeDownload,
     watchOnline,
   };
 }

@@ -279,6 +279,9 @@ class Plugin:
     async def download_episode(self, mid: int, file_index: int):
         return await self.downloads.download_episode(mid, file_index, self.dm, self.library, ts=self.ts)
 
+    async def cancel_episode_download(self, mid: int, file_index: int):
+        return await self.downloads.cancel_episode_download(mid, file_index, self.dm, self.library, ts=self.ts)
+
     # Library & Episodes
     @classmethod
     def _episode_sort_key(cls, ep):

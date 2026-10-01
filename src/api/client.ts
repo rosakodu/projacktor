@@ -36,6 +36,7 @@ export const rpcGetTorrentEpisodes = callable<
   EpisodeItem[]
 >("get_torrent_episodes");
 export const rpcDownloadEpisode = callable<[number, number], { success: boolean; gid?: string; error?: string }>("download_episode");
+export const rpcCancelEpisodeDownload = callable<[number, number], { success: boolean; error?: string }>("cancel_episode_download");
 export const rpcPrepareStream = callable<
   [mid: number, file_index?: number, force_online?: boolean, magnet?: string],
   {

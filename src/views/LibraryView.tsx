@@ -43,6 +43,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
       startDownload,
       deleteItem,
       downloadEpisode,
+      cancelEpisodeDownload,
       watchOnline,
     } = useLibrary(onPlayVideo);
 
@@ -94,11 +95,12 @@ export const LibraryView: FC<LibraryViewProps> = memo(
           closeModal={() => close(true)}
           onWatchOnline={(i, epIdx) => { close(false); watchOnline(i, epIdx); }}
           onDownloadEpisode={(i, ep) => { downloadEpisode(i, ep); }}
+          onCancelEpisodeDownload={(i, ep) => { cancelEpisodeDownload(i, ep); }}
         />,
         getParentWindow(),
         { bHideActionIcons: true }
       );
-    }, [watchOnline, downloadEpisode]);
+    }, [watchOnline, downloadEpisode, cancelEpisodeDownload]);
 
     const handlePromptDelete = useCallback(
       (item: LibraryItem, e?: any) => {
