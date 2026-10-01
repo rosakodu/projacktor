@@ -1,5 +1,6 @@
 import { FC, useState, useCallback, useEffect, useRef, memo } from "react";
 import { Focusable, GamepadButton } from "@decky/ui";
+import { FaHistory, FaTrash } from "react-icons/fa";
 import { MediaItem } from "../types";
 import { searchCatalog } from "../api";
 import { Shelf } from "../components/Shelf";
@@ -9,6 +10,7 @@ import { RawButton, subscribeControllerInput } from "../runtime/controllerInput"
 import { isModalOpen, isUserInTabs, isPlayerActive } from "../runtime/homeInputBus";
 import { playCardNavSound } from "../runtime/navSound";
 import { setBackdropMovie } from "../runtime/backdropBus";
+import { getSearchHistory, addSearchHistory, clearSearchHistory } from "../runtime/searchHistory";
 import { useEnsureFocus } from "../hooks/useEnsureFocus";
 import { useI18n } from "../i18n";
 
@@ -21,6 +23,7 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
   const rootRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchResults, setSearchResults] = useState<MediaItem[]>([]);
+  const [searchHistory, setSearchHistory] = useState<string[]>(() => getSearchHistory());
   const [searchLoading, setSearchLoading] = useState<boolean>(false);
   const lastNavAtRef = useRef<number>(0);
 
@@ -78,6 +81,26 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
     }
   }, [searchResults]);
 
+  const focusFirstHistoryChip = useCallback(() => {
+    const now = Date.now();
+    if (now - lastNavAtRef.current < 100) return;
+    lastNavAtRef.current = now;
+
+    const root = rootRef.current;
+    if (!root) return;
+    const doc = getActiveDocument(root);
+
+    const firstChip = root.querySelector<HTMLElement>(".projacktor-search-chip");
+    if (firstChip) {
+      try {
+        doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+        firstChip.focus();
+        firstChip.classList.add("gpfocus");
+        playCardNavSound();
+      } catch {}
+    }
+  }, []);
+
   // Сброс фона на чистый темный при монтировании вкладки поиска
   useEffect(() => {
     setBackdropMovie(null, true);
@@ -114,6 +137,9 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
       const query = text.trim();
       if (!query || searchLoading) return;
       setSearchQuery(query);
+      // Сохраняем недавний запрос в историю
+      const updatedHistory = addSearchHistory(query);
+      setSearchHistory(updatedHistory);
       setSearchLoading(true);
       setBackdropMovie(null);
       try {
@@ -129,6 +155,20 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
     [searchQuery, searchLoading]
   );
 
+  const handleSelectHistory = useCallback(
+    (query: string) => {
+      setSearchQuery(query);
+      handleSearch(query);
+    },
+    [handleSearch]
+  );
+
+  const handleClearHistory = useCallback(() => {
+    clearSearchHistory();
+    setSearchHistory([]);
+    focusSearchInput();
+  }, [focusSearchInput]);
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === "Enter" || e.keyCode === 13) {
@@ -138,12 +178,15 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
         if (searchResults.length > 0) {
           e.preventDefault();
           focusFirstCard();
+        } else if (searchHistory.length > 0) {
+          e.preventDefault();
+          focusFirstHistoryChip();
         }
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
       }
     },
-    [handleSearch, searchResults.length, focusFirstCard]
+    [handleSearch, searchResults.length, searchHistory.length, focusFirstCard, focusFirstHistoryChip]
   );
 
   // Подписка на события контроллера для надежной вертикальной навигации между поиском и результатами
@@ -206,14 +249,18 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
           focusSearchInput();
         }
       } else if (isDown) {
-        if (isInsideSearchBar && searchResults.length > 0) {
-          focusFirstCard();
+        if (isInsideSearchBar) {
+          if (searchResults.length > 0) {
+            focusFirstCard();
+          } else if (searchHistory.length > 0) {
+            focusFirstHistoryChip();
+          }
         }
       }
     });
 
     return un;
-  }, [searchResults.length, searchQuery, handleSearch, focusSearchInput, focusFirstCard]);
+  }, [searchResults.length, searchHistory.length, searchQuery, handleSearch, focusSearchInput, focusFirstCard, focusFirstHistoryChip]);
 
   return (
     <Focusable
@@ -251,13 +298,22 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
           }
         } else if (btn === 10) {
           // DPAD_DOWN:
-          if (isInsideSearchBar && searchResults.length > 0) {
-            try {
-              evt?.preventDefault?.();
-              evt?.stopPropagation?.();
-            } catch {}
-            focusFirstCard();
-            return false;
+          if (isInsideSearchBar) {
+            if (searchResults.length > 0) {
+              try {
+                evt?.preventDefault?.();
+                evt?.stopPropagation?.();
+              } catch {}
+              focusFirstCard();
+              return false;
+            } else if (searchHistory.length > 0) {
+              try {
+                evt?.preventDefault?.();
+                evt?.stopPropagation?.();
+              } catch {}
+              focusFirstHistoryChip();
+              return false;
+            }
           }
         }
         return undefined;
@@ -301,14 +357,23 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
               evt?.stopPropagation?.();
             } catch {}
             return false;
-          } else if (btn === 10 && searchResults.length > 0) {
-            // DPAD_DOWN: переходим на карточки
-            try {
-              evt?.preventDefault?.();
-              evt?.stopPropagation?.();
-            } catch {}
-            focusFirstCard();
-            return false;
+          } else if (btn === 10) {
+            // DPAD_DOWN: переходим на карточки или на чипсы истории
+            if (searchResults.length > 0) {
+              try {
+                evt?.preventDefault?.();
+                evt?.stopPropagation?.();
+              } catch {}
+              focusFirstCard();
+              return false;
+            } else if (searchHistory.length > 0) {
+              try {
+                evt?.preventDefault?.();
+                evt?.stopPropagation?.();
+              } catch {}
+              focusFirstHistoryChip();
+              return false;
+            }
           }
           return undefined;
         }}
@@ -335,14 +400,23 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
                 return false;
               }
             }
-            if (btn === 10 && searchResults.length > 0) {
-              // DPAD_DOWN: переходим на карточки
-              try {
-                evt?.preventDefault?.();
-                evt?.stopPropagation?.();
-              } catch {}
-              focusFirstCard();
-              return false;
+            if (btn === 10) {
+              // DPAD_DOWN: переходим на карточки или историю
+              if (searchResults.length > 0) {
+                try {
+                  evt?.preventDefault?.();
+                  evt?.stopPropagation?.();
+                } catch {}
+                focusFirstCard();
+                return false;
+              } else if (searchHistory.length > 0) {
+                try {
+                  evt?.preventDefault?.();
+                  evt?.stopPropagation?.();
+                } catch {}
+                focusFirstHistoryChip();
+                return false;
+              }
             }
             return undefined;
           }}
@@ -376,14 +450,23 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
               } catch {}
               focusSearchInput();
               return false;
-            } else if (btn === 10 && searchResults.length > 0) {
-              // DPAD_DOWN: переходим на карточки
-              try {
-                evt?.preventDefault?.();
-                evt?.stopPropagation?.();
-              } catch {}
-              focusFirstCard();
-              return false;
+            } else if (btn === 10) {
+              // DPAD_DOWN: переходим на карточки или историю
+              if (searchResults.length > 0) {
+                try {
+                  evt?.preventDefault?.();
+                  evt?.stopPropagation?.();
+                } catch {}
+                focusFirstCard();
+                return false;
+              } else if (searchHistory.length > 0) {
+                try {
+                  evt?.preventDefault?.();
+                  evt?.stopPropagation?.();
+                } catch {}
+                focusFirstHistoryChip();
+                return false;
+              }
             } else if (btn === 9) {
               // DPAD_UP: блокируем переход на вкладки
               try {
@@ -398,6 +481,75 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
           {searchLoading ? t("searching") : t("searchBtn")}
         </Focusable>
       </Focusable>
+
+      {/* Секция недавних поисковых запросов (минималистичные чипсы) */}
+      {searchHistory.length > 0 && searchResults.length === 0 && (
+        <div className="projacktor-search-history-section">
+          <div className="projacktor-search-history-header">
+            <div className="projacktor-search-history-title">
+              <FaHistory style={{ fontSize: 11 }} />
+              <span>{t("recentSearches")}</span>
+            </div>
+            <Focusable
+              className="projacktor-search-history-clear-btn"
+              noFocusRing
+              tabIndex={0}
+              onActivate={handleClearHistory}
+              onClick={handleClearHistory}
+              onGamepadDirection={(evt: any) => {
+                const btn = evt?.detail?.button;
+                if (btn === 9 || btn === GamepadButton.DIR_UP) {
+                  focusSearchInput();
+                  return false;
+                }
+                if (btn === 11 || btn === GamepadButton.DIR_LEFT) {
+                  focusFirstHistoryChip();
+                  return false;
+                }
+                return undefined;
+              }}
+            >
+              <FaTrash style={{ fontSize: 9.5 }} />
+              <span>{t("clearSearchHistory")}</span>
+            </Focusable>
+          </div>
+
+          <Focusable
+            flow-children="row"
+            noFocusRing
+            className="projacktor-search-history-chips"
+            onGamepadDirection={(evt: any) => {
+              const btn = evt?.detail?.button;
+              if (btn === 9 || btn === GamepadButton.DIR_UP) {
+                focusSearchInput();
+                return false;
+              }
+              return undefined;
+            }}
+          >
+            {searchHistory.map((q) => (
+              <Focusable
+                key={q}
+                className="projacktor-search-chip"
+                noFocusRing
+                tabIndex={0}
+                onActivate={() => handleSelectHistory(q)}
+                onClick={() => handleSelectHistory(q)}
+                onGamepadDirection={(evt: any) => {
+                  const btn = evt?.detail?.button;
+                  if (btn === 9 || btn === GamepadButton.DIR_UP) {
+                    focusSearchInput();
+                    return false;
+                  }
+                  return undefined;
+                }}
+              >
+                {q}
+              </Focusable>
+            ))}
+          </Focusable>
+        </div>
+      )}
 
       <Shelf
         items={searchResults}

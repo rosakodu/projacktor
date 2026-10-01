@@ -907,4 +907,93 @@ body.projacktor-magicblack-active [class*="_3FIjYetykQsFYR08l1v7Ls"] {
   color: #ffffff !important;
   box-shadow: 0 0 10px rgba(239, 68, 68, 0.65) !important;
 }
+
+/* ───── Search History (Недавние поисковые запросы) ───── */
+.projacktor-search-history-section {
+  display: flex !important;
+  flex-direction: column !important;
+  padding: 0 52px !important;
+  margin-bottom: 22px !important;
+  box-sizing: border-box !important;
+  width: 100% !important;
+}
+
+.projacktor-search-history-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  margin-bottom: 12px !important;
+  user-select: none !important;
+}
+
+.projacktor-search-history-title {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  color: rgba(255, 255, 255, 0.6) !important;
+  letter-spacing: 0.2px !important;
+}
+
+.projacktor-search-history-clear-btn {
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  color: rgba(255, 255, 255, 0.45) !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 4px !important;
+  padding: 4px 10px !important;
+  cursor: pointer !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  transition: all 0.15s ease !important;
+  outline: none !important;
+}
+
+.projacktor-search-history-clear-btn:hover,
+.projacktor-search-history-clear-btn:focus,
+.projacktor-search-history-clear-btn.gpfocus {
+  color: #ffffff !important;
+  background: rgba(239, 68, 68, 0.25) !important;
+  border-color: rgba(239, 68, 68, 0.6) !important;
+  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.8) !important;
+}
+
+.projacktor-search-history-chips {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+  align-items: center !important;
+}
+
+.projacktor-search-chip {
+  padding: 6px 14px !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  color: rgba(255, 255, 255, 0.75) !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 16px !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
+  user-select: none !important;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease !important;
+  outline: none !important;
+}
+
+.projacktor-search-chip:hover {
+  background: rgba(255, 255, 255, 0.12) !important;
+  border-color: rgba(255, 255, 255, 0.25) !important;
+  color: #ffffff !important;
+}
+
+.projacktor-search-chip:focus,
+.projacktor-search-chip.gpfocus {
+  background: rgba(255, 255, 255, 0.18) !important;
+  border-color: #ffffff !important;
+  color: #ffffff !important;
+  box-shadow: inset 0 0 0 1.5px #ffffff !important;
+}
 `;
