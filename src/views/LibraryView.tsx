@@ -78,7 +78,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
             `[data-item-id="${item.id}"]`
           );
           const target = card?.querySelector<HTMLElement>(
-            ".projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0']"
+            ".projacktor-dl-poster-btn, .projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0']"
           );
           if (target) {
             doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
@@ -228,7 +228,8 @@ export const LibraryView: FC<LibraryViewProps> = memo(
       rootRef,
       rowRef,
       items: library,
-      supportsPosterFocus: false,
+      supportsPosterFocus: true,
+      onCardFocus: (item) => setBackdropMovie(item as any),
     });
 
     useEffect(() => {
@@ -239,7 +240,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
       if (!root) return;
       if (!active || active === doc?.body || !root.contains(active)) {
         const target = root.querySelector<HTMLElement>(
-          ".projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0'], .projacktor-empty-cta-btn, .projacktor-empty-lib"
+          ".projacktor-dl-poster-btn, .projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0'], .projacktor-empty-cta-btn, .projacktor-empty-lib"
         );
         if (target) {
           try {
@@ -405,8 +406,8 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                 }
               };
 
-              let badgeText = t("inLibraryBadge");
-              let badgeClass = "queued";
+              let badgeText: string | null = null;
+              let badgeClass = "";
               if (isCompleted) {
                 // "✓ Скачано" пишем ТОЛЬКО когда загружены абсолютно все серии (или фильм целиком)
                 badgeText = t("downloadedBadge");
@@ -438,11 +439,16 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                   onFocusCapture={() => setBackdropMovie(item as any)}
                   onMouseEnter={() => setBackdropMovie(item as any)}
                 >
-                  {/* Постер + бейджи + полоса загрузки (информационный блок, действия только кнопками ниже) */}
-                  {/* Постер + бейджи + полоса загрузки (статичный информационный блок) */}
-                  <div
+                  {/* Постер с поддержкой фокуса и переходов D-Pad */}
+                  <Focusable
                     className="projacktor-dl-poster-btn"
-                    style={{ cursor: "default" }}
+                    noFocusRing
+                    tabIndex={0}
+                    onClick={(e: any) => handlePrimaryAction(e)}
+                    onActivate={(e: any) => handlePrimaryAction(e)}
+                    onFocus={() => setBackdropMovie(item as any)}
+                    onMouseEnter={() => setBackdropMovie(item as any)}
+                    title={item.title}
                   >
                     {item.poster_path ? (
                       <img
@@ -471,10 +477,12 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                       </div>
                     </div>
 
-                    {/* Бейдж статуса */}
-                    <div className={`projacktor-dl-badge-status ${badgeClass}`}>
-                      {badgeText}
-                    </div>
+                    {/* Бейдж статуса (только реальные статусы: Скачано, Загрузка, Пауза) */}
+                    {badgeText && (
+                      <div className={`projacktor-dl-badge-status ${badgeClass}`}>
+                        {badgeText}
+                      </div>
+                    )}
 
                     {/* Бейдж качества или типа (показываем когда не скачивается, чтобы не перегружать постер) */}
                     {!isDownloading && (item.effective_quality || isTv) && (
@@ -510,7 +518,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                         />
                       </div>
                     )}
-                  </div>
+                  </Focusable>
 
                   {/* Название */}
                   <div className="projacktor-dl-info">

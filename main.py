@@ -277,7 +277,7 @@ class Plugin:
         return self.downloads.delete_download(did, self.dm)
 
     async def download_episode(self, mid: int, file_index: int):
-        return await self.downloads.download_episode(mid, file_index, self.dm, self.library)
+        return await self.downloads.download_episode(mid, file_index, self.dm, self.library, ts=self.ts)
 
     # Library & Episodes
     @classmethod

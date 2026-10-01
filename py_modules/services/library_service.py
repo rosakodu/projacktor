@@ -421,12 +421,15 @@ class LibraryService:
                 cursor.execute("SELECT id, in_library, magnet_uri FROM media WHERE tmdb_id=?", (tmdb_id,))
                 row = cursor.fetchone()
                 if not row:
+                    init_hash = extract_hash_from_magnet(magnet).lower() if magnet else ''
+                    init_eps = self._torrent_episodes_cache.get(init_hash) if init_hash else None
+                    init_eps_json = json.dumps(init_eps) if init_eps else None
                     cursor.execute("""
                         INSERT INTO media (tmdb_id, title, year, media_type, poster_path, backdrop_path, overview,
-                                           magnet_uri, torrent_title, quality, download_dir, in_library, status)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'catalog')
+                                           magnet_uri, torrent_title, quality, download_dir, in_library, status, episodes_json)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'catalog', ?)
                     """, (tmdb_id, title, year, mtype, poster_path, backdrop_path, overview,
-                          magnet, torrent_title, quality, ddir, in_lib))
+                          magnet, torrent_title, quality, ddir, in_lib, init_eps_json))
                     mid = cursor.lastrowid
                 else:
                     mid = row['id']

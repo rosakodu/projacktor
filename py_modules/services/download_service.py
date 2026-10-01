@@ -256,16 +256,15 @@ class DownloadService:
             logger.error(f"DownloadService start_download error: {e}")
             return {"success": False, "error": str(e)}
 
-    async def download_episode(self, mid: int, file_index: int, dm=None, library_service=None) -> dict:
+    async def download_episode(self, mid: int, file_index: int, dm=None, library_service=None, ts=None) -> dict:
         idx = int(file_index) if file_index is not None else 0
+        db = get_db()
         try:
-            db = get_db()
             m = db.execute("SELECT * FROM media WHERE id=?", (mid,)).fetchone()
-            db.close()
             if not m:
                 return {"success": False, "error": "Медиа не найдено"}
 
-            episodes = await library_service.get_episodes(mid) if library_service else []
+            episodes = await library_service.get_episodes(mid, ts=ts, dm=dm) if library_service else []
             target_ep = next((e for e in episodes if e.get('index') == idx), None)
             if not target_ep and 1 <= idx <= len(episodes):
                 target_ep = episodes[idx - 1]
@@ -294,14 +293,8 @@ class DownloadService:
                 if st and st.get('followedBy') and len(st['followedBy']) > 0:
                     gid = st['followedBy'][0]
                     try:
-                        dm.pause(gid)
-                    except Exception:
-                        pass
-                    try:
-                        db = get_db()
                         db.execute("UPDATE downloads SET aria2_gid=? WHERE media_id=?", (gid, mid))
                         db.commit()
-                        db.close()
                     except Exception:
                         pass
                 af_list = dm.get_files(gid) or []
@@ -310,12 +303,8 @@ class DownloadService:
                 await asyncio.sleep(0.5)
 
             if not af_list or not any(af.get('path') and not af.get('path').startswith('[METADATA]') for af in af_list):
-                logger.warning(f"download_episode: aria2 has no real file list yet for gid {gid}")
-                try:
-                    dm.pause(gid)
-                except Exception:
-                    pass
-                return {"success": False, "error": "Не удалось получить список файлов раздачи"}
+                logger.info(f"download_episode: aria2 has no real file list yet for gid {gid}, proceeding in background")
+                return {"success": True, "gid": gid, "note": "download_started_waiting_metadata"}
 
             matched_af = None
             if target_name:
@@ -422,15 +411,20 @@ class DownloadService:
                     dm.resume(gid)
                 return {"success": True, "gid": gid, "aria2_index": target_aria2_idx}
             else:
-                logger.warning(f"download_episode: could not match aria2 file for {target_name}")
+                logger.warning(f"download_episode: could not match aria2 file for {target_name}, keeping background download active")
                 try:
-                    dm.pause(gid)
+                    dm.resume(gid)
                 except Exception:
                     pass
-                return {"success": False, "error": f"Не удалось найти файл серии: {target_name}"}
+                return {"success": True, "gid": gid, "note": "download_started_unmatched"}
         except Exception as e:
             logger.error(f"DownloadService download_episode error: {e}")
             return {"success": False, "error": str(e)}
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
 
     async def add_download(self, data: str, library_service=None, dm=None) -> dict:
         if not library_service:
