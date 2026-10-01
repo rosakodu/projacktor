@@ -1,5 +1,5 @@
 import { FC, memo, useEffect, useRef, useCallback, useState } from "react";
-import { Focusable, showModal } from "@decky/ui";
+import { Focusable, showModal, ConfirmModal } from "@decky/ui";
 import { FaPlay, FaPause, FaDownload, FaList, FaTrash, FaMoon, FaSync, FaFilm } from "react-icons/fa";
 import { LibraryItem, PlayerMediaInfo } from "../types";
 import { formatSpeed, getImageUrl } from "../api";
@@ -100,10 +100,30 @@ export const LibraryView: FC<LibraryViewProps> = memo(
       );
     }, [watchOnline, downloadEpisode]);
 
-
-
-
-    // Синхронизация бэкдропа с элементами библиотеки
+    const handlePromptDelete = useCallback(
+      (item: LibraryItem, e?: any) => {
+        if (e) {
+          try {
+            e.stopPropagation();
+            e.preventDefault();
+          } catch {}
+        }
+        showModal(
+          <ConfirmModal
+            strTitle={t("confirmDeleteTitle")}
+            strDescription={`${item.title}${item.year ? ` (${item.year})` : ""}`}
+            strOKButtonText={t("delete")}
+            strCancelButtonText={t("cancel")}
+            bDestructiveWarning={true}
+            onOK={() => {
+              deleteItem(item.id);
+            }}
+          />,
+          getParentWindow()
+        );
+      },
+      [deleteItem, t]
+    );    // Синхронизация бэкдропа с элементами библиотеки
     useEffect(() => {
       if (!isInitialLoading) {
         if (library.length === 0) {
@@ -224,8 +244,12 @@ export const LibraryView: FC<LibraryViewProps> = memo(
         if (target) {
           try {
             doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+            try {
+              (target as any).TakeFocus?.(0);
+            } catch {}
             target.focus();
             target.classList.add("gpfocus");
+            target.classList.add("gpfocuswithin");
           } catch {}
         }
       }
@@ -356,7 +380,13 @@ export const LibraryView: FC<LibraryViewProps> = memo(
               const canPlayDirect = hasLocalFiles && !!localFilePath && (!isTv || totalEps <= 1 || downloadedEps >= totalEps);
               const progress = Math.min(100, Math.max(0, item.download_progress || 0));
 
-              const handlePrimaryAction = () => {
+              const handlePrimaryAction = (e?: any) => {
+                if (e) {
+                  try {
+                    e.stopPropagation();
+                    e.preventDefault();
+                  } catch {}
+                }
                 lastInteractedItemIdRef.current = item.id;
                 if (isTv) {
                   // Для сериалов ВСЕГДА открываем список серий, чтобы не включать случайно первую попавшуюся серию
@@ -493,18 +523,17 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                   </div>
 
                   {/* Кнопки действий */}
-                  <div className="projacktor-dl-card-btns">
+                  <Focusable flow-children="horizontal" noFocusRing className="projacktor-dl-card-btns">
                     {/* Кнопка Смотреть (только для скачанного файла) или Серии (для сериала) */}
                     {(canPlayDirect || hasLocalFiles || isTv) && (
                       <Focusable
                         className={`projacktor-dl-btn-play ${(canPlayDirect || hasLocalFiles) ? "success" : ""}`}
                         noFocusRing
                         tabIndex={0}
-                        onActivate={handlePrimaryAction}
-                        onClick={handlePrimaryAction}
+                        onActivate={(e: any) => handlePrimaryAction(e)}
+                        onClick={(e: any) => handlePrimaryAction(e)}
                         onFocus={() => setBackdropMovie(item as any)}
                         onMouseEnter={() => setBackdropMovie(item as any)}
-                        onGamepadDirection={handleGamepadDir}
                         title={isTv ? t("episodes") : ((canPlayDirect || hasLocalFiles) ? t("watchFile") : t("episodes"))}
                       >
                         {isTv ? (
@@ -521,23 +550,28 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                         className="projacktor-dl-btn-icon"
                         noFocusRing
                         tabIndex={0}
-                        onActivate={() =>
+                        onActivate={(e: any) => {
+                          if (e) {
+                            try { e.stopPropagation(); e.preventDefault(); } catch {}
+                          }
                           isDownloading
                             ? pauseDownload(item.id)
                             : isPaused
                             ? resumeDownload(item.id)
-                            : startDownload(item)
-                        }
-                        onClick={() =>
+                            : startDownload(item);
+                        }}
+                        onClick={(e: any) => {
+                          if (e) {
+                            try { e.stopPropagation(); e.preventDefault(); } catch {}
+                          }
                           isDownloading
                             ? pauseDownload(item.id)
                             : isPaused
                             ? resumeDownload(item.id)
-                            : startDownload(item)
-                        }
+                            : startDownload(item);
+                        }}
                         onFocus={() => setBackdropMovie(item as any)}
                         onMouseEnter={() => setBackdropMovie(item as any)}
-                        onGamepadDirection={handleGamepadDir}
                         title={isDownloading ? t("pause") : isPaused ? t("resume") : t("download")}
                       >
                         {isDownloading ? <FaPause style={{ fontSize: 9.5 }} /> : <FaDownload style={{ fontSize: 9.5 }} />}
@@ -550,13 +584,19 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                         className="projacktor-dl-btn-icon"
                         noFocusRing
                         tabIndex={0}
-                        onActivate={() => {
+                        onActivate={(e: any) => {
+                          if (e) {
+                            try { e.stopPropagation(); e.preventDefault(); } catch {}
+                          }
                           if (isPaused) {
                             resumeDownload(item.id);
                           }
                           onActivateMagicBlack?.();
                         }}
-                        onClick={() => {
+                        onClick={(e: any) => {
+                          if (e) {
+                            try { e.stopPropagation(); e.preventDefault(); } catch {}
+                          }
                           if (isPaused) {
                             resumeDownload(item.id);
                           }
@@ -564,7 +604,6 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                         }}
                         onFocus={() => setBackdropMovie(item as any)}
                         onMouseEnter={() => setBackdropMovie(item as any)}
-                        onGamepadDirection={handleGamepadDir}
                         title={t("downloadSleepMagicBlack")}
                       >
                         <FaMoon style={{ fontSize: 9.5 }} />
@@ -576,16 +615,15 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                       className="projacktor-dl-btn-icon danger"
                       noFocusRing
                       tabIndex={0}
-                      onActivate={() => deleteItem(item.id)}
-                      onClick={() => deleteItem(item.id)}
+                      onActivate={(e: any) => handlePromptDelete(item, e)}
+                      onClick={(e: any) => handlePromptDelete(item, e)}
                       onFocus={() => setBackdropMovie(item as any)}
                       onMouseEnter={() => setBackdropMovie(item as any)}
-                      onGamepadDirection={handleGamepadDir}
                       title={t("delete")}
                     >
                       <FaTrash style={{ fontSize: 9.5 }} />
                     </Focusable>
-                  </div>
+                  </Focusable>
                 </div>
               );
             })}

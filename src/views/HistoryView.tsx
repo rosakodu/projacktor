@@ -1,5 +1,5 @@
 import { FC, memo, useEffect, useRef, useState, useCallback } from "react";
-import { Focusable } from "@decky/ui";
+import { Focusable, showModal, ConfirmModal } from "@decky/ui";
 import { FaTrash, FaHistory } from "react-icons/fa";
 import { WatchHistoryItem, MediaItem, PlayerMediaInfo } from "../types";
 import {
@@ -107,6 +107,9 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onNavigate
           doc?.querySelectorAll(".gpfocus").forEach((el) => {
             if (el !== target) el.classList.remove("gpfocus");
           });
+          try {
+            (target as any).TakeFocus?.(0);
+          } catch {}
           target.focus();
           target.classList.add("gpfocus");
           target.classList.add("gpfocuswithin");
@@ -115,8 +118,27 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onNavigate
     }
   }, [items, loading]);
 
+  const getParentWindow = (): EventTarget => {
+    try {
+      const win =
+        (window as any).SteamUIStore?.WindowStore?.GamepadUIMainWindowInstance?.BrowserWindow ||
+        (window as any).SteamUIStore?.GetFocusedWindowInstance?.()?.BrowserWindow ||
+        document.defaultView ||
+        window;
+      return win as EventTarget;
+    } catch {
+      return window as EventTarget;
+    }
+  };
+
   const handleResume = useCallback(
-    (item: WatchHistoryItem) => {
+    (item: WatchHistoryItem, e?: any) => {
+      if (e) {
+        try {
+          e.stopPropagation();
+          e.preventDefault();
+        } catch {}
+      }
       playNavSound();
       const isDownloaded = Boolean(item.is_downloaded || (!item.is_online && item.file_path));
       const path = isDownloaded
@@ -156,21 +178,33 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onNavigate
     [onPlayVideo]
   );
 
-  const handleDelete = useCallback(async (id: number, e?: any) => {
+  const handleDelete = useCallback((item: WatchHistoryItem, e?: any) => {
     if (e) {
       try {
         e.stopPropagation();
         e.preventDefault();
       } catch {}
     }
-    playNavSound();
-    try {
-      await rpcDeleteWatchHistoryItem(id);
-      setItems((prev) => prev.filter((i) => i.id !== id));
-    } catch (err) {
-      console.error("Failed to delete watch history item:", err);
-    }
-  }, []);
+    showModal(
+      <ConfirmModal
+        strTitle={t("confirmDeleteHistoryTitle")}
+        strDescription={`${item.title}${item.year ? ` (${item.year})` : ""}`}
+        strOKButtonText={t("delete")}
+        strCancelButtonText={t("cancel")}
+        bDestructiveWarning={true}
+        onOK={async () => {
+          playNavSound();
+          try {
+            await rpcDeleteWatchHistoryItem(item.id);
+            setItems((prev) => prev.filter((i) => i.id !== item.id));
+          } catch (err) {
+            console.error("Failed to delete watch history item:", err);
+          }
+        }}
+      />,
+      getParentWindow()
+    );
+  }, [t]);
 
   const handleClearAll = useCallback(async () => {
     playNavSound();
@@ -323,8 +357,8 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onNavigate
                   className="projacktor-dl-poster-btn"
                   noFocusRing
                   tabIndex={0}
-                  onClick={() => handleResume(item)}
-                  onActivate={() => handleResume(item)}
+                  onClick={(e: any) => handleResume(item, e)}
+                  onActivate={(e: any) => handleResume(item, e)}
                   onFocus={(e: any) =>
                     handleCardFocus(item, e.currentTarget?.closest(".projacktor-dl-grid-card"))
                   }
@@ -381,20 +415,20 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onNavigate
                 </div>
 
                 {/* Нижняя панель действий */}
-                <div className="projacktor-dl-card-btns projacktor-history-card-btns">
+                <Focusable flow-children="horizontal" noFocusRing className="projacktor-dl-card-btns projacktor-history-card-btns">
                   {/* Кнопка Удалить из истории */}
                   <Focusable
                     className="projacktor-dl-btn-icon danger"
                     noFocusRing
                     tabIndex={0}
-                    onClick={(e: any) => handleDelete(item.id, e)}
-                    onActivate={(e: any) => handleDelete(item.id, e)}
+                    onClick={(e: any) => handleDelete(item, e)}
+                    onActivate={(e: any) => handleDelete(item, e)}
                     title={t("delete")}
                   >
                     <FaTrash style={{ fontSize: 10, marginRight: 5 }} />
                     <span style={{ fontSize: 11, fontWeight: 500 }}>{t("delete")}</span>
                   </Focusable>
-                </div>
+                </Focusable>
               </div>
             );
           })}

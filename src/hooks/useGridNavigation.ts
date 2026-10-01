@@ -50,8 +50,13 @@ export function useGridNavigation<T = any>({
         if (!target) return;
         lastNavAtRef.current = Date.now();
         doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+        try {
+          (target as any).TakeFocus?.(0);
+        } catch {}
         target.focus();
         target.classList.add("gpfocus");
+        target.classList.add("gpfocuswithin");
+        target.closest(".Panel")?.classList.add("gpfocuswithin");
         playCardNavSound();
         const card = target.closest(".projacktor-dl-grid-card") as HTMLElement | null;
         scrollCardHorizontal(rowRef.current, card || target);
@@ -75,15 +80,19 @@ export function useGridNavigation<T = any>({
 
       if (isPoster) {
         if (dir === "left") {
-          const targetIndex = cardIndex > 0 ? cardIndex - 1 : cards.length - 1;
-          const prevPoster = cards[targetIndex].querySelector<HTMLElement>(".projacktor-dl-poster-btn");
-          doFocus(prevPoster);
-          if (items[targetIndex] && onCardFocus) onCardFocus(items[targetIndex], cards[targetIndex]);
+          if (cards.length > 1) {
+            const targetIndex = cardIndex > 0 ? cardIndex - 1 : cards.length - 1;
+            const prevPoster = cards[targetIndex].querySelector<HTMLElement>(".projacktor-dl-poster-btn");
+            doFocus(prevPoster);
+            if (items[targetIndex] && onCardFocus) onCardFocus(items[targetIndex], cards[targetIndex]);
+          }
         } else if (dir === "right") {
-          const targetIndex = cardIndex < cards.length - 1 ? cardIndex + 1 : 0;
-          const nextPoster = cards[targetIndex].querySelector<HTMLElement>(".projacktor-dl-poster-btn");
-          doFocus(nextPoster);
-          if (items[targetIndex] && onCardFocus) onCardFocus(items[targetIndex], cards[targetIndex]);
+          if (cards.length > 1) {
+            const targetIndex = cardIndex < cards.length - 1 ? cardIndex + 1 : 0;
+            const nextPoster = cards[targetIndex].querySelector<HTMLElement>(".projacktor-dl-poster-btn");
+            doFocus(nextPoster);
+            if (items[targetIndex] && onCardFocus) onCardFocus(items[targetIndex], cards[targetIndex]);
+          }
         } else if (dir === "down") {
           const playBtn = curCard.querySelector<HTMLElement>(
             ".projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0']"
@@ -115,7 +124,7 @@ export function useGridNavigation<T = any>({
         } else if (dir === "left") {
           if (btnIndex > 0) {
             doFocus(cardButtons[btnIndex - 1]);
-          } else {
+          } else if (cards.length > 1) {
             const prevCardIndex = cardIndex > 0 ? cardIndex - 1 : cards.length - 1;
             const prevCard = cards[prevCardIndex];
             const prevBtns = prevCard.querySelectorAll<HTMLElement>(
@@ -129,7 +138,7 @@ export function useGridNavigation<T = any>({
         } else if (dir === "right") {
           if (btnIndex !== -1 && btnIndex < cardButtons.length - 1) {
             doFocus(cardButtons[btnIndex + 1]);
-          } else {
+          } else if (cards.length > 1) {
             const nextCardIndex = cardIndex < cards.length - 1 ? cardIndex + 1 : 0;
             const nextCard = cards[nextCardIndex];
             const nextBtn = nextCard.querySelector<HTMLElement>(

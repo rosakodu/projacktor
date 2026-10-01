@@ -82,8 +82,12 @@ export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie, onNa
       if (target) {
         try {
           doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+          try {
+            (target as any).TakeFocus?.(0);
+          } catch {}
           target.focus();
           target.classList.add("gpfocus");
+          target.classList.add("gpfocuswithin");
         } catch {}
       }
     }
@@ -109,7 +113,13 @@ export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie, onNa
   );
 
   const handleCardClick = useCallback(
-    (item: WatchlistItem) => {
+    (item: WatchlistItem, e?: any) => {
+      if (e) {
+        try {
+          e.stopPropagation();
+          e.preventDefault();
+        } catch {}
+      }
       playNavSound();
       const mediaItem: MediaItem = {
         id: item.tmdb_id,
@@ -159,8 +169,12 @@ export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie, onNa
     if (target) {
       try {
         doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+        try {
+          (target as any).TakeFocus?.(0);
+        } catch {}
         target.focus();
         target.classList.add("gpfocus");
+        target.classList.add("gpfocuswithin");
         if (items.length > 0) {
           handleCardFocus(items[0], target.closest(".projacktor-dl-grid-card"));
         }
@@ -297,14 +311,14 @@ export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie, onNa
                 </div>
 
                 {/* Нижняя панель действий */}
-                <div className="projacktor-dl-card-btns">
+                <Focusable flow-children="horizontal" noFocusRing className="projacktor-dl-card-btns">
                   {/* Кнопка Открыть/Смотреть */}
                   <Focusable
                     className="projacktor-dl-btn-play success"
                     noFocusRing
                     tabIndex={0}
-                    onClick={() => handleCardClick(item)}
-                    onActivate={() => handleCardClick(item)}
+                    onClick={(e: any) => handleCardClick(item, e)}
+                    onActivate={(e: any) => handleCardClick(item, e)}
                     title={t("openProject")}
                   >
                     <FaPlay style={{ fontSize: 10, marginLeft: 1 }} />
@@ -321,7 +335,7 @@ export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie, onNa
                   >
                     <FaTrash style={{ fontSize: 9.5 }} />
                   </Focusable>
-                </div>
+                </Focusable>
               </div>
             );
           })}
