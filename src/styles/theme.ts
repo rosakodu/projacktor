@@ -921,7 +921,7 @@ body.projacktor-magicblack-active [class*="_3FIjYetykQsFYR08l1v7Ls"] {
 .projacktor-search-history-header {
   display: flex !important;
   align-items: center !important;
-  justify-content: space-between !important;
+  justify-content: flex-start !important;
   margin-bottom: 12px !important;
   user-select: none !important;
 }
@@ -934,31 +934,6 @@ body.projacktor-magicblack-active [class*="_3FIjYetykQsFYR08l1v7Ls"] {
   font-weight: 600 !important;
   color: rgba(255, 255, 255, 0.6) !important;
   letter-spacing: 0.2px !important;
-}
-
-.projacktor-search-history-clear-btn {
-  font-size: 11px !important;
-  font-weight: 500 !important;
-  color: rgba(255, 255, 255, 0.45) !important;
-  background: rgba(255, 255, 255, 0.05) !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
-  border-radius: 4px !important;
-  padding: 4px 10px !important;
-  cursor: pointer !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  gap: 5px !important;
-  transition: all 0.15s ease !important;
-  outline: none !important;
-}
-
-.projacktor-search-history-clear-btn:hover,
-.projacktor-search-history-clear-btn:focus,
-.projacktor-search-history-clear-btn.gpfocus {
-  color: #ffffff !important;
-  background: rgba(239, 68, 68, 0.25) !important;
-  border-color: rgba(239, 68, 68, 0.6) !important;
-  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.8) !important;
 }
 
 .projacktor-search-history-chips {
@@ -975,7 +950,7 @@ body.projacktor-magicblack-active [class*="_3FIjYetykQsFYR08l1v7Ls"] {
   color: rgba(255, 255, 255, 0.75) !important;
   background: rgba(255, 255, 255, 0.05) !important;
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  border-radius: 16px !important;
+  border-radius: 0px !important;
   cursor: pointer !important;
   white-space: nowrap !important;
   user-select: none !important;

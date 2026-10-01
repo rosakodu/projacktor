@@ -1,6 +1,6 @@
 import { FC, useState, useCallback, useEffect, useRef, memo } from "react";
 import { Focusable, GamepadButton } from "@decky/ui";
-import { FaHistory, FaTrash } from "react-icons/fa";
+import { FaHistory } from "react-icons/fa";
 import { MediaItem } from "../types";
 import { searchCatalog } from "../api";
 import { Shelf } from "../components/Shelf";
@@ -10,7 +10,7 @@ import { RawButton, subscribeControllerInput } from "../runtime/controllerInput"
 import { isModalOpen, isUserInTabs, isPlayerActive } from "../runtime/homeInputBus";
 import { playCardNavSound } from "../runtime/navSound";
 import { setBackdropMovie } from "../runtime/backdropBus";
-import { getSearchHistory, addSearchHistory, clearSearchHistory } from "../runtime/searchHistory";
+import { getSearchHistory, addSearchHistory } from "../runtime/searchHistory";
 import { useEnsureFocus } from "../hooks/useEnsureFocus";
 import { useI18n } from "../i18n";
 
@@ -162,12 +162,6 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
     },
     [handleSearch]
   );
-
-  const handleClearHistory = useCallback(() => {
-    clearSearchHistory();
-    setSearchHistory([]);
-    focusSearchInput();
-  }, [focusSearchInput]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -490,28 +484,6 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
               <FaHistory style={{ fontSize: 11 }} />
               <span>{t("recentSearches")}</span>
             </div>
-            <Focusable
-              className="projacktor-search-history-clear-btn"
-              noFocusRing
-              tabIndex={0}
-              onActivate={handleClearHistory}
-              onClick={handleClearHistory}
-              onGamepadDirection={(evt: any) => {
-                const btn = evt?.detail?.button;
-                if (btn === 9 || btn === GamepadButton.DIR_UP) {
-                  focusSearchInput();
-                  return false;
-                }
-                if (btn === 11 || btn === GamepadButton.DIR_LEFT) {
-                  focusFirstHistoryChip();
-                  return false;
-                }
-                return undefined;
-              }}
-            >
-              <FaTrash style={{ fontSize: 9.5 }} />
-              <span>{t("clearSearchHistory")}</span>
-            </Focusable>
           </div>
 
           <Focusable
