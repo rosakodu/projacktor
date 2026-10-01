@@ -75,12 +75,24 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onNavigate
     };
   }, [refreshHistory]);
 
-  // Сброс бэкдропа при монтировании, если история пуста
+  // Синхронизация бэкдропа с элементами истории
   useEffect(() => {
     if (items.length === 0) {
       setBackdropMovie(null, true);
+    } else {
+      const first = items[0];
+      setBackdropMovie({
+        id: first.tmdb_id || first.id,
+        title: first.title,
+        original_title: first.original_title,
+        release_date: first.year,
+        poster_path: first.poster_path,
+        backdrop_path: first.backdrop_path,
+        overview: first.overview,
+        media_type: first.media_type,
+      });
     }
-  }, [items.length]);
+  }, [items]);
 
   useEffect(() => {
     if (isModalOpen() || isPlayerActive()) return;

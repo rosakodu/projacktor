@@ -103,12 +103,31 @@ export const LibraryView: FC<LibraryViewProps> = memo(
 
 
 
-    // Сброс бэкдропа при опустошении списка библиотеки
+    // Синхронизация бэкдропа с элементами библиотеки
     useEffect(() => {
-      if (!isInitialLoading && library.length === 0) {
-        setBackdropMovie(null, true);
+      if (!isInitialLoading) {
+        if (library.length === 0) {
+          setBackdropMovie(null, true);
+        } else {
+          // Если фокус уже на карточке — берем ее фильм, иначе берем первый фильм списка
+          const root = rootRef.current;
+          const doc = getActiveDocument(root);
+          const active = doc?.activeElement;
+          if (active && root?.contains(active)) {
+            const card = active.closest(".projacktor-dl-grid-card") as HTMLElement;
+            if (card) {
+              const id = card.getAttribute("data-item-id");
+              const found = library.find((i) => String(i.id) === id);
+              if (found) {
+                setBackdropMovie(found as any);
+                return;
+              }
+            }
+          }
+          setBackdropMovie(library[0] as any);
+        }
       }
-    }, [library.length, isInitialLoading]);
+    }, [library, isInitialLoading]);
 
     // Авто-фокус на элементе библиотеки при переходе во вкладку
     useEnsureFocus(() => {
@@ -129,6 +148,15 @@ export const LibraryView: FC<LibraryViewProps> = memo(
           doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
           target.focus();
           target.classList.add("gpfocus");
+          // Синхронизируем бэкдроп карточки, получившей фокус
+          const card = target.closest(".projacktor-dl-grid-card") as HTMLElement;
+          if (card) {
+            const id = card.getAttribute("data-item-id");
+            const found = library.find((i) => String(i.id) === id);
+            if (found) {
+              setBackdropMovie(found as any);
+            }
+          }
         } catch {}
         return true;
       }
@@ -377,6 +405,8 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                   className="projacktor-dl-grid-card"
                   data-item-id={item.id}
                   data-card-index={index}
+                  onFocusCapture={() => setBackdropMovie(item as any)}
+                  onMouseEnter={() => setBackdropMovie(item as any)}
                 >
                   {/* Постер + бейджи + полоса загрузки (информационный блок, действия только кнопками ниже) */}
                   {/* Постер + бейджи + полоса загрузки (статичный информационный блок) */}

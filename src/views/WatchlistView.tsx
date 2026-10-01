@@ -51,12 +51,25 @@ export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie, onNa
     };
   }, [refreshList]);
 
-  // Сброс бэкдропа при монтировании, если список пуст
+  // Синхронизация бэкдропа с элементами избранного
   useEffect(() => {
     if (items.length === 0) {
       setBackdropMovie(null, true);
+    } else {
+      const first = items[0];
+      setBackdropMovie({
+        id: first.tmdb_id,
+        title: first.title,
+        original_title: first.original_title,
+        release_date: first.year,
+        poster_path: first.poster_path,
+        backdrop_path: first.backdrop_path,
+        vote_average: first.vote_average,
+        overview: first.overview,
+        media_type: first.media_type,
+      });
     }
-  }, [items.length]);
+  }, [items]);
 
   useEffect(() => {
     if (isModalOpen() || isUserInTabs() || isPlayerActive()) return;
