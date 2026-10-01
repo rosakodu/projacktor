@@ -638,7 +638,7 @@ export const ProjacktorApp: FC = () => {
           <WatchlistView onSelectMovie={handleOpenMovie} onNavigateToCatalog={() => handleSelectTab("movies")} />
         )}
         {activeTab === "history" && (
-          <HistoryView onPlayVideo={handlePlayVideo} onNavigateToCatalog={() => handleSelectTab("movies")} />
+          <HistoryView onPlayVideo={handlePlayVideo} onSelectMovie={handleOpenMovie} onNavigateToCatalog={() => handleSelectTab("movies")} />
         )}
         {activeTab === "library" && (
           <LibraryView

@@ -25,6 +25,7 @@ interface HistoryViewProps {
     mediaInfo?: PlayerMediaInfo,
     initialTime?: number
   ) => void;
+  onSelectMovie?: (item: MediaItem) => void;
   onNavigateToCatalog?: () => void;
 }
 
@@ -40,7 +41,7 @@ function formatTime(seconds: number): string {
   return `${pad(m)}:${pad(s)}`;
 }
 
-export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onNavigateToCatalog }) => {
+export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onSelectMovie, onNavigateToCatalog }) => {
   const rootRef = useRef<HTMLDivElement>(null);
   const rowRef = useRef<HTMLDivElement>(null);
   const [items, setItems] = useState<WatchHistoryItem[]>([]);
@@ -140,11 +141,31 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onNavigate
         } catch {}
       }
       playNavSound();
-      const isDownloaded = Boolean(item.is_downloaded || (!item.is_online && item.file_path));
+      const isDownloaded = Boolean(item.is_downloaded && item.file_path);
       const path = isDownloaded
         ? item.file_path!
-        : (item.stream_url || item.file_path || "");
-      if (!path) return;
+        : (item.stream_url || "");
+      if (!path) {
+        if (onSelectMovie && (item.tmdb_id || item.media_id)) {
+          const mediaItem: MediaItem = {
+            id: item.tmdb_id || item.media_id || 0,
+            title: item.title,
+            original_title: item.original_title,
+            release_date: item.year,
+            poster_path: item.poster_path,
+            backdrop_path: item.backdrop_path,
+            overview: item.overview,
+            media_type: (item.media_type as any) || "movie",
+          };
+          onSelectMovie(mediaItem);
+          return;
+        }
+        if (onNavigateToCatalog) {
+          onNavigateToCatalog();
+          return;
+        }
+        return;
+      }
 
       const mediaInfo: PlayerMediaInfo = {
         mediaId: item.media_id,
@@ -175,7 +196,7 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onNavigate
         item.current_time
       );
     },
-    [onPlayVideo]
+    [onPlayVideo, onSelectMovie, onNavigateToCatalog]
   );
 
   const handleDelete = useCallback((item: WatchHistoryItem, e?: any) => {
@@ -343,7 +364,7 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onNavigate
               ? getImageUrl(item.backdrop_path)
               : null;
             const progressPct = Math.min(100, Math.max(0, item.progress || 0));
-            const isOffline = item.is_downloaded || (!item.is_online && Boolean(item.file_path));
+            const isOffline = Boolean(item.is_downloaded && item.file_path);
 
             return (
               <div

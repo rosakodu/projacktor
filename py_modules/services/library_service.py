@@ -576,6 +576,25 @@ class LibraryService:
                 except Exception as e:
                     logger.warning(f"Error removing download_dir {m['download_dir']}: {e}")
 
+            # Also update watch_history for this media item so is_downloaded = 0 and file_path = NULL
+            try:
+                db.execute(
+                    "UPDATE watch_history SET is_downloaded = 0, file_path = NULL, is_online = 1 WHERE media_id = ?",
+                    (mid,)
+                )
+                if m and m.get('tmdb_id'):
+                    db.execute(
+                        "UPDATE watch_history SET is_downloaded = 0, file_path = NULL, is_online = 1 WHERE tmdb_id = ?",
+                        (m['tmdb_id'],)
+                    )
+                if m and m.get('title'):
+                    db.execute(
+                        "UPDATE watch_history SET is_downloaded = 0, file_path = NULL, is_online = 1 WHERE title = ?",
+                        (m['title'],)
+                    )
+            except Exception as e:
+                logger.warning(f"Error resetting watch_history on delete_library_item: {e}")
+
             db.execute("DELETE FROM media_files WHERE media_id=?", (mid,))
             db.execute("DELETE FROM downloads WHERE media_id=?", (mid,))
             db.execute("DELETE FROM media WHERE id=?", (mid,))

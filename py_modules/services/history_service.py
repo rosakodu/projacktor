@@ -64,6 +64,19 @@ class HistoryService:
                     dl_status = 'completed'
                 else:
                     d['is_downloaded'] = False
+                    d['file_path'] = None
+                    d['is_online'] = 1
+                    # Self-heal SQLite database if it was marked as downloaded but file is gone
+                    if r.get('is_downloaded') or (r.get('file_path') and not os.path.isfile(r['file_path'])):
+                        try:
+                            db.execute(
+                                "UPDATE watch_history SET is_downloaded=0, file_path=NULL, is_online=1 WHERE id=?",
+                                (d['id'],)
+                            )
+                            db.commit()
+                        except Exception as e:
+                            logger.warning(f"Failed to sync watch_history item {d.get('id')}: {e}")
+
                     dl_row = None
                     if d.get('media_id'):
                         dl_row = db.execute(
