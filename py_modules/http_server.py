@@ -31,6 +31,33 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
+ACTIVE_STREAM_LOCK = threading.Lock()
+ACTIVE_STREAM_PROCS = set()
+
+def stop_all_active_streams():
+    with ACTIVE_STREAM_LOCK:
+        procs = list(ACTIVE_STREAM_PROCS)
+        ACTIVE_STREAM_PROCS.clear()
+    for p in procs:
+        try:
+            if hasattr(p, 'stdout') and p.stdout:
+                try:
+                    p.stdout.close()
+                except Exception:
+                    pass
+            p.terminate()
+            try:
+                p.wait(timeout=0.5)
+            except Exception:
+                p.kill()
+                try:
+                    p.wait(timeout=0.5)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+
 def ensure_utf8_subtitles(raw_data: bytes) -> bytes:
     if not raw_data:
         return b""
@@ -411,6 +438,9 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                 self._handle_library_details(id_str)
         elif path == '/api/stream':
             self._handle_stream(query)
+        elif path == '/api/stream/stop':
+            stop_all_active_streams()
+            self._send_json({"success": True})
         elif path == '/api/stream/probe':
             self._handle_stream_probe(query)
         elif path == '/api/stream/subtitles':
@@ -1078,6 +1108,9 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                 is_online=is_online
             )
 
+            # Stop any older dangling stream processes
+            stop_all_active_streams()
+
             env = _clean_env()
             logger.info(f"[Stream] FFmpeg cmd: {' '.join(cmd[:6])}... source={source[:80]}")
             proc = subprocess.Popen(
@@ -1087,6 +1120,8 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                 env=env,
                 bufsize=1024*1024
             )
+            with ACTIVE_STREAM_LOCK:
+                ACTIVE_STREAM_PROCS.add(proc)
 
             # Drain stderr in a background thread to prevent pipe buffer deadlock
             stderr_lines = deque(maxlen=FFMPEG_STDERR_MAX_LINES)
@@ -1125,16 +1160,24 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             except Exception:
                 pass
             finally:
+                with ACTIVE_STREAM_LOCK:
+                    ACTIVE_STREAM_PROCS.discard(proc)
                 if proc:
                     try:
+                        if hasattr(proc, 'stdout') and proc.stdout:
+                            try:
+                                proc.stdout.close()
+                            except Exception:
+                                pass
                         proc.terminate()
                         try:
-                            proc.wait(timeout=1.5)
+                            proc.wait(timeout=0.8)
                         except subprocess.TimeoutExpired:
                             proc.kill()
-                            proc.wait(timeout=1.0)
+                            proc.wait(timeout=0.5)
                     except Exception as e:
                         logger.debug(f"[Stream] Error reaping FFmpeg process: {e}")
+
                     try:
                         proc.stdout.close()
                     except Exception:

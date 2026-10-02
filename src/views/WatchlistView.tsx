@@ -311,7 +311,7 @@ export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie, onNa
                 </div>
 
                 {/* Нижняя панель действий */}
-                <Focusable flow-children="horizontal" noFocusRing className="projacktor-dl-card-btns">
+                <div className="projacktor-dl-card-btns">
                   {/* Кнопка Открыть/Смотреть */}
                   <Focusable
                     className="projacktor-dl-btn-play success"
@@ -335,7 +335,7 @@ export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie, onNa
                   >
                     <FaTrash style={{ fontSize: 9.5 }} />
                   </Focusable>
-                </Focusable>
+                </div>
               </div>
             );
           })}

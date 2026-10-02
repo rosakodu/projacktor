@@ -1,7 +1,7 @@
 import { FC, memo, useEffect, useRef, useCallback, useState } from "react";
 import { Focusable, showModal, ConfirmModal } from "@decky/ui";
-import { FaPlay, FaPause, FaDownload, FaList, FaTrash, FaMoon, FaSync, FaFilm } from "react-icons/fa";
-import { LibraryItem, PlayerMediaInfo } from "../types";
+import { FaPlay, FaPause, FaDownload, FaTrash, FaMoon, FaSync, FaFilm } from "react-icons/fa";
+import { LibraryItem, PlayerMediaInfo, PlaylistItem } from "../types";
 import { formatSpeed, getImageUrl } from "../api";
 import { useLibrary } from "../hooks/useLibrary";
 import { useEnsureFocus } from "../hooks/useEnsureFocus";
@@ -12,6 +12,39 @@ import { setBackdropMovie } from "../runtime/backdropBus";
 import { useGridNavigation, scrollCardHorizontal } from "../hooks/useGridNavigation";
 import { useI18n } from "../i18n";
 
+function parseEpisodeInfo(fileName: string, season?: number, ep?: number) {
+  if (season !== undefined && ep !== undefined && ep !== null && ep !== 999999) {
+    return { season: season || 1, episode: ep };
+  }
+  const sEpMatch = fileName.match(/(?:s|season\s*)(\d{1,3})(?:e|x|episode\s*|\b[.\s_-]+)(\d{1,4})/i);
+  if (sEpMatch) {
+    return { season: parseInt(sEpMatch[1], 10), episode: parseInt(sEpMatch[2], 10) };
+  }
+  const epMatch = fileName.match(/(?:e|ep|серия\s*)(\d{1,4})/i);
+  if (epMatch) {
+    return { season: season || 1, episode: parseInt(epMatch[1], 10) };
+  }
+  const numMatch = fileName.match(/(\d+)/);
+  if (numMatch) {
+    return { season: season || 1, episode: parseInt(numMatch[1], 10) };
+  }
+  return { season: season || 1, episode: 999999 };
+}
+
+function getSortedDownloadedEpisodes(item: LibraryItem) {
+  if (!item.files || item.files.length === 0) return [];
+
+  return [...item.files]
+    .filter((f) => f.file_size > 100 * 1024)
+    .sort((a, b) => {
+      const infoA = parseEpisodeInfo(a.file_name, a.season_number, a.episode_number);
+      const infoB = parseEpisodeInfo(b.file_name, b.season_number, b.episode_number);
+      if (infoA.season !== infoB.season) return infoA.season - infoB.season;
+      if (infoA.episode !== infoB.episode) return infoA.episode - infoB.episode;
+      return a.file_name.localeCompare(b.file_name, undefined, { numeric: true });
+    });
+}
+
 interface LibraryViewProps {
   onPlayVideo: (
     filePath: string,
@@ -19,7 +52,8 @@ interface LibraryViewProps {
     isOnline: boolean,
     torrentHash?: string,
     mediaInfo?: PlayerMediaInfo,
-    initialTime?: number
+    initialTime?: number,
+    playlist?: PlaylistItem[]
   ) => void;
   onActivateMagicBlack?: () => void;
   onNavigateToCatalog?: () => void;
@@ -43,7 +77,9 @@ export const LibraryView: FC<LibraryViewProps> = memo(
       startDownload,
       deleteItem,
       downloadEpisode,
+      pauseEpisodeDownload,
       cancelEpisodeDownload,
+      deleteEpisode,
       watchOnline,
     } = useLibrary(onPlayVideo);
 
@@ -59,6 +95,91 @@ export const LibraryView: FC<LibraryViewProps> = memo(
         return window as EventTarget;
       }
     };
+
+    // Просмотр конкретной серии из модалки с созданием плейлиста для автоперехода
+    const handleWatchEpisode = useCallback(
+      (item: LibraryItem, epIdx: number) => {
+        const sorted = getSortedDownloadedEpisodes(item);
+        if (sorted.length > 0) {
+          const playlist: PlaylistItem[] = sorted.map((ep) => {
+            const info = parseEpisodeInfo(ep.file_name, ep.season_number, ep.episode_number);
+            const epTitle = info.episode !== 999999
+              ? `${item.title} - S${String(info.season).padStart(2, "0")}E${String(info.episode).padStart(2, "0")}`
+              : `${item.title} - ${ep.file_name}`;
+            return {
+              filePath: ep.file_path,
+              title: epTitle,
+              isOnline: false,
+              mediaInfo: {
+                mediaId: item.id,
+                tmdbId: item.tmdb_id,
+                title: item.title,
+                mediaType: "tv",
+                year: item.year,
+                posterPath: item.poster_path,
+                backdropPath: item.backdrop_path,
+                overview: item.overview,
+                seasonNumber: info.season,
+                episodeNumber: info.episode !== 999999 ? info.episode : undefined,
+              },
+            };
+          });
+
+          let targetItem = playlist.find((p) => p.mediaInfo?.episodeNumber === epIdx);
+          if (!targetItem && epIdx > 0 && epIdx <= playlist.length) {
+            targetItem = playlist[epIdx - 1];
+          }
+          if (!targetItem) {
+            targetItem = playlist[0];
+          }
+
+          onPlayVideo(targetItem.filePath, targetItem.title, false, undefined, targetItem.mediaInfo, 0, playlist);
+          return;
+        }
+
+        watchOnline(item, epIdx);
+      },
+      [onPlayVideo, watchOnline]
+    );
+
+    // Запуск сериала с первой серии с автопереходом на следующие серии
+    const handlePlaySeries = useCallback(
+      (item: LibraryItem) => {
+        const sorted = getSortedDownloadedEpisodes(item);
+        if (sorted.length === 0) {
+          handleOpenEpisodes(item);
+          return;
+        }
+
+        const playlist: PlaylistItem[] = sorted.map((ep) => {
+          const info = parseEpisodeInfo(ep.file_name, ep.season_number, ep.episode_number);
+          const epTitle = info.episode !== 999999
+            ? `${item.title} - S${String(info.season).padStart(2, "0")}E${String(info.episode).padStart(2, "0")}`
+            : `${item.title} - ${ep.file_name}`;
+          return {
+            filePath: ep.file_path,
+            title: epTitle,
+            isOnline: false,
+            mediaInfo: {
+              mediaId: item.id,
+              tmdbId: item.tmdb_id,
+              title: item.title,
+              mediaType: "tv",
+              year: item.year,
+              posterPath: item.poster_path,
+              backdropPath: item.backdrop_path,
+              overview: item.overview,
+              seasonNumber: info.season,
+              episodeNumber: info.episode !== 999999 ? info.episode : undefined,
+            },
+          };
+        });
+
+        const firstEp = playlist[0];
+        onPlayVideo(firstEp.filePath, firstEp.title, false, undefined, firstEp.mediaInfo, 0, playlist);
+      },
+      [onPlayVideo]
+    );
 
     // Открытие модалки серий через нативный Decky showModal — B кнопка работает автоматически
     const handleOpenEpisodes = useCallback((item: LibraryItem) => {
@@ -93,14 +214,16 @@ export const LibraryView: FC<LibraryViewProps> = memo(
         <EpisodesModal
           item={item}
           closeModal={() => close(true)}
-          onWatchOnline={(i, epIdx) => { close(false); watchOnline(i, epIdx); }}
-          onDownloadEpisode={(i, ep) => { downloadEpisode(i, ep); }}
-          onCancelEpisodeDownload={(i, ep) => { cancelEpisodeDownload(i, ep); }}
+          onWatchOnline={(i, epIdx) => { close(false); handleWatchEpisode(i, epIdx); }}
+          onDownloadEpisode={(i, ep) => downloadEpisode(i, ep)}
+          onPauseEpisodeDownload={(i, ep) => pauseEpisodeDownload(i, ep)}
+          onCancelEpisodeDownload={(i, ep) => cancelEpisodeDownload(i, ep)}
+          onDeleteEpisode={(i, ep) => deleteEpisode(i, ep)}
         />,
         getParentWindow(),
         { bHideActionIcons: true }
       );
-    }, [watchOnline, downloadEpisode, cancelEpisodeDownload]);
+    }, [handleWatchEpisode, downloadEpisode, pauseEpisodeDownload, cancelEpisodeDownload, deleteEpisode]);
 
     const handlePromptDelete = useCallback(
       (item: LibraryItem, e?: any) => {
@@ -110,12 +233,22 @@ export const LibraryView: FC<LibraryViewProps> = memo(
             e.preventDefault();
           } catch {}
         }
+        const isTv = item.media_type === "tv";
+        const totalEps = item.total_episodes_count || 0;
+        const downloadedEps = item.downloaded_episodes_count || 0;
+        const hasLocalFiles = !!(item.files && item.files.length > 0);
+        const isItemCompleted = isTv
+          ? (totalEps > 0 && downloadedEps >= totalEps)
+          : (item.download_status === "completed" ||
+             (item.download_progress !== undefined && item.download_progress >= 99.9) ||
+             hasLocalFiles);
+
         showModal(
           <ConfirmModal
-            strTitle={t("confirmDeleteTitle")}
+            strTitle={!isItemCompleted ? (t("confirmCancelTitle") || t("cancel")) : t("confirmDeleteTitle")}
             strDescription={`${item.title}${item.year ? ` (${item.year})` : ""}`}
-            strOKButtonText={t("delete")}
-            strCancelButtonText={t("cancel")}
+            strOKButtonText={!isItemCompleted ? t("cancel") : t("delete")}
+            strCancelButtonText={t("close") || "Закрыть"}
             bDestructiveWarning={true}
             onOK={() => {
               deleteItem(item.id);
@@ -163,7 +296,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
       }
 
       const target = root.querySelector<HTMLElement>(
-        ".projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0'], .projacktor-empty-cta-btn, .projacktor-empty-lib"
+        ".projacktor-dl-poster-btn, .projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0'], .projacktor-empty-cta-btn, .projacktor-empty-lib"
       );
       if (target) {
         try {
@@ -438,6 +571,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                   className="projacktor-dl-grid-card"
                   data-item-id={item.id}
                   data-card-index={index}
+                  onClick={(e: any) => handlePrimaryAction(e)}
                   onFocusCapture={() => setBackdropMovie(item as any)}
                   onMouseEnter={() => setBackdropMovie(item as any)}
                 >
@@ -533,28 +667,51 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                   </div>
 
                   {/* Кнопки действий */}
-                  <Focusable flow-children="horizontal" noFocusRing className="projacktor-dl-card-btns">
-                    {/* Кнопка Смотреть (только для скачанного файла) или Серии (для сериала) */}
-                    {(canPlayDirect || hasLocalFiles || isTv) && (
-                      <Focusable
-                        className={`projacktor-dl-btn-play ${(canPlayDirect || hasLocalFiles) ? "success" : ""}`}
-                        noFocusRing
-                        tabIndex={0}
-                        onActivate={(e: any) => handlePrimaryAction(e)}
-                        onClick={(e: any) => handlePrimaryAction(e)}
-                        onFocus={() => setBackdropMovie(item as any)}
-                        onMouseEnter={() => setBackdropMovie(item as any)}
-                        title={isTv ? t("episodes") : ((canPlayDirect || hasLocalFiles) ? t("watchFile") : t("episodes"))}
-                      >
-                        {isTv ? (
-                          <FaList style={{ fontSize: 10 }} />
-                        ) : (
+                  <div className="projacktor-dl-card-btns" onClick={(e) => e.stopPropagation()}>
+                    {/* Кнопка Смотреть: для фильмов — если скачан; для сериалов — если скачана хоть одна серия */}
+                    {isTv ? (
+                      (downloadedEps > 0 || hasLocalFiles) && (
+                        <Focusable
+                          className="projacktor-dl-btn-play success"
+                          noFocusRing
+                          tabIndex={0}
+                          onActivate={(e: any) => {
+                            if (e) {
+                              try { e.stopPropagation(); e.preventDefault(); } catch {}
+                            }
+                            handlePlaySeries(item);
+                          }}
+                          onClick={(e: any) => {
+                            if (e) {
+                              try { e.stopPropagation(); e.preventDefault(); } catch {}
+                            }
+                            handlePlaySeries(item);
+                          }}
+                          onFocus={() => setBackdropMovie(item as any)}
+                          onMouseEnter={() => setBackdropMovie(item as any)}
+                          title={t("watch")}
+                        >
                           <FaPlay style={{ fontSize: 10, marginLeft: 1 }} />
-                        )}
-                      </Focusable>
+                        </Focusable>
+                      )
+                    ) : (
+                      (canPlayDirect || hasLocalFiles) && (
+                        <Focusable
+                          className="projacktor-dl-btn-play success"
+                          noFocusRing
+                          tabIndex={0}
+                          onActivate={(e: any) => handlePrimaryAction(e)}
+                          onClick={(e: any) => handlePrimaryAction(e)}
+                          onFocus={() => setBackdropMovie(item as any)}
+                          onMouseEnter={() => setBackdropMovie(item as any)}
+                          title={t("watchFile")}
+                        >
+                          <FaPlay style={{ fontSize: 10, marginLeft: 1 }} />
+                        </Focusable>
+                      )
                     )}
 
-                    {/* Кнопка Пауза / Загрузить */}
+                    {/* Кнопка Пауза / Загрузить (для сериалов — загрузка всех нескачанных серий) */}
                     {!isCompleted && (
                       <Focusable
                         className="projacktor-dl-btn-icon"
@@ -582,7 +739,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                         }}
                         onFocus={() => setBackdropMovie(item as any)}
                         onMouseEnter={() => setBackdropMovie(item as any)}
-                        title={isDownloading ? t("pause") : isPaused ? t("resume") : t("download")}
+                        title={isDownloading ? t("pause") : isPaused ? t("resume") : (isTv ? t("downloadAllEpisodes") : t("download"))}
                       >
                         {isDownloading ? <FaPause style={{ fontSize: 9.5 }} /> : <FaDownload style={{ fontSize: 9.5 }} />}
                       </Focusable>
@@ -620,7 +777,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                       </Focusable>
                     )}
 
-                    {/* Кнопка Удалить */}
+                    {/* Кнопка Удалить / Отмена */}
                     <Focusable
                       className="projacktor-dl-btn-icon danger"
                       noFocusRing
@@ -629,11 +786,11 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                       onClick={(e: any) => handlePromptDelete(item, e)}
                       onFocus={() => setBackdropMovie(item as any)}
                       onMouseEnter={() => setBackdropMovie(item as any)}
-                      title={t("delete")}
+                      title={!isCompleted ? t("cancel") : t("delete")}
                     >
                       <FaTrash style={{ fontSize: 9.5 }} />
                     </Focusable>
-                  </Focusable>
+                  </div>
                 </div>
               );
             })}

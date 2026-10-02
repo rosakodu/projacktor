@@ -68,8 +68,9 @@ export const CARDS_STYLES = `
   flex-direction: column !important;
   background: #141a23 !important;
   border: 2px solid rgba(255, 255, 255, 0.08) !important;
-  border-radius: 0px !important;
+  border-radius: var(--ds-radius-md, 6px) !important;
   overflow: hidden !important;
+
   cursor: pointer !important;
   position: relative !important;
   outline: none !important;
@@ -311,7 +312,7 @@ export const CARDS_STYLES = `
   flex-direction: column !important;
   background: #141a23 !important;
   border: 2px solid rgba(255, 255, 255, 0.08) !important;
-  border-radius: 0px !important;
+  border-radius: var(--ds-radius-md, 6px) !important;
   overflow: hidden !important;
   position: relative !important;
   outline: none !important;
@@ -362,7 +363,7 @@ export const CARDS_STYLES = `
   position: relative !important;
   overflow: hidden !important;
   border: none !important;
-  border-radius: 0px !important;
+  border-radius: 4px 4px 0 0 !important;
   background: #0f141c !important;
   cursor: pointer !important;
   outline: none !important;
@@ -385,8 +386,10 @@ export const CARDS_STYLES = `
   transform: none !important;
   outline: 2px solid #ffffff !important;
   outline-offset: -2px !important;
+  border-radius: 4px 4px 0 0 !important;
   box-shadow: none !important;
 }
+
 
 .projacktor-dl-poster-btn::before,
 .projacktor-dl-poster-btn::after,

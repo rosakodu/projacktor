@@ -447,13 +447,14 @@ div:has(> .projacktor-modal-root) {
   display: flex !important;
   align-items: center !important;
   justify-content: space-between !important;
-  padding: 4px 8px !important;
+  padding: 6px 10px !important;
   background: rgba(255, 255, 255, 0.04) !important;
   border: 1px solid var(--ds-border) !important;
   gap: 8px !important;
   outline: none !important;
   box-sizing: border-box !important;
-  min-height: 30px !important;
+  min-height: 42px !important;
+  overflow: visible !important;
 }
 
 .projacktor-torrent-ep-row:focus,

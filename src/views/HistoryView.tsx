@@ -436,7 +436,7 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onSelectMo
                 </div>
 
                 {/* Нижняя панель действий */}
-                <Focusable flow-children="horizontal" noFocusRing className="projacktor-dl-card-btns projacktor-history-card-btns">
+                <div className="projacktor-dl-card-btns projacktor-history-card-btns">
                   {/* Кнопка Удалить из истории */}
                   <Focusable
                     className="projacktor-dl-btn-icon danger"
@@ -449,7 +449,7 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onSelectMo
                     <FaTrash style={{ fontSize: 10, marginRight: 5 }} />
                     <span style={{ fontSize: 11, fontWeight: 500 }}>{t("delete")}</span>
                   </Focusable>
-                </Focusable>
+                </div>
               </div>
             );
           })}

@@ -36,7 +36,9 @@ export const rpcGetTorrentEpisodes = callable<
   EpisodeItem[]
 >("get_torrent_episodes");
 export const rpcDownloadEpisode = callable<[number, number], { success: boolean; gid?: string; error?: string }>("download_episode");
+export const rpcPauseEpisodeDownload = callable<[number, number], { success: boolean; error?: string }>("pause_episode_download");
 export const rpcCancelEpisodeDownload = callable<[number, number], { success: boolean; error?: string }>("cancel_episode_download");
+export const rpcDeleteEpisode = callable<[number, number], { success: boolean; error?: string }>("delete_episode");
 export const rpcPrepareStream = callable<
   [mid: number, file_index?: number, force_online?: boolean, magnet?: string],
   {
@@ -315,8 +317,41 @@ function filterTorrents(
           const hasMatchingYear = years.some((y) => Math.abs(y - targetY) <= 1);
           if (!hasMatchingYear) return false;
         } else if (isTargetTv) {
-          const hasValidTvYear = years.some((y) => y >= targetY - 1);
-          if (!hasValidTvYear) return false;
+          const isSeasonOne = /\b(s0?1\b|1\s*сезон|сезон\s*0?1|season\s*0?1|1[-_ ]?й\s*сезон)\b/i.test(title);
+          const hasLaterSeason = /\b(s0?[2-9]\b|s[1-9]\d\b|[2-9]\s*сезон|сезон\s*[2-9]|season\s*[2-9])\b/i.test(title);
+
+          if (isSeasonOne && !hasLaterSeason) {
+            // Релиз 1-го сезона сериала: год обязан быть годом старта сериала (±1 год)
+            const hasMatchingYear = years.some((y) => Math.abs(y - targetY) <= 1);
+            if (!hasMatchingYear) return false;
+          } else if (hasLaterSeason) {
+            // Релиз последующих сезонов (S02+): год релиза не может быть раньше премьеры
+            const hasValidTvYear = years.some((y) => y >= targetY - 1 && y <= targetY + 12);
+            if (!hasValidTvYear) return false;
+          } else {
+            // Релиз без явного номера сезона: если разница лет велика, это чужой проект
+            const hasMatchingYear = years.some((y) => Math.abs(y - targetY) <= 1);
+            if (!hasMatchingYear) return false;
+          }
+        }
+      }
+    }
+
+    // Дополнительная сверка с originalTitle при наличии латинской части в названии релиза
+    if (originalTitle && originalTitle.trim() && !hasCJK(originalTitle)) {
+      const cleanOrig = originalTitle.trim().toLowerCase();
+      const slashParts = title.split("/").map((s: string) => s.trim());
+      if (slashParts.length >= 2) {
+        const latinPart = slashParts.find((p: string) => /^[a-zA-Z0-9\s:.'!?-]+$/.test(p) && !extractYears(p).length);
+        if (latinPart) {
+          const normPart = latinPart.toLowerCase().replace(/^(the|a|an)\s+/i, "").replace(/[^a-z0-9]/g, "");
+          const normOrig = cleanOrig.replace(/^(the|a|an)\s+/i, "").replace(/[^a-z0-9]/g, "");
+          if (normPart.length >= 3 && normOrig.length >= 3) {
+            // Если латинские названия не совпадают и не являются подстроками друг друга
+            if (normPart !== normOrig && !normPart.startsWith(normOrig) && !normOrig.startsWith(normPart)) {
+              return false;
+            }
+          }
         }
       }
     }
@@ -461,7 +496,42 @@ export async function searchTorrents(
       });
     }
 
-    deduplicated.sort((a, b) => (b.seeds || 0) - (a.seeds || 0));
+    const targetY = year ? parseInt(year, 10) : NaN;
+
+    const scoreTorrent = (t: any): number => {
+      let score = 0;
+      const title = t.title || "";
+      const sCount = Number(t.seeds ?? t.seeders ?? 0);
+      const years = extractYears(title);
+
+      if (!isNaN(targetY)) {
+        if (years.includes(targetY)) {
+          score += 10000; // Точное совпадение года премьеры
+        } else if (years.some((y) => Math.abs(y - targetY) <= 1)) {
+          score += 6000;  // Год премьеры ± 1
+        } else if (mediaType === "tv" && years.some((y) => y > targetY && y <= targetY + 6)) {
+          score += 3000;  // Поздний сезон того же сериала
+        } else if (years.length > 0) {
+          score -= 10000; // Несовпадение года
+        }
+      }
+
+      // Бонус за соответствие качества
+      const q = parseQuality(title, t.quality);
+      if (q.includes("1080p")) score += 500;
+      else if (q.includes("4K")) score += 400;
+      else if (q.includes("720p")) score += 200;
+
+      // Штраф за экранки
+      if (q.includes("CAM") || q.includes("TS")) score -= 3000;
+
+      // Нормализованный бонус за сидеров (до 500 очков)
+      score += Math.min(sCount, 100) * 5;
+
+      return score;
+    };
+
+    deduplicated.sort((a, b) => scoreTorrent(b) - scoreTorrent(a));
     return deduplicated;
   } catch {
     return [];

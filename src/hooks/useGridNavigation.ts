@@ -4,7 +4,7 @@ import { playCardNavSound } from "../runtime/navSound";
 import { isModalOpen, isPlayerActive } from "../runtime/homeInputBus";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
 
-const NAV_COOLDOWN_MS = 120;
+const NAV_COOLDOWN_MS = 140;
 
 export function scrollCardHorizontal(row: HTMLElement | null, card: HTMLElement | null) {
   if (!row || !card) return;
@@ -49,7 +49,10 @@ export function useGridNavigation<T = any>({
       const doFocus = (target: HTMLElement | null) => {
         if (!target) return;
         lastNavAtRef.current = Date.now();
-        doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+        doc.querySelectorAll(".gpfocus, .gpfocuswithin").forEach((el) => {
+          el.classList.remove("gpfocus");
+          el.classList.remove("gpfocuswithin");
+        });
         try {
           (target as any).TakeFocus?.(0);
         } catch {}
@@ -237,6 +240,11 @@ export function useGridNavigation<T = any>({
       else if (isDown) handleDirection("down");
       else if (isLeft) handleDirection("left");
       else if (isRight) handleDirection("right");
+      else if (e.button === RawButton.A || e.button === 0) {
+        try {
+          (active as HTMLElement).click();
+        } catch {}
+      }
     });
     return un;
   }, [handleDirection]);
@@ -256,6 +264,12 @@ export function useGridNavigation<T = any>({
       else if (e.key === "ArrowDown") handled = handleDirection("down");
       else if (e.key === "ArrowLeft") handled = handleDirection("left");
       else if (e.key === "ArrowRight") handled = handleDirection("right");
+      else if (e.key === "Enter" || e.key === " ") {
+        try {
+          (active as HTMLElement).click();
+          handled = true;
+        } catch {}
+      }
 
       if (handled) {
         e.preventDefault();

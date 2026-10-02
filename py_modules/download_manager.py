@@ -89,6 +89,8 @@ class DownloadManager:
             "--save-session-interval=30",
             "--bt-prioritize-piece=head=50M,tail=15M",
             "--file-allocation=none",
+            "--allow-overwrite=true",
+            "--auto-file-renaming=false",
             "--bt-save-metadata=true",
             "--bt-load-saved-metadata=true",
             "--enable-dht=true",
@@ -148,14 +150,22 @@ class DownloadManager:
             return None
 
     def add_download(self, magnet, directory, options=None):
-        opt = {"dir": directory}
+        opt = {
+            "dir": directory,
+            "allow-overwrite": "true",
+            "auto-file-renaming": "false",
+        }
         if options and isinstance(options, dict):
             opt.update(options)
         res = self._rpc_call("aria2.addUri", [[magnet], opt])
         return res
 
     def add_torrent(self, torrent_b64, directory, options=None):
-        opt = {"dir": directory}
+        opt = {
+            "dir": directory,
+            "allow-overwrite": "true",
+            "auto-file-renaming": "false",
+        }
         if options and isinstance(options, dict):
             opt.update(options)
         res = self._rpc_call("aria2.addTorrent", [torrent_b64, [], opt])

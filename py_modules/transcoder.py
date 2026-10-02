@@ -144,10 +144,17 @@ def resolve_transcode_plan(
     pix_fmt = (media_info.get("pix_fmt") or "").lower()
     color_transfer = (media_info.get("color_transfer") or "").lower()
 
+    profile = (media_info.get("profile") or "").lower()
+
     # Detect 10-bit HDR content that causes VA-API scale_vaapi format conversion failures.
     # AMD GPUs on Steam Deck cannot do P010→NV12 conversion inside scale_vaapi
     # when Dolby Vision / HDR10 metadata is present.
-    is_10bit = any(tag in pix_fmt for tag in ["10le", "10be", "p010", "yuv420p10"]) or any(tag in color_transfer for tag in ["smpte2084", "arib-std-b67"])
+    is_10bit = (
+        any(tag in pix_fmt for tag in ["10le", "10be", "p010", "yuv420p10", "yuv422p10", "yuv444p10"]) or
+        any(tag in color_transfer for tag in ["smpte2084", "arib-std-b67"]) or
+        "high 10" in profile or
+        "10-bit" in profile
+    )
 
     # Determine target audio codec
     target_acodec = acodec
@@ -165,24 +172,24 @@ def resolve_transcode_plan(
     # Proprietary codecs (AC3, EAC3, DTS, TrueHD, FLAC, Vorbis) or unknown/empty codecs
     # must be transcoded to AAC stereo to avoid silent video playback.
     audio_needs_transcode = (target_acodec not in ["aac", "mp3"]) or (not target_acodec) or (target_acodec == "unknown")
-    # 8-bit H.264/AVC1, VP8, VP9 can be direct copied into fragmented MP4.
-    # 10-bit H.264 (Hi10P) is NOT supported by Chromium HTML5 <video> and must be transcoded.
-    video_is_compatible = (vcodec in ["h264", "avc1", "vp8", "vp9"]) and (not is_10bit)
+    # 8-bit H.264/AVC1 can be direct copied into fragmented MP4.
+    # VP8/VP9, AV1, and 10-bit H.264 (Hi10P) are NOT supported inside HTML5 MP4 in CEF and cause black screen with audio.
+    video_is_compatible = (vcodec in ["h264", "avc1"]) and (not is_10bit)
     
     if transcode_mode == "1":
         video_needs_transcode = True
     elif transcode_mode == "0":
         video_needs_transcode = False
     else:
-        # For auto: only transcode video if codec is not directly supported in CEF HTML5 video (e.g. HEVC/H.265)
+        # For auto: only transcode video if codec is not directly supported in CEF HTML5 video (e.g. HEVC/H.265, VP9, AV1)
         video_needs_transcode = not video_is_compatible
 
     # Determine hardware acceleration method
     hw_accel = "none"
-    # Hardware decoding via VA-API / NVENC on modern GPUs only supports modern video codecs.
-    # Legacy codecs (MPEG-4 / XviD / DivX, MPEG-2, VC-1, WMV) lack hardware decoding support
-    # and must use CPU software transcoding (libx264) to avoid FFmpeg initialization crash.
-    HW_SUPPORTED_VCODECS = {"hevc", "h265", "h264", "avc1", "vp9", "av1"}
+    # Hardware decoding via VA-API on Steam Deck AMD APU (VanGogh/RDNA2) supports HEVC, H.264, VP9.
+    # AV1 lacks hardware decoding on Steam Deck APU and must use CPU software transcoding.
+    # Legacy codecs (MPEG-4 / XviD / DivX, MPEG-2, VC-1, WMV) also lack hardware decoding support.
+    HW_SUPPORTED_VCODECS = {"hevc", "h265", "h264", "avc1", "vp9"}
     can_hw_accel = vcodec in HW_SUPPORTED_VCODECS
 
     if video_needs_transcode and can_hw_accel:
@@ -192,6 +199,7 @@ def resolve_transcode_plan(
             hw_accel = "vaapi"
         else:
             hw_accel = "none"
+
 
     use_vaapi = (hw_accel == "vaapi")
     is_docked = is_external_display_connected()
@@ -299,6 +307,12 @@ def resolve_transcode_plan(
                 target_bitrate = "7M"
                 max_rate = "10M"
                 profile_name = f"720p Native ({accel_tag})"
+
+    if video_needs_transcode and not vf_filter:
+        if hw_accel == "vaapi":
+            vf_filter = "format=nv12,hwupload" if is_10bit else "scale_vaapi=format=nv12"
+        else:
+            vf_filter = "format=yuv420p"
 
     return {
         "video_needs_transcode": video_needs_transcode,

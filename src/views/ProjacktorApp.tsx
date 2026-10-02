@@ -1,7 +1,7 @@
 import { FC, useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { Navigation, Focusable, showModal, GamepadButton } from "@decky/ui";
 import { PROJACKTOR_STYLES } from "../styles";
-import { MediaItem, PlayerMediaInfo } from "../types";
+import { MediaItem, PlayerMediaInfo, PlaylistItem } from "../types";
 import { Header, TabBar, MovieModal, PlayerModal, HeroBackdrop } from "../components";
 import { setBackdropMovie } from "../runtime/backdropBus";
 import { CatalogView } from "./CatalogView";
@@ -36,6 +36,7 @@ interface PlayerConfig {
   torrentHash?: string;
   mediaInfo?: PlayerMediaInfo;
   initialTime?: number;
+  playlist?: PlaylistItem[];
 }
 
 export const ProjacktorApp: FC = () => {
@@ -87,12 +88,31 @@ export const ProjacktorApp: FC = () => {
     }
   };
 
+  const lastPlayedMediaIdRef = useRef<number | string | null>(null);
+
   const closePlayer = useCallback(() => {
     lastPlayerCloseTimeRef.current = Date.now();
     setIsPlayerOpen(false);
     setPlayerActive(false);
     setPlayerConfig(null);
     setTimeout(() => {
+      const root = rootRef.current;
+      const doc = getActiveDocument(root);
+      if (lastPlayedMediaIdRef.current && root && doc) {
+        const targetCard = root.querySelector<HTMLElement>(`[data-item-id="${lastPlayedMediaIdRef.current}"]`);
+        const targetBtn = targetCard?.querySelector<HTMLElement>(
+          ".projacktor-dl-poster-btn, .projacktor-dl-btn-play, [tabindex='0'], .projacktor-card"
+        );
+        if (targetBtn) {
+          doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+          targetBtn.focus();
+          try {
+            (targetBtn as any).TakeFocus?.(0);
+          } catch {}
+          targetBtn.classList.add("gpfocus", "gpfocuswithin");
+          return;
+        }
+      }
       ensureContentFocusRef.current?.(false);
     }, 80);
   }, []);
@@ -104,8 +124,12 @@ export const ProjacktorApp: FC = () => {
       isOnline: boolean,
       torrentHash?: string,
       mediaInfo?: PlayerMediaInfo,
-      initialTime?: number
+      initialTime?: number,
+      playlist?: PlaylistItem[]
     ) => {
+      if (mediaInfo?.mediaId) {
+        lastPlayedMediaIdRef.current = mediaInfo.mediaId;
+      }
       setPlayerConfig({
         filePath,
         title,
@@ -113,12 +137,54 @@ export const ProjacktorApp: FC = () => {
         torrentHash,
         mediaInfo,
         initialTime,
+        playlist,
       });
       setIsPlayerOpen(true);
       setPlayerActive(true);
     },
     []
   );
+
+  const extractCleanPath = (p: string | null | undefined): string => {
+    if (!p) return "";
+    const match = p.match(/[?&]file=([^&]+)/);
+    if (match) {
+      try {
+        return decodeURIComponent(match[1]);
+      } catch {
+        return match[1];
+      }
+    }
+    return p.split("?")[0];
+  };
+
+  const handlePlayNext = useCallback(() => {
+    if (!playerConfig?.playlist || playerConfig.playlist.length <= 1) return false;
+    const currentTarget = extractCleanPath(playerConfig.filePath);
+    const currentIdx = playerConfig.playlist.findIndex((p) => {
+      if (p.filePath === playerConfig.filePath) return true;
+      const cleanP = extractCleanPath(p.filePath);
+      return Boolean(cleanP && currentTarget && cleanP === currentTarget);
+    });
+    if (currentIdx >= 0 && currentIdx + 1 < playerConfig.playlist.length) {
+      const nextItem = playerConfig.playlist[currentIdx + 1];
+      if (nextItem.mediaInfo?.mediaId) {
+        lastPlayedMediaIdRef.current = nextItem.mediaInfo.mediaId;
+      }
+      setPlayerConfig({
+        filePath: nextItem.filePath,
+        title: nextItem.title,
+        isOnline: nextItem.isOnline || false,
+        torrentHash: nextItem.torrentHash,
+        mediaInfo: nextItem.mediaInfo,
+        initialTime: 0,
+        playlist: playerConfig.playlist,
+      });
+      return true;
+    }
+    return false;
+  }, [playerConfig]);
+
 
   const ensureContentFocusRef = useRef<(force?: boolean) => boolean>(() => false);
 
@@ -655,6 +721,7 @@ export const ProjacktorApp: FC = () => {
       {/* Полноэкранный видеоплеер (рендерится напрямую в DOM без модального менеджера Steam) */}
       {isPlayerOpen && playerConfig && (
         <PlayerModal
+          key={playerConfig.filePath}
           filePath={playerConfig.filePath}
           title={playerConfig.title}
           isOnline={playerConfig.isOnline}
@@ -662,6 +729,8 @@ export const ProjacktorApp: FC = () => {
           mediaInfo={playerConfig.mediaInfo}
           initialTime={playerConfig.initialTime}
           closeModal={closePlayer}
+          playlist={playerConfig.playlist}
+          onPlayNext={handlePlayNext}
         />
       )}
     </Focusable>

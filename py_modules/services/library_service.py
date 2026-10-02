@@ -138,7 +138,7 @@ class LibraryService:
                         "path": f_path,
                         "size": length,
                         "completed": 0,
-                        "selected": True,
+                        "selected": False,
                         "downloaded": False
                     })
             episodes.sort(key=_episode_sort_key)
@@ -269,7 +269,7 @@ class LibraryService:
                         ep['downloaded'] = is_complete
                         ep['selected'] = is_selected
                         # If not selected and not completed, bytes are boundary/unrelated pieces
-                        ep['completed'] = c_len if (is_selected or is_complete) else 0
+                        ep['completed'] = t_len if is_complete else (c_len if (is_selected or is_complete) else 0)
                         if af.get('path') and os.path.isabs(af['path']):
                             ep['path'] = af['path']
                         continue
@@ -290,16 +290,77 @@ class LibraryService:
                         df_name, df_path, df_sz = matched_df
                         ep['path'] = df_path
                         header_ok = is_header_ready(df_path)
+                        is_sparse = False
+                        try:
+                            if df_sz > 0:
+                                allocated = os.stat(df_path).st_blocks * 512
+                                req_sz = expected_sz if expected_sz > 0 else df_sz
+                                if allocated < req_sz * 0.95:
+                                    is_sparse = True
+                        except Exception:
+                            pass
+
                         if expected_sz > 0:
-                            is_complete = (df_sz >= expected_sz - 65536) and not os.path.exists(df_path + ".aria2") and header_ok
+                            is_complete = (df_sz >= expected_sz - 65536) and not os.path.exists(df_path + ".aria2") and not has_aria2_file and not is_sparse and header_ok
                         else:
-                            is_complete = (df_sz > 10 * 1024 * 1024) and not has_aria2_file and header_ok
+                            is_complete = (df_sz > 10 * 1024 * 1024) and not has_aria2_file and not is_sparse and header_ok
 
                         ep['downloaded'] = is_complete
-                        ep['completed'] = df_sz if is_complete else (df_sz if header_ok else 0)
+                        ep['completed'] = df_sz if is_complete else 0
+                        ep['selected'] = is_complete
                     else:
                         ep['downloaded'] = False
                         ep['completed'] = 0
+                        ep['selected'] = False
+
+            # Check media_files for any completed episodes recorded in DB
+            m_files = db.execute("SELECT * FROM media_files WHERE media_id=? AND file_size > 102400", (mid,)).fetchall()
+            if m_files:
+                for ep in episodes:
+                    if ep.get('downloaded'):
+                        continue
+                    ep_name = ep.get('name', '')
+                    c_s, c_e, _ = _episode_sort_key(ep_name)
+                    for mf in m_files:
+                        mf_path = mf['file_path']
+                        if not os.path.isfile(mf_path) or os.path.exists(mf_path + ".aria2"):
+                            continue
+                        # Sparse check: if blocks are not fully allocated, file is incomplete
+                        try:
+                            st = os.stat(mf_path)
+                            if st.st_blocks * 512 < mf['file_size'] * 0.95:
+                                continue
+                        except Exception:
+                            continue
+                        if mf['file_name'].lower() == ep_name.lower():
+                            ep['downloaded'] = True
+                            ep['completed'] = mf['file_size']
+                            ep['path'] = mf_path
+                            ep['selected'] = True
+                            break
+                        if c_e != 999999:
+                            m_s, m_e, _ = _episode_sort_key(mf['file_name'])
+                            if m_e == c_e and m_s == c_s:
+                                ep['downloaded'] = True
+                                ep['completed'] = mf['file_size']
+                                ep['path'] = mf_path
+                                ep['selected'] = True
+                                break
+
+            # If there is no active or waiting aria2 task for this media, uncompleted episodes are NOT selected
+            is_dl_active = False
+            if dl and dl.get('aria2_gid') and dm:
+                try:
+                    cst = dm.get_status(dl['aria2_gid'])
+                    if cst and cst.get('status') in ('active', 'waiting', 'paused'):
+                        is_dl_active = True
+                except Exception:
+                    pass
+
+            if not is_dl_active:
+                for ep in episodes:
+                    if not ep.get('downloaded'):
+                        ep['selected'] = False
 
             db.close()
             episodes.sort(key=_episode_sort_key)
@@ -549,6 +610,8 @@ class LibraryService:
                             gids_to_remove.add(t_gid)
                         if m and m.get('download_dir') and t_dir and os.path.abspath(t_dir) == os.path.abspath(m['download_dir']):
                             gids_to_remove.add(t_gid)
+                        if dl and dl.get('download_dir') and t_dir and os.path.abspath(t_dir) == os.path.abspath(dl['download_dir']):
+                            gids_to_remove.add(t_gid)
                 except Exception as e:
                     logger.warning(f"Error finding tasks to remove: {e}")
 
@@ -569,15 +632,26 @@ class LibraryService:
             files = db.execute("SELECT file_path FROM media_files WHERE media_id=?", (mid,)).fetchall()
             for f in files:
                 try:
-                    if os.path.isfile(f['file_path']):
-                        os.remove(f['file_path'])
+                    fp = f.get('file_path')
+                    if fp and os.path.isfile(fp):
+                        os.remove(fp)
+                    if fp and os.path.isfile(f"{fp}.aria2"):
+                        os.remove(f"{fp}.aria2")
                 except: pass
 
-            if m and m.get('download_dir') and os.path.isdir(m['download_dir']):
-                try:
-                    shutil.rmtree(m['download_dir'], ignore_errors=True)
-                except Exception as e:
-                    logger.warning(f"Error removing download_dir {m['download_dir']}: {e}")
+            dirs_to_clean = set()
+            if m and m.get('download_dir'):
+                dirs_to_clean.add(m['download_dir'])
+            if dl and dl.get('download_dir'):
+                dirs_to_clean.add(dl['download_dir'])
+
+            for d in dirs_to_clean:
+                if d and os.path.isdir(d):
+                    try:
+                        shutil.rmtree(d, ignore_errors=True)
+                        logger.info(f"delete_library_item: removed download_dir {d}")
+                    except Exception as e:
+                        logger.warning(f"Error removing download_dir {d}: {e}")
 
             # Also update watch_history for this media item so is_downloaded = 0 and file_path = NULL
             try:
@@ -726,6 +800,9 @@ def rescan_library_from_disk(download_path: str = None, conn=None) -> int:
                 for fn in filenames:
                     if fn.endswith('.aria2'):
                         has_aria2 = True
+
+            for dirpath, _, filenames in os.walk(item_dir):
+                for fn in filenames:
                     ext = os.path.splitext(fn)[1].lower()
                     if ext in video_exts:
                         fp = os.path.realpath(os.path.join(dirpath, fn))
@@ -734,6 +811,8 @@ def rescan_library_from_disk(download_path: str = None, conn=None) -> int:
                         try:
                             sz = os.path.getsize(fp)
                             if sz >= 100 * 1024 and is_header_ready(fp):
+                                if has_aria2 and os.stat(fp).st_blocks * 512 < sz * 0.95:
+                                    continue
                                 vfiles.append((fp, fn, sz))
                                 indexed_files.add(fp)
                         except Exception:
@@ -918,7 +997,7 @@ def rescan_library_from_disk(download_path: str = None, conn=None) -> int:
                 # Исключаем скрытые и системные директории
                 dirs[:] = [
                     d for d in dirs 
-                    if not d.startswith('.') and d.lower() not in skip_dir_names
+                    if not d.startswith('.') and d.lower() not in skip_dir_names and d.lower() not in known_cat_names
                 ]
 
                 # Проверяем, не является ли dirpath стандартной категорией
@@ -926,7 +1005,11 @@ def rescan_library_from_disk(download_path: str = None, conn=None) -> int:
                     continue
 
                 # Ищем неиндексированные видеофайлы в текущей директории
+                if any(f.endswith('.aria2') for f in filenames):
+                    continue
+
                 local_vfiles = []
+
                 for fn in filenames:
                     ext = os.path.splitext(fn)[1].lower()
                     if ext in video_exts and not fn.endswith('.aria2'):
@@ -947,11 +1030,13 @@ def rescan_library_from_disk(download_path: str = None, conn=None) -> int:
                 
                 # Если это не корень и в папке собраны серии сериала или части релиза
                 is_season_folder = any(kw in folder_name.lower() for kw in ["season", "сезон", "s0", "s1", "серии"])
-                is_structured_release = (not is_root_dir) and (len(local_vfiles) > 1 and is_season_folder)
+                has_episode_files = sum(1 for _, fn, _ in local_vfiles if re.search(r'(?i)\b(s\d{1,2}e\d{1,4}|s\d{1,2}|\bep?[-_\s]*\d{1,4}|серия\s*\d+)\b', fn)) >= 2
+                is_structured_release = (not is_root_dir) and (len(local_vfiles) > 1 and (is_season_folder or has_episode_files))
 
                 if is_structured_release:
-                    mtype = "tv" if is_season_folder else "movie"
+                    mtype = "tv"
                     process_media_folder(dirpath, folder_name, mtype)
+
                 else:
                     # Одиночные файлы или файлы в общих папках (например, телефонные видео или отдельные фильмы)
                     for fp, fn, sz in local_vfiles:

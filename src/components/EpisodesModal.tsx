@@ -1,18 +1,39 @@
 import { FC, useState, useEffect, useRef, useCallback } from "react";
 import { ModalRoot, Focusable, Spinner } from "@decky/ui";
-import { FaPlay, FaDownload, FaSpinner, FaTimes } from "react-icons/fa";
+import { FaPlay, FaSpinner } from "react-icons/fa";
 import { EpisodeItem, LibraryItem } from "../types";
 import { formatBytes, rpcGetEpisodes, sortEpisodes } from "../api";
 import { PROJACKTOR_STYLES } from "../styles";
 import { getActiveDocument } from "../runtime/activeDoc";
 import { useI18n } from "../i18n";
 
+const modalBtnStyle: React.CSSProperties = {
+  width: 92,
+  minWidth: 92,
+  maxWidth: 92,
+  height: 28,
+  minHeight: 28,
+  maxHeight: 28,
+  padding: "0 8px",
+  fontSize: 11,
+  fontWeight: 600,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  boxSizing: "border-box",
+  whiteSpace: "nowrap",
+  borderRadius: "var(--ds-radius-sm, 4px)",
+  textAlign: "center",
+};
+
 interface EpisodesModalProps {
   item: LibraryItem;
   closeModal?: () => void;
   onWatchOnline: (item: LibraryItem, epIndex: number) => void;
   onDownloadEpisode: (item: LibraryItem, ep: EpisodeItem) => void;
+  onPauseEpisodeDownload?: (item: LibraryItem, ep: EpisodeItem) => void;
   onCancelEpisodeDownload?: (item: LibraryItem, ep: EpisodeItem) => void;
+  onDeleteEpisode?: (item: LibraryItem, ep: EpisodeItem) => void;
 }
 
 export const EpisodesModal: FC<EpisodesModalProps> = ({
@@ -20,7 +41,9 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
   closeModal,
   onWatchOnline,
   onDownloadEpisode,
+  onPauseEpisodeDownload: _onPauseEpisodeDownload,
   onCancelEpisodeDownload,
+  onDeleteEpisode,
 }) => {
   const { t } = useI18n();
   const listRef = useRef<HTMLDivElement>(null);
@@ -28,6 +51,8 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [downloadingEpIdx, setDownloadingEpIdx] = useState<number | null>(null);
   const [cancellingEpIdx, setCancellingEpIdx] = useState<number | null>(null);
+  const [deletingEpIdx, setDeletingEpIdx] = useState<number | null>(null);
+  const [userSelectedEpIndices, setUserSelectedEpIndices] = useState<Set<number>>(new Set());
 
   const title = item.title || t("noTitle");
   const year = item.year ? String(item.year).split("-")[0] : "";
@@ -120,6 +145,7 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
     if (Date.now() - modalOpenedTimeRef.current < 450) {
       return;
     }
+    setUserSelectedEpIndices((prev) => new Set(prev).add(ep.index));
     setDownloadingEpIdx(ep.index);
     try {
       await onDownloadEpisode(item, ep);
@@ -133,6 +159,11 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
     if (Date.now() - modalOpenedTimeRef.current < 450) {
       return;
     }
+    setUserSelectedEpIndices((prev) => {
+      const next = new Set(prev);
+      next.delete(ep.index);
+      return next;
+    });
     setCancellingEpIdx(ep.index);
     try {
       if (onCancelEpisodeDownload) {
@@ -141,6 +172,26 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
       await fetchEpisodes(false);
     } finally {
       setCancellingEpIdx(null);
+    }
+  };
+
+  const handleDelete = async (ep: EpisodeItem) => {
+    if (Date.now() - modalOpenedTimeRef.current < 450) {
+      return;
+    }
+    setUserSelectedEpIndices((prev) => {
+      const next = new Set(prev);
+      next.delete(ep.index);
+      return next;
+    });
+    setDeletingEpIdx(ep.index);
+    try {
+      if (onDeleteEpisode) {
+        await onDeleteEpisode(item, ep);
+      }
+      await fetchEpisodes(false);
+    } finally {
+      setDeletingEpIdx(null);
     }
   };
 
@@ -279,7 +330,7 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
               overflowY: "auto",
               overflowX: "hidden",
               minHeight: 0,
-              padding: "2px 6px",
+              padding: "6px 8px",
             }}
           >
             {loading ? (
@@ -331,13 +382,23 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
               </div>
             ) : (
               episodes.map((ep: EpisodeItem) => {
+                const hasLocalFile = !!(item.files && item.files.some((f) => {
+                  if (f.file_size <= 100 * 1024) return false;
+                  if (f.file_name.toLowerCase() === ep.name.toLowerCase()) return true;
+                  const epMatch = ep.name.match(/(?:s|season\s*)(\d{1,3})(?:e|x|episode\s*|\b[.\s_-]+)(\d{1,4})/i) || ep.name.match(/(?:e|ep|серия\s*)(\d{1,4})/i) || ep.name.match(/(\d+)/);
+                  const fMatch = f.file_name.match(/(?:s|season\s*)(\d{1,3})(?:e|x|episode\s*|\b[.\s_-]+)(\d{1,4})/i) || f.file_name.match(/(?:e|ep|серия\s*)(\d{1,4})/i) || f.file_name.match(/(\d+)/);
+                  if (epMatch && fMatch && epMatch[0].toLowerCase() === fMatch[0].toLowerCase()) return true;
+                  return false;
+                }));
+
                 const isEpCompleted =
-                  ep.downloaded || (ep.size > 0 && ep.completed >= ep.size);
-                const isEpSelected = ep.selected !== false;
-                const isEpPartial = isEpSelected && ep.completed > 0 && !isEpCompleted;
-                const isEpDownloading = downloadingEpIdx === ep.index;
+                  ep.downloaded === true || hasLocalFile;
+                const isEpSelected = ep.selected === true || userSelectedEpIndices.has(ep.index);
+                const isEpPartial = !isEpCompleted && ep.completed > 0;
                 const isEpCancelling = cancellingEpIdx === ep.index;
-                const isEpActive = (item.download_status === "downloading" && isEpSelected) || isEpPartial || isEpDownloading || isEpCancelling;
+                const isEpDeleting = deletingEpIdx === ep.index;
+                const isEpInQueueOrDownloading =
+                  !isEpCompleted && (isEpSelected || isEpPartial || downloadingEpIdx === ep.index || isEpCancelling);
 
                 return (
                   <div
@@ -391,68 +452,78 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                       </div>
                     </div>
 
-                    {/* Кнопки действий */}
-                    <Focusable
-                      flow-children="horizontal"
-                      noFocusRing
-                      style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}
-                      onCancelButton={closeModal}
+                    {/* Кнопки действий: единая фиксированная ширина 190px для предсказуемости layout */}
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 6,
+                        alignItems: "center",
+                        flexShrink: 0,
+                        width: 190,
+                        justifyContent: "flex-end",
+                      }}
                     >
-                      {isEpCompleted && (
+                      {/* Если скачано: Смотреть и Удалить */}
+                      {isEpCompleted ? (
+                        <>
+                          <Focusable
+                            className="ds-btn ds-btn--compact ds-btn--success"
+                            noFocusRing
+                            onActivate={() => handleWatchOnline(ep.index)}
+                            onClick={() => handleWatchOnline(ep.index)}
+                            onCancelButton={closeModal}
+                            title={t("watchFile")}
+                            style={modalBtnStyle}
+                          >
+                            <FaPlay style={{ fontSize: 9, marginRight: 4 }} />
+                            {t("watch")}
+                          </Focusable>
+                          <Focusable
+                            className="ds-btn ds-btn--compact ds-btn--danger"
+                            noFocusRing
+                            onActivate={() => handleDelete(ep)}
+                            onClick={() => handleDelete(ep)}
+                            onCancelButton={closeModal}
+                            title={t("delete")}
+                            style={modalBtnStyle}
+                          >
+                            {isEpDeleting && (
+                              <FaSpinner style={{ animation: "projacktor-spin 0.9s linear infinite", fontSize: 9, marginRight: 4 }} />
+                            )}
+                            {t("delete")}
+                          </Focusable>
+                        </>
+                      ) : isEpInQueueOrDownloading ? (
+                        /* Если нажали скачать / скачивается: кнопка меняет название на Отмена и становится красной */
                         <Focusable
-                          className="ds-btn ds-btn--compact ds-btn--success"
+                          className="ds-btn ds-btn--compact ds-btn--danger"
                           noFocusRing
-                          onActivate={() => handleWatchOnline(ep.index)}
-                          onClick={() => handleWatchOnline(ep.index)}
+                          onActivate={() => handleCancelDownload(ep)}
+                          onClick={() => handleCancelDownload(ep)}
                           onCancelButton={closeModal}
-                          title={t("watchFile")}
-                          style={{ padding: "4px 10px", fontSize: 11 }}
+                          title={t("cancel")}
+                          style={modalBtnStyle}
                         >
-                          <FaPlay style={{ fontSize: 9, marginRight: 4 }} />
-                          {t("watch")}
+                          {(isEpCancelling || downloadingEpIdx === ep.index) && (
+                            <FaSpinner style={{ animation: "projacktor-spin 0.9s linear infinite", fontSize: 9, marginRight: 4 }} />
+                          )}
+                          {t("cancel")}
+                        </Focusable>
+                      ) : (
+                        /* Если не скачивается: кнопка Скачать того же строгого размера */
+                        <Focusable
+                          className="ds-btn ds-btn--compact"
+                          noFocusRing
+                          onActivate={() => handleDownload(ep)}
+                          onClick={() => handleDownload(ep)}
+                          onCancelButton={closeModal}
+                          title={t("downloadThisEpisode")}
+                          style={modalBtnStyle}
+                        >
+                          {t("download")}
                         </Focusable>
                       )}
-
-                      {!isEpCompleted && (
-                        <>
-                          {isEpActive ? (
-                            <Focusable
-                              className="ds-btn ds-btn--compact ds-btn--danger"
-                              noFocusRing
-                              onActivate={() => handleCancelDownload(ep)}
-                              onClick={() => handleCancelDownload(ep)}
-                              onCancelButton={closeModal}
-                              title={t("cancel")}
-                              style={{ padding: "4px 10px", fontSize: 11 }}
-                            >
-                              {isEpCancelling ? (
-                                <FaSpinner style={{ animation: "projacktor-spin 0.9s linear infinite", fontSize: 9, marginRight: 4 }} />
-                              ) : (
-                                <FaTimes style={{ fontSize: 9, marginRight: 4 }} />
-                              )}
-                              {t("cancel")}
-                            </Focusable>
-                          ) : (
-                            <Focusable
-                              className="ds-btn ds-btn--compact"
-                              noFocusRing
-                              onActivate={() => handleDownload(ep)}
-                              onClick={() => handleDownload(ep)}
-                              onCancelButton={closeModal}
-                              title={t("downloadThisEpisode")}
-                              style={{ padding: "4px 10px", fontSize: 11 }}
-                            >
-                              {isEpDownloading ? (
-                                <FaSpinner style={{ animation: "projacktor-spin 0.9s linear infinite", fontSize: 9, marginRight: 4 }} />
-                              ) : (
-                                <FaDownload style={{ fontSize: 9, marginRight: 4 }} />
-                              )}
-                              {t("download")}
-                            </Focusable>
-                          )}
-                        </>
-                      )}
-                    </Focusable>
+                    </div>
                   </div>
                 );
               })
@@ -460,7 +531,7 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
           </div>
         </div>
 
-        {/* Нижняя панель с кнопкой закрытия/отмены */}
+        {/* Нижняя панель с кнопкой закрытия/отмены того же размера */}
         <div
           style={{
             display: "flex",
@@ -471,12 +542,12 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
           }}
         >
           <Focusable
-            className="ds-btn"
+            className="ds-btn ds-btn--compact"
             noFocusRing
             onActivate={closeModal}
             onClick={closeModal}
             onCancelButton={closeModal}
-            style={{ padding: "6px 16px", fontSize: 11 }}
+            style={modalBtnStyle}
           >
             {t("cancel")}
           </Focusable>

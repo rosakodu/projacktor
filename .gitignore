@@ -46,4 +46,11 @@ AGENT_TASK.md
 AUDIT_REPORT.md
 uninstall_deck.sh
 
+# Test & dev scripts
+test_artifacts/
+test_*.py
+tests/
+open_projacktor.sh
+
+
 

@@ -5,6 +5,7 @@ import {
   FaPause,
   FaBackward,
   FaForward,
+  FaStepForward,
   FaUndo,
   FaClosedCaptioning,
   FaHeadphones,
@@ -60,6 +61,8 @@ interface PlayerControlsProps {
   onSelectAudio: (trackIndex: number) => void;
   onHoverAudioItem: (idx: number) => void;
   onChangeVolume?: (delta: number) => void;
+  hasNextEpisode?: boolean;
+  onPlayNextEpisode?: () => void;
 }
 
 export const PlayerControls: FC<PlayerControlsProps> = ({
@@ -94,6 +97,8 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
   onSelectAudio,
   onHoverAudioItem,
   onChangeVolume,
+  hasNextEpisode,
+  onPlayNextEpisode,
 }) => {
   const { t } = useI18n();
   const isAnyMenuOpen = showAudioMenu || showSubtitleMenu;
@@ -242,6 +247,32 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
       >
         <FaForward />
       </Focusable>
+
+      {/* Кнопка: Следующая серия (если есть в плейлисте) */}
+      {hasNextEpisode && onPlayNextEpisode && (
+        <Focusable
+          tabIndex={isFocusDisabled ? -1 : 0}
+          noFocusRing={isFocusDisabled}
+          className="ds-btn ds-btn--compact ds-btn--icon"
+          onFocus={handleBtnFocus}
+          onBlur={handleBtnBlur}
+          onActivate={(e?: any) => {
+            if (isAnyMenuOpen) return;
+            e?.stopPropagation?.();
+            onPlayNextEpisode();
+          }}
+          onClick={(e?: any) => {
+            if (isAnyMenuOpen) return;
+            e?.stopPropagation?.();
+            onPlayNextEpisode();
+          }}
+          onTouchStart={(e: any) => e?.stopPropagation?.()}
+          style={{ width: 36, height: 32, opacity: isAnyMenuOpen ? 0.4 : 1 }}
+          title={t("nextEpisode")}
+        >
+          <FaStepForward />
+        </Focusable>
+      )}
 
       {/* Кнопка 4: Начать сначала (если playhead > 30s) */}
       {currentPlayhead > 30 && (

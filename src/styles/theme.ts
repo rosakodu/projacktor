@@ -17,9 +17,9 @@ export const THEME_STYLES = `
   --ds-danger:         rgba(255, 90, 90, 0.95);
   --ds-danger-soft:    rgba(255, 80, 80, 0.15);
   --ds-warn:           rgba(255, 200, 90, 0.95);
-  --ds-radius-sm:      0px;
-  --ds-radius-md:      0px;
-  --ds-radius-lg:      0px;
+  --ds-radius-sm:      4px;
+  --ds-radius-md:      6px;
+  --ds-radius-lg:      8px;
 }
 
 /* ───── SteamOS Native Animated Focus Ring (Constraint to Element Inset) ───── */
@@ -42,9 +42,18 @@ export const THEME_STYLES = `
 [class*="_3FIjYetykQsFYR08l1v7Ls"] > div {
   outline-width: 2px !important;
   outline-offset: -2px !important;
-  border-radius: 0px !important;
+  border-radius: var(--ds-radius-md, 6px) !important;
   box-sizing: border-box !important;
 }
+
+.projacktor-player-fullscreen:focus,
+.projacktor-player-fullscreen.gpfocus,
+.projacktor-player-fullscreen.gpfocuswithin {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
 
 .projacktor-app-root {
   position: fixed !important;
@@ -365,7 +374,9 @@ body:has(.projacktor-app-playing) #Footer,
   color: #fff !important;
   box-shadow: 0 0 10px rgba(26, 159, 255, 0.5) !important;
   outline: 2px solid #1a9fff !important;
-  outline-offset: 1px !important;
+  outline-offset: -2px !important;
+  position: relative !important;
+  z-index: 5 !important;
   transform: none !important;
 }
 
@@ -396,42 +407,52 @@ body:has(.projacktor-app-playing) #Footer,
   border-color: #ffffff !important;
   color: #fff !important;
   box-shadow: 0 0 14px rgba(26, 159, 255, 0.75), inset 0 0 0 1px #ffffff !important;
-  outline: 2px solid #60baff !important;
-  outline-offset: 1px !important;
+  outline: 2px solid #ffffff !important;
+  outline-offset: -2px !important;
+  position: relative !important;
+  z-index: 5 !important;
   transform: none !important;
 }
 
 .ds-btn--success {
-  background: #10b981 !important;
-  border-color: #059669 !important;
-  color: #fff !important;
+  background: var(--ds-surface) !important;
+  color: #34d399 !important;
+  border-color: rgba(52, 211, 153, 0.35) !important;
   border-radius: 0px !important;
 }
 
 .ds-btn--success:focus,
 .ds-btn--success.gpfocus,
 .ds-btn--success:hover {
-  background: #34d399 !important;
+  background: #10b981 !important;
   border-color: #ffffff !important;
   color: #fff !important;
   box-shadow: 0 0 10px rgba(16, 185, 129, 0.45) !important;
-  outline: none !important;
+  outline: 2px solid #ffffff !important;
+  outline-offset: -2px !important;
+  position: relative !important;
+  z-index: 5 !important;
   transform: none !important;
 }
 
 .ds-btn--danger {
+  background: var(--ds-surface) !important;
   color: var(--ds-danger) !important;
-  border-color: rgba(255, 90, 90, 0.25) !important;
+  border-color: rgba(255, 90, 90, 0.3) !important;
   border-radius: 0px !important;
 }
 
 .ds-btn--danger:focus,
-.ds-btn--danger.gpfocus {
+.ds-btn--danger.gpfocus,
+.ds-btn--danger:hover {
   background: var(--ds-danger) !important;
-  border-color: var(--ds-danger) !important;
+  border-color: #ffffff !important;
   color: #fff !important;
-  box-shadow: none !important;
-  outline: none !important;
+  box-shadow: 0 0 8px rgba(225, 29, 72, 0.45) !important;
+  outline: 2px solid #ffffff !important;
+  outline-offset: -2px !important;
+  position: relative !important;
+  z-index: 5 !important;
   transform: none !important;
 }
 

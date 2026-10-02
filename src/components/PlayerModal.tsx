@@ -7,7 +7,7 @@ import {
   API_BASE,
   API_HOST,
 } from "../api";
-import { PlayerMediaInfo } from "../types";
+import { PlayerMediaInfo, PlaylistItem } from "../types";
 import { getActiveDocument, isOverlayActiveOrRecent } from "../runtime/activeDoc";
 import { playNavSound } from "../runtime/navSound";
 import { AudioTrack, SubtitleTrack } from "./player/types";
@@ -31,6 +31,8 @@ interface PlayerModalProps {
   mediaInfo?: PlayerMediaInfo;
   initialTime?: number;
   closeModal?: () => void;
+  playlist?: PlaylistItem[];
+  onPlayNext?: () => boolean | void;
 }
 
 export const PlayerModal: FC<PlayerModalProps> = ({
@@ -41,6 +43,8 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   mediaInfo,
   initialTime,
   closeModal,
+  playlist,
+  onPlayNext,
 }) => {
   const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -57,6 +61,11 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     }
     return filePath.startsWith("http://") || filePath.startsWith("https://") ? null : filePath;
   })();
+
+  const currentPlaylistIndex = playlist && playlist.length > 0
+    ? playlist.findIndex((p) => p.filePath === filePath || (actualFilePath && p.filePath === actualFilePath))
+    : -1;
+  const hasNextEpisode = playlist && currentPlaylistIndex >= 0 && currentPlaylistIndex < playlist.length - 1;
 
   const isOnlineOrProxied = isOnline || filePath.startsWith("http://") || filePath.startsWith("https://") || filePath.includes("/api/stream?url=");
   const [duration, setDuration] = useState<number>(mediaInfo?.duration || 0);
@@ -469,13 +478,19 @@ export const PlayerModal: FC<PlayerModalProps> = ({
       if (containerRef.current) {
         try {
           const doc = getActiveDocument(containerRef.current) || document;
-          doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-          if (doc.activeElement && doc.activeElement !== containerRef.current && doc.activeElement !== doc.body) {
-            (doc.activeElement as HTMLElement)?.blur?.();
-          }
+          doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => {
+            if (el !== containerRef.current) el.classList.remove("gpfocus");
+          });
+          containerRef.current.setAttribute("tabindex", "0");
+          containerRef.current.focus();
+          try {
+            (containerRef.current as any).TakeFocus?.(0);
+          } catch {}
+          containerRef.current.classList.add("gpfocus", "gpfocuswithin");
         } catch {}
       }
     }
+
     return undefined;
   }, [showControls, showSubtitleMenu, showAudioMenu]);
 
@@ -817,11 +832,15 @@ export const PlayerModal: FC<PlayerModalProps> = ({
       }
       saveProgressRef.current(currentPlayheadRef.current, durationRef.current);
       rpcResumeAllDownloads().catch(() => {});
+      try {
+        fetch(`${API_BASE}/stream/stop`).catch(() => {});
+      } catch {}
       if (torrentHashRef.current) {
         rpcDropStream(torrentHashRef.current).catch(() => {});
       }
     };
   }, []);
+
 
   // Сброс дорожек и субтитров при смене источника / серии
   useEffect(() => {
@@ -1206,7 +1225,16 @@ export const PlayerModal: FC<PlayerModalProps> = ({
         }
         saveProgressRef.current(0, durationRef.current);
       } catch {}
+
+      let nextStarted = false;
+      if (onPlayNext) {
+        nextStarted = Boolean(onPlayNext());
+      }
+      if (!nextStarted) {
+        closeModalRef.current?.();
+      }
     };
+
 
     video.addEventListener("timeupdate", onTimeUpdate);
     video.addEventListener("loadedmetadata", onLoadedMetadata);
@@ -1237,6 +1265,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   return (
     <Focusable
       ref={containerRef}
+      tabIndex={0}
       className={`projacktor-player-fullscreen${showControls ? "" : " controls-hidden"}`}
       onCancelButton={(evt: any) => {
         try {
@@ -1567,6 +1596,8 @@ export const PlayerModal: FC<PlayerModalProps> = ({
             activeAudioMenuIdxRef.current = idx;
           }}
           onChangeVolume={changeVolume}
+          hasNextEpisode={!!hasNextEpisode}
+          onPlayNextEpisode={() => onPlayNext?.()}
         />
       </Focusable>
   );

@@ -11,7 +11,9 @@ import {
   rpcStartDownload,
   rpcGetEpisodes,
   rpcDownloadEpisode,
+  rpcPauseEpisodeDownload,
   rpcCancelEpisodeDownload,
+  rpcDeleteEpisode,
   rpcPrepareStream,
   rpcRescanLibrary,
   sortEpisodes,
@@ -149,6 +151,22 @@ export function useLibrary(
     [refreshLibrary]
   );
 
+  const pauseEpisodeDownload = useCallback(
+    async (item: LibraryItem, ep: EpisodeItem) => {
+      try {
+        await rpcPauseEpisodeDownload(item.id, ep.index);
+        refreshLibrary();
+        const eps = await rpcGetEpisodes(item.id);
+        if (mountedRef.current && Array.isArray(eps)) {
+          setEpisodesMap((prev) => ({ ...prev, [item.id]: sortEpisodes(eps) }));
+        }
+      } catch (err: any) {
+        console.error("Не удалось поставить серию на паузу:", err);
+      }
+    },
+    [refreshLibrary]
+  );
+
   const cancelEpisodeDownload = useCallback(
     async (item: LibraryItem, ep: EpisodeItem) => {
       try {
@@ -160,6 +178,22 @@ export function useLibrary(
         }
       } catch (err: any) {
         console.error("Не удалось отменить загрузку серии:", err);
+      }
+    },
+    [refreshLibrary]
+  );
+
+  const deleteEpisode = useCallback(
+    async (item: LibraryItem, ep: EpisodeItem) => {
+      try {
+        await rpcDeleteEpisode(item.id, ep.index);
+        refreshLibrary();
+        const eps = await rpcGetEpisodes(item.id);
+        if (mountedRef.current && Array.isArray(eps)) {
+          setEpisodesMap((prev) => ({ ...prev, [item.id]: sortEpisodes(eps) }));
+        }
+      } catch (err: any) {
+        console.error("Не удалось удалить серию:", err);
       }
     },
     [refreshLibrary]
@@ -225,7 +259,9 @@ export function useLibrary(
     startDownload,
     toggleEpisodes,
     downloadEpisode,
+    pauseEpisodeDownload,
     cancelEpisodeDownload,
+    deleteEpisode,
     watchOnline,
   };
 }

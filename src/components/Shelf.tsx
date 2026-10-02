@@ -26,7 +26,7 @@ function computeCenteredScrollLeft(
   return Math.max(0, Math.min(target, maxScroll));
 }
 
-const CARD_STEP_COOLDOWN_MS = 110;
+const CARD_STEP_COOLDOWN_MS = 180;
 
 export const Shelf: FC<ShelfProps> = memo(({ title, items, onSelectMovie, loading, onNavigateUp }) => {
   const { t } = useI18n();

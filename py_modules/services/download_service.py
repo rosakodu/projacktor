@@ -3,9 +3,11 @@
 import os
 import re
 import asyncio
+import shutil
 
 from ..db import get_db, logger
 from ..common import is_executable_release
+
 
 
 class DownloadService:
@@ -204,6 +206,13 @@ class DownloadService:
                         st = dm.get_status(gid) or st
                     if file_indices:
                         dm.select_files(gid, str(file_indices))
+                    else:
+                        try:
+                            flist = dm.get_files(gid) or []
+                            if flist:
+                                dm.select_files(gid, f"1-{len(flist)}")
+                        except Exception as e:
+                            logger.warning(f"Failed to select all files for gid {gid}: {e}")
                     dm.resume(gid)
                     if dl:
                         cursor.execute("UPDATE downloads SET aria2_gid=?, status='downloading', error_message=NULL, magnet_uri=?, torrent_title=?, quality=? WHERE id=?", 
@@ -384,6 +393,8 @@ class DownloadService:
                             opt = {
                                 "dir": m['download_dir'],
                                 "file-allocation": "none",
+                                "allow-overwrite": "true",
+                                "auto-file-renaming": "false",
                                 "bt-prioritize-piece": "head=50M,tail=15M",
                                 "select-file": selected_str
                             }
@@ -396,6 +407,8 @@ class DownloadService:
                         opt = {
                             "dir": m['download_dir'],
                             "file-allocation": "none",
+                            "allow-overwrite": "true",
+                            "auto-file-renaming": "false",
                             "bt-prioritize-piece": "head=50M,tail=15M",
                             "select-file": selected_str
                         }
@@ -440,6 +453,7 @@ class DownloadService:
                 target_ep = episodes[idx - 1]
 
             target_name = target_ep.get('name', '') if target_ep else ''
+            target_path = target_ep.get('path', '') if target_ep else ''
             target_season, target_ep_num, _ = library_service._episode_sort_key(target_name) if (target_name and library_service) else (1, 999999, '')
 
             dl = db.execute("SELECT * FROM downloads WHERE media_id=?", (mid,)).fetchone()
@@ -502,6 +516,30 @@ class DownloadService:
 
             target_file_path = matched_af.get('path', '') if matched_af else ''
 
+            # Collect all candidate file paths for this episode to delete from disk
+            candidate_paths = set()
+            ddir = m.get('download_dir') or dl.get('download_dir') or ''
+            if target_file_path:
+                candidate_paths.add(target_file_path)
+                if ddir and not os.path.isabs(target_file_path):
+                    candidate_paths.add(os.path.join(ddir, target_file_path))
+
+            if target_path:
+                candidate_paths.add(target_path)
+                if ddir and not os.path.isabs(target_path):
+                    candidate_paths.add(os.path.join(ddir, target_path))
+
+            # Scan ddir for any files matching target_name
+            if ddir and os.path.isdir(ddir) and target_name:
+                t_lower = target_name.lower().strip()
+                t_noext = os.path.splitext(t_lower)[0]
+                for root, _, files in os.walk(ddir):
+                    for f in files:
+                        f_clean = f[:-6] if f.endswith('.aria2') else f
+                        f_lower = f_clean.lower().strip()
+                        if f_lower == t_lower or os.path.splitext(f_lower)[0] == t_noext:
+                            candidate_paths.add(os.path.join(root, f_clean))
+
             if matched_af:
                 target_aria2_idx = str(matched_af['index'])
                 current_selected = set(str(af['index']) for af in af_list if af.get('selected') == 'true')
@@ -521,7 +559,7 @@ class DownloadService:
                         except Exception:
                             pass
 
-                    torrent_path = os.path.join(m['download_dir'], f"{target_hash}.torrent") if target_hash else ""
+                    torrent_path = os.path.join(ddir, f"{target_hash}.torrent") if (target_hash and ddir) else ""
                     new_gid = None
                     if torrent_path and os.path.isfile(torrent_path):
                         try:
@@ -529,23 +567,27 @@ class DownloadService:
                             with open(torrent_path, "rb") as tf:
                                 b64 = base64.b64encode(tf.read()).decode('utf-8')
                             opt = {
-                                "dir": m['download_dir'],
+                                "dir": ddir,
                                 "file-allocation": "none",
+                                "allow-overwrite": "true",
+                                "auto-file-renaming": "false",
                                 "bt-prioritize-piece": "head=50M,tail=15M",
                                 "select-file": selected_str
                             }
-                            new_gid = dm.add_torrent(b64, m['download_dir'], opt)
+                            new_gid = dm.add_torrent(b64, ddir, opt)
                         except Exception as te:
                             logger.warning(f"cancel_episode_download: failed to add_torrent: {te}")
 
                     if not new_gid:
                         opt = {
-                            "dir": m['download_dir'],
+                            "dir": ddir,
                             "file-allocation": "none",
+                            "allow-overwrite": "true",
+                            "auto-file-renaming": "false",
                             "bt-prioritize-piece": "head=50M,tail=15M",
                             "select-file": selected_str
                         }
-                        new_gid = dm.add_download(m['magnet_uri'], m['download_dir'], opt)
+                        new_gid = dm.add_download(m['magnet_uri'], ddir, opt)
 
                     db.execute("UPDATE downloads SET aria2_gid=?, status='downloading' WHERE media_id=?", (new_gid, mid))
                     db.commit()
@@ -557,28 +599,359 @@ class DownloadService:
                     logger.info(f"cancel_episode_download: no episodes left selected, marked download as paused for mid {mid}")
 
             # Clean up incomplete files on disk for cancelled episode
-            if target_file_path:
+            for p in candidate_paths:
                 try:
-                    aria2_ctl = f"{target_file_path}.aria2"
-                    if os.path.isfile(aria2_ctl):
-                        os.remove(aria2_ctl)
-                    if os.path.isfile(target_file_path):
-                        is_completed = False
-                        if matched_af:
-                            try:
-                                is_completed = int(matched_af.get('completedLength', 0)) >= int(matched_af.get('length', 1))
-                            except Exception:
-                                pass
-                        if not is_completed or os.path.isfile(aria2_ctl):
-                            os.remove(target_file_path)
+                    ctl = f"{p}.aria2" if not p.endswith('.aria2') else p
+                    if os.path.isfile(ctl):
+                        os.remove(ctl)
+                        logger.info(f"cancel_episode_download: removed ctl {ctl}")
+                    target_p = p[:-6] if p.endswith('.aria2') else p
+                    if os.path.isfile(target_p):
+                        os.remove(target_p)
+                        logger.info(f"cancel_episode_download: removed partial file {target_p}")
                 except Exception as ce:
-                    logger.warning(f"cancel_episode_download: failed to remove partial file {target_file_path}: {ce}")
+                    logger.warning(f"cancel_episode_download: failed to remove file {p}: {ce}")
+
+            # Remove records from media_files
+            try:
+                if target_name:
+                    db.execute("DELETE FROM media_files WHERE media_id=? AND file_name=?", (mid, target_name))
+                for p in candidate_paths:
+                    db.execute("DELETE FROM media_files WHERE media_id=? AND file_path=?", (mid, p))
+                db.commit()
+            except Exception as dbe:
+                logger.warning(f"cancel_episode_download: error deleting media_files record: {dbe}")
+
+            # Check if ANY completed video files or active downloads remain for this media
+            video_exts = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov', '.m4v'}
+            completed_files = []
+            if ddir and os.path.isdir(ddir):
+                for root, _, files in os.walk(ddir):
+                    for f in files:
+                        if not f.endswith('.aria2') and os.path.splitext(f)[1].lower() in video_exts:
+                            fp = os.path.join(root, f)
+                            if not os.path.isfile(f"{fp}.aria2") and os.path.getsize(fp) > 1024 * 1024:
+                                completed_files.append(fp)
+
+            has_aria2_tasks = False
+            if dm and dl and dl.get('aria2_gid'):
+                try:
+                    cst = dm.get_status(dl['aria2_gid'])
+                    if cst and cst.get('status') in ('active', 'waiting'):
+                        has_aria2_tasks = True
+                except Exception:
+                    pass
+
+            if len(completed_files) == 0 and not has_aria2_tasks:
+                if ddir and os.path.isdir(ddir):
+                    try:
+                        shutil.rmtree(ddir, ignore_errors=True)
+                        logger.info(f"cancel_episode_download: removed empty/cancelled project dir {ddir}")
+                    except Exception as rmtree_err:
+                        logger.warning(f"cancel_episode_download: rmtree error: {rmtree_err}")
+                db.execute("DELETE FROM media_files WHERE media_id=?", (mid,))
+                db.execute("DELETE FROM downloads WHERE media_id=?", (mid,))
+                db.execute("UPDATE media SET in_library=0, status='catalog' WHERE id=?", (mid,))
+                try:
+                    db.execute("UPDATE watch_history SET is_downloaded=0, file_path=NULL WHERE media_id=? OR tmdb_id=?", (mid, m.get('tmdb_id')))
+                except Exception:
+                    pass
+                db.commit()
+            elif len(completed_files) > 0:
+                db.execute("UPDATE media SET in_library=1, status='downloaded' WHERE id=?", (mid,))
+                db.commit()
 
             if dm:
                 dm.sync_once()
             return {"success": True}
         except Exception as e:
             logger.error(f"DownloadService cancel_episode_download error: {e}")
+            return {"success": False, "error": str(e)}
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+    async def pause_episode_download(self, mid: int, file_index: int, dm=None, library_service=None, ts=None) -> dict:
+        idx = int(file_index) if file_index is not None else 0
+        db = get_db()
+        try:
+            m = db.execute("SELECT * FROM media WHERE id=?", (mid,)).fetchone()
+            if not m:
+                return {"success": False, "error": "Медиа не найдено"}
+
+            dl = db.execute("SELECT * FROM downloads WHERE media_id=?", (mid,)).fetchone()
+            if not dl or not dl['aria2_gid'] or not dm:
+                return {"success": True, "note": "no_active_download"}
+
+            gid = dl['aria2_gid']
+            st = dm.get_status(gid)
+            if st and st.get('followedBy') and len(st['followedBy']) > 0:
+                gid = st['followedBy'][0]
+
+            af_list = dm.get_files(gid) or []
+            selected_count = sum(1 for af in af_list if af.get('selected') == 'true')
+
+            if selected_count <= 1:
+                dm.pause(gid)
+                db.execute("UPDATE downloads SET status='paused' WHERE media_id=?", (mid,))
+                db.execute("UPDATE media SET status='paused' WHERE id=?", (mid,))
+                db.commit()
+                if dm:
+                    dm.sync_once()
+                return {"success": True, "note": "paused_task"}
+
+            episodes = await library_service.get_episodes(mid, ts=ts, dm=dm) if library_service else []
+            target_ep = next((e for e in episodes if e.get('index') == idx), None)
+            if not target_ep and 1 <= idx <= len(episodes):
+                target_ep = episodes[idx - 1]
+            target_name = target_ep.get('name', '') if target_ep else ''
+            target_season, target_ep_num, _ = library_service._episode_sort_key(target_name) if (target_name and library_service) else (1, 999999, '')
+
+            matched_af = None
+            if target_name:
+                t_clean = target_name.lower().strip()
+                for af in af_list:
+                    if os.path.basename(af.get('path', '')).lower().strip() == t_clean:
+                        matched_af = af
+                        break
+
+            if not matched_af and target_ep_num != 999999 and library_service:
+                for af in af_list:
+                    af_s, af_e, _ = library_service._episode_sort_key(af.get('path', ''))
+                    if af_e != 999999 and af_e == target_ep_num and af_s == target_season:
+                        matched_af = af
+                        break
+
+            if matched_af:
+                target_aria2_idx = str(matched_af['index'])
+                current_selected = set(str(af['index']) for af in af_list if af.get('selected') == 'true')
+                if target_aria2_idx in current_selected:
+                    current_selected.remove(target_aria2_idx)
+                if len(current_selected) > 0:
+                    selected_str = ",".join(sorted(current_selected, key=int))
+
+                    dm._rpc_call("aria2.forceRemove", [gid])
+                    dm._rpc_call("aria2.removeDownloadResult", [gid])
+
+                    target_hash = ""
+                    if "xt=urn:btih:" in (m.get('magnet_uri') or "").lower():
+                        try:
+                            target_hash = m['magnet_uri'].lower().split("xt=urn:btih:")[1].split("&")[0].strip()
+                        except Exception:
+                            pass
+
+                    torrent_path = os.path.join(m['download_dir'], f"{target_hash}.torrent") if target_hash else ""
+                    new_gid = None
+                    if torrent_path and os.path.isfile(torrent_path):
+                        try:
+                            import base64
+                            with open(torrent_path, "rb") as tf:
+                                b64 = base64.b64encode(tf.read()).decode('utf-8')
+                            opt = {
+                                "dir": m['download_dir'],
+                                "file-allocation": "none",
+                                "allow-overwrite": "true",
+                                "auto-file-renaming": "false",
+                                "bt-prioritize-piece": "head=50M,tail=15M",
+                                "select-file": selected_str
+                            }
+                            new_gid = dm.add_torrent(b64, m['download_dir'], opt)
+                        except Exception as te:
+                            logger.warning(f"pause_episode_download: failed to add_torrent: {te}")
+
+                    if not new_gid:
+                        opt = {
+                            "dir": m['download_dir'],
+                            "file-allocation": "none",
+                            "allow-overwrite": "true",
+                            "auto-file-renaming": "false",
+                            "bt-prioritize-piece": "head=50M,tail=15M",
+                            "select-file": selected_str
+                        }
+                        new_gid = dm.add_download(m['magnet_uri'], m['download_dir'], opt)
+
+                    db.execute("UPDATE downloads SET aria2_gid=?, status='downloading' WHERE media_id=?", (new_gid, mid))
+                    db.commit()
+                else:
+                    dm.pause(gid)
+                    db.execute("UPDATE downloads SET status='paused' WHERE media_id=?", (mid,))
+                    db.execute("UPDATE media SET status='paused' WHERE id=?", (mid,))
+                    db.commit()
+                    logger.info(f"pause_episode_download: no episodes left downloading, marked as paused for mid {mid}")
+
+
+            if dm:
+                dm.sync_once()
+            return {"success": True}
+        except Exception as e:
+            logger.error(f"DownloadService pause_episode_download error: {e}")
+            return {"success": False, "error": str(e)}
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+    async def delete_episode(self, mid: int, file_index: int, dm=None, library_service=None, ts=None) -> dict:
+        idx = int(file_index) if file_index is not None else 0
+        db = get_db()
+        try:
+            m = db.execute("SELECT * FROM media WHERE id=?", (mid,)).fetchone()
+            if not m:
+                return {"success": False, "error": "Медиа не найдено"}
+
+            episodes = await library_service.get_episodes(mid, ts=ts, dm=dm) if library_service else []
+            target_ep = next((e for e in episodes if e.get('index') == idx), None)
+            if not target_ep and 1 <= idx <= len(episodes):
+                target_ep = episodes[idx - 1]
+
+            target_name = target_ep.get('name', '') if target_ep else ''
+            target_path = target_ep.get('path', '') if target_ep else ''
+            target_season, target_ep_num, _ = library_service._episode_sort_key(target_name) if (target_name and library_service) else (1, 999999, '')
+
+            # 1. Remove file and .aria2 control file from disk
+            ddir = m.get('download_dir') or ''
+            candidate_paths = set()
+            if target_path:
+                candidate_paths.add(target_path)
+                if ddir and not os.path.isabs(target_path):
+                    candidate_paths.add(os.path.join(ddir, target_path))
+
+            if ddir and os.path.isdir(ddir) and target_name:
+                t_lower = target_name.lower().strip()
+                t_noext = os.path.splitext(t_lower)[0]
+                for root, _, files in os.walk(ddir):
+                    for f in files:
+                        f_clean = f[:-6] if f.endswith('.aria2') else f
+                        f_lower = f_clean.lower().strip()
+                        if f_lower == t_lower or os.path.splitext(f_lower)[0] == t_noext:
+                            candidate_paths.add(os.path.join(root, f_clean))
+
+            for p in candidate_paths:
+                try:
+                    ctl = f"{p}.aria2" if not p.endswith('.aria2') else p
+                    if os.path.isfile(ctl):
+                        os.remove(ctl)
+                        logger.info(f"delete_episode: removed ctl {ctl}")
+                    target_p = p[:-6] if p.endswith('.aria2') else p
+                    if os.path.isfile(target_p):
+                        os.remove(target_p)
+                        logger.info(f"delete_episode: removed file {target_p}")
+                except Exception as fe:
+                    logger.warning(f"delete_episode: failed to remove file {p}: {fe}")
+
+            # 2. Delete from media_files table
+            try:
+                if target_name:
+                    db.execute("DELETE FROM media_files WHERE media_id=? AND file_name=?", (mid, target_name))
+                for p in candidate_paths:
+                    db.execute("DELETE FROM media_files WHERE media_id=? AND file_path=?", (mid, p))
+                db.commit()
+            except Exception as dbe:
+                logger.warning(f"delete_episode: db error: {dbe}")
+
+            # 3. If there is an active aria2 task, unselect this file
+            dl = db.execute("SELECT * FROM downloads WHERE media_id=?", (mid,)).fetchone()
+            if dl and dl.get('aria2_gid') and dm:
+                gid = dl['aria2_gid']
+                st = dm.get_status(gid)
+                if st and st.get('followedBy') and len(st['followedBy']) > 0:
+                    gid = st['followedBy'][0]
+
+                af_list = dm.get_files(gid) or []
+                matched_af = None
+                if target_name:
+                    t_clean = target_name.lower().strip()
+                    for af in af_list:
+                        if os.path.basename(af.get('path', '')).lower().strip() == t_clean:
+                            matched_af = af
+                            break
+
+                if matched_af:
+                    target_aria2_idx = str(matched_af['index'])
+                    current_selected = set(str(af['index']) for af in af_list if af.get('selected') == 'true')
+                    if target_aria2_idx in current_selected:
+                        current_selected.remove(target_aria2_idx)
+
+                    dm._rpc_call("aria2.forceRemove", [gid])
+                    dm._rpc_call("aria2.removeDownloadResult", [gid])
+
+                    if len(current_selected) > 0:
+                        selected_str = ",".join(sorted(current_selected, key=int))
+                        target_hash = ""
+                        if "xt=urn:btih:" in (m.get('magnet_uri') or "").lower():
+                            try:
+                                target_hash = m['magnet_uri'].lower().split("xt=urn:btih:")[1].split("&")[0].strip()
+                            except Exception:
+                                pass
+
+                        torrent_path = os.path.join(m['download_dir'], f"{target_hash}.torrent") if target_hash else ""
+                        new_gid = None
+                        if torrent_path and os.path.isfile(torrent_path):
+                            try:
+                                import base64
+                                with open(torrent_path, "rb") as tf:
+                                    b64 = base64.b64encode(tf.read()).decode('utf-8')
+                                opt = {
+                                    "dir": m['download_dir'],
+                                    "file-allocation": "none",
+                                    "allow-overwrite": "true",
+                                    "auto-file-renaming": "false",
+                                    "bt-prioritize-piece": "head=50M,tail=15M",
+                                    "select-file": selected_str
+                                }
+                                new_gid = dm.add_torrent(b64, m['download_dir'], opt)
+                            except Exception:
+                                pass
+
+                        if not new_gid:
+                            opt = {
+                                "dir": m['download_dir'],
+                                "file-allocation": "none",
+                                "allow-overwrite": "true",
+                                "auto-file-renaming": "false",
+                                "bt-prioritize-piece": "head=50M,tail=15M",
+                                "select-file": selected_str
+                            }
+                            new_gid = dm.add_download(m['magnet_uri'], m['download_dir'], opt)
+
+                        db.execute("UPDATE downloads SET aria2_gid=? WHERE media_id=?", (new_gid, mid))
+                        db.commit()
+                    else:
+                        db.execute("UPDATE downloads SET status='paused', progress=0 WHERE media_id=?", (mid,))
+                        db.commit()
+
+            # 4. Check if any remaining video files exist on disk for this media
+            remaining_eps = await library_service.get_episodes(mid, ts=ts, dm=dm) if library_service else []
+            has_remaining_files = any(e.get('downloaded') for e in remaining_eps if e.get('index') != idx)
+            is_active_dl = dl and dl.get('status') == 'downloading'
+
+            if not has_remaining_files and not is_active_dl:
+                if ddir and os.path.isdir(ddir):
+                    try:
+                        shutil.rmtree(ddir, ignore_errors=True)
+                        logger.info(f"delete_episode: removed empty project dir {ddir}")
+                    except Exception as rmtree_err:
+                        logger.warning(f"delete_episode: rmtree error: {rmtree_err}")
+                db.execute("DELETE FROM media_files WHERE media_id=?", (mid,))
+                db.execute("DELETE FROM downloads WHERE media_id=?", (mid,))
+                db.execute("UPDATE media SET in_library=0, status='catalog' WHERE id=?", (mid,))
+                try:
+                    db.execute("UPDATE watch_history SET is_downloaded=0, file_path=NULL WHERE media_id=? OR tmdb_id=?", (mid, m['tmdb_id']))
+                except Exception:
+                    pass
+                db.commit()
+            elif has_remaining_files:
+                db.execute("UPDATE media SET in_library=1, status='downloaded' WHERE id=?", (mid,))
+                db.commit()
+
+            if dm:
+                dm.sync_once()
+            return {"success": True}
+        except Exception as e:
+            logger.error(f"DownloadService delete_episode error: {e}")
             return {"success": False, "error": str(e)}
         finally:
             try:
@@ -679,14 +1052,109 @@ class DownloadService:
     def delete_download(self, did: int, dm=None) -> bool:
         db = get_db()
         try:
-            row = db.execute("SELECT aria2_gid FROM downloads WHERE id=?", (did,)).fetchone()
-            if row and row['aria2_gid'] and dm:
+            row = db.execute("SELECT * FROM downloads WHERE id=?", (did,)).fetchone()
+            if not row:
+                return True
+
+            mid = row.get('media_id')
+            m = db.execute("SELECT * FROM media WHERE id=?", (mid,)).fetchone() if mid else None
+
+            # 1. Remove aria2 tasks
+            if dm:
+                target_hash = ""
+                if row.get('magnet_uri') and "xt=urn:btih:" in str(row['magnet_uri']).lower():
+                    try:
+                        target_hash = str(row['magnet_uri']).lower().split("xt=urn:btih:")[1].split("&")[0].strip()
+                    except: pass
+                elif m and m.get('magnet_uri') and "xt=urn:btih:" in str(m['magnet_uri']).lower():
+                    try:
+                        target_hash = str(m['magnet_uri']).lower().split("xt=urn:btih:")[1].split("&")[0].strip()
+                    except: pass
+
+                gids_to_remove = set()
+                if row.get('aria2_gid'):
+                    gids_to_remove.add(row['aria2_gid'])
+
                 try:
-                    dm.remove(row['aria2_gid'])
-                except Exception:
-                    pass
+                    all_tasks = (dm.tell_active() or []) + (dm.tell_waiting() or []) + (dm.tell_stopped() or [])
+                    for t in all_tasks:
+                        t_gid = t.get('gid')
+                        t_hash = (t.get('infoHash') or '').lower()
+                        t_dir = t.get('dir') or ''
+                        if t_gid in gids_to_remove:
+                            for fb in (t.get('followedBy') or []):
+                                gids_to_remove.add(fb)
+                        if target_hash and t_hash and t_hash == target_hash:
+                            gids_to_remove.add(t_gid)
+                        if row.get('download_dir') and t_dir and os.path.abspath(t_dir) == os.path.abspath(row['download_dir']):
+                            gids_to_remove.add(t_gid)
+                        if m and m.get('download_dir') and t_dir and os.path.abspath(t_dir) == os.path.abspath(m['download_dir']):
+                            gids_to_remove.add(t_gid)
+                except Exception as e:
+                    logger.warning(f"Error finding tasks to remove in delete_download: {e}")
+
+                for g in gids_to_remove:
+                    try:
+                        dm.remove(g)
+                    except: pass
+                    try:
+                        dm._rpc_call("aria2.forceRemove", [g])
+                    except: pass
+                    try:
+                        dm._rpc_call("aria2.removeDownloadResult", [g])
+                    except: pass
+                try:
+                    dm.purge_download_result()
+                except: pass
+
+            # 2. Delete all files and directories on disk
+            dirs_to_clean = set()
+            if row.get('download_dir'):
+                dirs_to_clean.add(row['download_dir'])
+            if m and m.get('download_dir'):
+                dirs_to_clean.add(m['download_dir'])
+
+            if mid:
+                files = db.execute("SELECT file_path FROM media_files WHERE media_id=?", (mid,)).fetchall()
+                for f in files:
+                    try:
+                        fp = f.get('file_path')
+                        if fp and os.path.isfile(fp):
+                            os.remove(fp)
+                        if fp and os.path.isfile(f"{fp}.aria2"):
+                            os.remove(f"{fp}.aria2")
+                    except: pass
+
+            for d in dirs_to_clean:
+                if d and os.path.isdir(d):
+                    try:
+                        shutil.rmtree(d, ignore_errors=True)
+                        logger.info(f"delete_download: removed directory {d}")
+                    except Exception as e:
+                        logger.warning(f"Error removing download_dir {d}: {e}")
+
+            # 3. Clean up DB records
+            if mid:
+                db.execute("DELETE FROM media_files WHERE media_id=?", (mid,))
+                db.execute("UPDATE media SET in_library=0, status='catalog' WHERE id=?", (mid,))
+                try:
+                    db.execute(
+                        "UPDATE watch_history SET is_downloaded = 0, file_path = NULL, is_online = 1 WHERE media_id = ?",
+                        (mid,)
+                    )
+                except Exception: pass
+                if m and m.get('tmdb_id'):
+                    try:
+                        db.execute(
+                            "UPDATE watch_history SET is_downloaded = 0, file_path = NULL, is_online = 1 WHERE tmdb_id = ?",
+                            (m['tmdb_id'],)
+                        )
+                    except Exception: pass
+
             db.execute("DELETE FROM downloads WHERE id=?", (did,))
             db.commit()
+            if dm:
+                dm.sync_once()
             return True
         except Exception as e:
             logger.error(f"DownloadService delete_download error: {e}")

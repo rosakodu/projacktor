@@ -78,6 +78,8 @@ export interface LibraryItem {
     file_size: number;
     watched: number;
     watch_progress: number;
+    season_number?: number;
+    episode_number?: number;
   }>;
 }
 
@@ -146,6 +148,14 @@ export interface PlayerMediaInfo {
   seasonNumber?: number;
   episodeNumber?: number;
   duration?: number;
+}
+
+export interface PlaylistItem {
+  filePath: string;
+  title: string;
+  isOnline?: boolean;
+  torrentHash?: string;
+  mediaInfo?: PlayerMediaInfo;
 }
 
 export type CatalogCategory = "movie" | "tv" | "cartoon" | "anime";

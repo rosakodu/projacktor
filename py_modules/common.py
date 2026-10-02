@@ -590,7 +590,20 @@ def search_tmdb_metadata(title: str, year: int = None, media_type: str = "movie"
                         req_ny = urllib.request.Request(url_ny, headers={"User-Agent": "Mozilla/5.0"})
                         with urllib.request.urlopen(req_ny, timeout=5, context=ctx) as r2:
                             d2 = json.loads(r2.read().decode('utf-8'))
-                            results = d2.get("results", [])
+                            raw_results = d2.get("results", [])
+                            # ВАЖНО: При fallback без года ищем результат с близким годом (±1 год).
+                            # Категорически запрещено брать чужой проект, вышедший с разницей в несколько лет (например 2017 vs 2026)!
+                            matched_year_results = []
+                            for r_item in raw_results:
+                                r_dt = r_item.get("release_date") or r_item.get("first_air_date") or ""
+                                if r_dt and len(r_dt) >= 4:
+                                    try:
+                                        r_y = int(r_dt[:4])
+                                        if abs(r_y - target_year) <= 1:
+                                            matched_year_results.append(r_item)
+                                    except Exception:
+                                        pass
+                            results = matched_year_results
 
                     if results:
                         first = results[0]
@@ -603,6 +616,8 @@ def search_tmdb_metadata(title: str, year: int = None, media_type: str = "movie"
                                 res_year = int(res_date[:4])
                             except Exception:
                                 pass
+                        if target_year and res_year and abs(res_year - target_year) > 1:
+                            continue
                         return {
                             "tmdb_id": first.get("id"),
                             "title": res_title,
