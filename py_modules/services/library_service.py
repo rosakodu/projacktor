@@ -158,8 +158,24 @@ class LibraryService:
             video_exts = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov', '.m4v'}
             existing_files = db.execute("SELECT * FROM media_files WHERE media_id=? ORDER BY file_name ASC", (mid,)).fetchall()
             
+            magnet = m.get('magnet_uri')
+            if not magnet and m.get('download_dir') and os.path.isdir(m.get('download_dir')):
+                try:
+                    for f in os.listdir(m['download_dir']):
+                        if f.endswith('.torrent') and len(f) == 48:
+                            th = f[:-8].lower()
+                            magnet = f"magnet:?xt=urn:btih:{th}"
+                            db.execute("UPDATE media SET magnet_uri=? WHERE id=?", (magnet, mid))
+                            db.execute("UPDATE downloads SET magnet_uri=? WHERE media_id=?", (magnet, mid))
+                            db.commit()
+                            m = dict(m)
+                            m['magnet_uri'] = magnet
+                            break
+                except Exception as ex:
+                    logger.debug(f"Error checking local torrent file: {ex}")
+
             # 1. If purely local media (no magnet link attached), return indexed local files
-            if not m.get('magnet_uri') and existing_files and len(existing_files) > 0:
+            if not magnet and existing_files and len(existing_files) > 0:
                 db.close()
                 episodes = []
                 for idx, f in enumerate(existing_files, 1):
@@ -179,7 +195,6 @@ class LibraryService:
 
             # 2. Get episodes list: from in-memory cache, DB cache, or TorrServer
             episodes = []
-            magnet = m.get('magnet_uri')
             thash = extract_hash_from_magnet(magnet) if magnet else None
             if thash:
                 thash = thash.lower()
@@ -301,9 +316,9 @@ class LibraryService:
                             pass
 
                         if expected_sz > 0:
-                            is_complete = (df_sz >= expected_sz - 65536) and not os.path.exists(df_path + ".aria2") and not has_aria2_file and not is_sparse and header_ok
+                            is_complete = (df_sz >= expected_sz - 65536) and not os.path.exists(df_path + ".aria2") and not is_sparse and header_ok
                         else:
-                            is_complete = (df_sz > 10 * 1024 * 1024) and not has_aria2_file and not is_sparse and header_ok
+                            is_complete = (df_sz > 10 * 1024 * 1024) and not os.path.exists(df_path + ".aria2") and not is_sparse and header_ok
 
                         ep['downloaded'] = is_complete
                         ep['completed'] = df_sz if is_complete else 0
@@ -438,12 +453,47 @@ class LibraryService:
                     except: pass
                 d['total_episodes_count'] = total_eps
 
-                if d.get('media_type') == 'tv':
-                    if total_eps > 0 and len(d['files']) < total_eps:
-                        if d.get('download_status') == 'completed':
-                            d['download_status'] = 'in_library'
-                    elif total_eps > 0 and len(d['files']) >= total_eps:
+                # Проверка статусов для фильмов: ошибка или отсутствие файлов не могут быть 'completed'
+                if d.get('media_type') != 'tv':
+                    if d.get('download_status') == 'error':
+                        if not valid_files:
+                            d['download_progress'] = 0.0
+                    elif valid_files:
                         d['download_status'] = 'completed'
+                        d['download_progress'] = 100.0
+                    elif d.get('download_status') == 'completed' and not valid_files:
+                        d['download_status'] = 'error' if d.get('error_message') else 'catalog'
+                        d['download_progress'] = 0.0
+
+                # Проверка статусов для сериалов: если скорость 0 и нет активных .aria2 файлов, не показываем 'downloading'
+                if d.get('media_type') == 'tv':
+                    ddir = d.get('effective_download_dir') or d.get('download_dir') or ''
+                    has_active_aria2 = False
+                    if ddir and os.path.isdir(ddir):
+                        try:
+                            has_active_aria2 = any(f.endswith('.aria2') for _, _, fs in os.walk(ddir) for f in fs)
+                        except Exception:
+                            has_active_aria2 = False
+
+                    if d.get('download_status') == 'downloading' and (d.get('download_speed') or 0) == 0 and not has_active_aria2:
+                        if total_eps > 0 and len(valid_files) >= total_eps:
+                            d['download_status'] = 'completed'
+                            d['download_progress'] = 100.0
+                        elif len(valid_files) > 0:
+                            d['download_status'] = 'in_library'
+                            d['download_progress'] = round((len(valid_files) / total_eps) * 100, 1) if total_eps > 0 else 0
+                        else:
+                            d['download_status'] = 'paused'
+                        if d.get('download_id'):
+                            try:
+                                db.execute("UPDATE downloads SET status='paused', download_speed=0 WHERE id=?", (d['download_id'],))
+                                db.commit()
+                            except Exception:
+                                pass
+                    elif total_eps > 0 and len(valid_files) >= total_eps:
+                        d['download_status'] = 'completed'
+                    elif total_eps > 0 and len(valid_files) < total_eps and d.get('download_status') == 'completed':
+                        d['download_status'] = 'in_library'
 
                 result.append(d)
             return result
@@ -848,18 +898,29 @@ def rescan_library_from_disk(download_path: str = None, conn=None) -> int:
                         ORDER BY id ASC LIMIT 1
                     """, (parsed_title, folder_name)).fetchone()
 
+            detected_magnet = ''
+            if item_dir and os.path.isdir(item_dir):
+                try:
+                    for f in os.listdir(item_dir):
+                        if f.endswith('.torrent') and len(f) == 48:
+                            detected_magnet = f"magnet:?xt=urn:btih:{f[:-8].lower()}"
+                            break
+                except Exception:
+                    pass
+
             if row:
                 mid = row['id'] if isinstance(row, dict) else row[0]
                 cursor.execute("""
                     UPDATE media 
-                    SET in_library = 1, status = 'downloaded', download_dir = ?
+                    SET in_library = 1, status = 'downloaded', download_dir = ?,
+                        magnet_uri = COALESCE(NULLIF(magnet_uri, ''), ?)
                     WHERE id = ?
-                """, (item_dir, mid))
+                """, (item_dir, detected_magnet, mid))
             else:
                 cursor.execute("""
-                    INSERT INTO media (title, year, media_type, in_library, status, download_dir)
-                    VALUES (?, ?, ?, 1, 'downloaded', ?)
-                """, (parsed_title, parsed_year, media_type, item_dir))
+                    INSERT INTO media (title, year, media_type, in_library, status, download_dir, magnet_uri)
+                    VALUES (?, ?, ?, 1, 'downloaded', ?, ?)
+                """, (parsed_title, parsed_year, media_type, item_dir, detected_magnet))
                 mid = cursor.lastrowid
 
             for fp, fn, sz in vfiles:
@@ -891,8 +952,8 @@ def rescan_library_from_disk(download_path: str = None, conn=None) -> int:
                     INSERT INTO downloads (
                         media_id, magnet_uri, torrent_title, status, progress, 
                         total_size, downloaded_size, download_dir, completed_at
-                    ) VALUES (?, '', ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                """, (mid, folder_name, dl_status, dl_progress, tot_sz, tot_sz, item_dir))
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """, (mid, detected_magnet, folder_name, dl_status, dl_progress, tot_sz, tot_sz, item_dir))
             else:
                 dl_id = dl_row['id'] if isinstance(dl_row, dict) else dl_row[0]
                 dl_st = dl_row['status'] if isinstance(dl_row, dict) else dl_row[1]

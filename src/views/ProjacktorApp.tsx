@@ -303,6 +303,11 @@ export const ProjacktorApp: FC = () => {
     setActiveTab(tabId);
   }, [holdFocusOnFallback]);
 
+  const focusActiveTab = useCallback(() => {
+    // Вкладки переключаются глобально через L1/R1.
+    // При навигации вверх фокус удерживается на верхнем элементе контента.
+  }, []);
+
   // Гарантированная фокусировка на контенте активного раздела при переключении вкладок или потере фокуса
   const ensureContentFocus = useCallback((forceContent = false) => {
     if (!ready) return false;
@@ -664,6 +669,7 @@ export const ProjacktorApp: FC = () => {
             onSelectTab={handleSelectTab}
             onPrevTab={prevTab}
             onNextTab={nextTab}
+            onNavigateDown={() => ensureContentFocus(true)}
           />
         </div>
       )}
@@ -686,35 +692,36 @@ export const ProjacktorApp: FC = () => {
       >
 
         {activeTab === "movies" && (
-          <CatalogView key="movies" category="movie" onSelectMovie={handleOpenMovie} />
+          <CatalogView key="movies" category="movie" onSelectMovie={handleOpenMovie} onNavigateUp={focusActiveTab} />
         )}
         {activeTab === "tv" && (
-          <CatalogView key="tv" category="tv" onSelectMovie={handleOpenMovie} />
+          <CatalogView key="tv" category="tv" onSelectMovie={handleOpenMovie} onNavigateUp={focusActiveTab} />
         )}
         {activeTab === "cartoons" && (
-          <CatalogView key="cartoons" category="cartoon" onSelectMovie={handleOpenMovie} />
+          <CatalogView key="cartoons" category="cartoon" onSelectMovie={handleOpenMovie} onNavigateUp={focusActiveTab} />
         )}
         {activeTab === "anime" && (
-          <CatalogView key="anime" category="anime" onSelectMovie={handleOpenMovie} />
+          <CatalogView key="anime" category="anime" onSelectMovie={handleOpenMovie} onNavigateUp={focusActiveTab} />
         )}
         {activeTab === "search" && (
-          <SearchView onSelectMovie={handleOpenMovie} />
+          <SearchView onSelectMovie={handleOpenMovie} onNavigateUp={focusActiveTab} />
         )}
         {activeTab === "watchlist" && (
-          <WatchlistView onSelectMovie={handleOpenMovie} onNavigateToCatalog={() => handleSelectTab("movies")} />
+          <WatchlistView onSelectMovie={handleOpenMovie} onNavigateToCatalog={() => handleSelectTab("movies")} onNavigateUp={focusActiveTab} />
         )}
         {activeTab === "history" && (
-          <HistoryView onPlayVideo={handlePlayVideo} onSelectMovie={handleOpenMovie} onNavigateToCatalog={() => handleSelectTab("movies")} />
+          <HistoryView onPlayVideo={handlePlayVideo} onSelectMovie={handleOpenMovie} onNavigateToCatalog={() => handleSelectTab("movies")} onNavigateUp={focusActiveTab} />
         )}
         {activeTab === "library" && (
           <LibraryView
             onPlayVideo={handlePlayVideo}
             onActivateMagicBlack={() => setMagicBlack(true)}
             onNavigateToCatalog={() => handleSelectTab("movies")}
+            onNavigateUp={focusActiveTab}
           />
         )}
         {activeTab === "settings" && (
-          <SettingsView />
+          <SettingsView onNavigateUp={focusActiveTab} />
         )}
       </Focusable>
 

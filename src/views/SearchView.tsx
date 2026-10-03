@@ -9,6 +9,7 @@ import { getActiveDocument } from "../runtime/activeDoc";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
 import { isModalOpen, isUserInTabs, isPlayerActive } from "../runtime/homeInputBus";
 import { playCardNavSound } from "../runtime/navSound";
+import { triggerHaptic } from "../runtime/haptics";
 import { setBackdropMovie } from "../runtime/backdropBus";
 import { getSearchHistory, addSearchHistory } from "../runtime/searchHistory";
 import { useEnsureFocus } from "../hooks/useEnsureFocus";
@@ -16,9 +17,10 @@ import { useI18n } from "../i18n";
 
 interface SearchViewProps {
   onSelectMovie: (movie: MediaItem) => void;
+  onNavigateUp?: () => void;
 }
 
-export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
+export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie, onNavigateUp }) => {
   const { t } = useI18n();
   const rootRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -81,25 +83,36 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
     }
   }, [searchResults]);
 
-  const focusFirstHistoryChip = useCallback(() => {
-    const now = Date.now();
-    if (now - lastNavAtRef.current < 100) return;
-    lastNavAtRef.current = now;
-
+  const focusHistoryChip = useCallback((targetIndex: number) => {
     const root = rootRef.current;
-    if (!root) return;
-    const doc = getActiveDocument(root);
-
-    const firstChip = root.querySelector<HTMLElement>(".projacktor-search-chip");
-    if (firstChip) {
+    if (!root) return false;
+    const chips = Array.from(root.querySelectorAll<HTMLElement>(".projacktor-search-chip"));
+    if (chips.length === 0) return false;
+    const clampedIndex = Math.max(0, Math.min(targetIndex, chips.length - 1));
+    const chip = chips[clampedIndex];
+    if (chip) {
+      const doc = getActiveDocument(chip);
+      doc?.querySelectorAll(".gpfocus").forEach((el) => {
+        if (el !== chip) el.classList.remove("gpfocus");
+      });
+      chip.focus();
+      chip.classList.add("gpfocus", "gpfocuswithin");
       try {
-        doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-        firstChip.focus();
-        firstChip.classList.add("gpfocus");
-        playCardNavSound();
+        (chip as any).TakeFocus?.(0);
       } catch {}
+      try {
+        chip.scrollIntoView({ block: "nearest", inline: "nearest" });
+      } catch {}
+      triggerHaptic("light", "both");
+      playCardNavSound();
+      return true;
     }
+    return false;
   }, []);
+
+  const focusFirstHistoryChip = useCallback(() => {
+    return focusHistoryChip(0);
+  }, [focusHistoryChip]);
 
   // Сброс фона на чистый темный при монтировании вкладки поиска
   useEffect(() => {
@@ -178,9 +191,23 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
         }
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
+        e.stopPropagation();
+        onNavigateUp?.();
+      } else if (e.key === "ArrowRight") {
+        const root = rootRef.current;
+        const btnSearch = root?.querySelector<HTMLElement>(".ds-btn--primary");
+        if (btnSearch) {
+          e.preventDefault();
+          e.stopPropagation();
+          const doc = getActiveDocument(btnSearch);
+          doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+          btnSearch.focus();
+          btnSearch.classList.add("gpfocus", "gpfocuswithin");
+          try { (btnSearch as any).TakeFocus?.(0); } catch {}
+        }
       }
     },
-    [handleSearch, searchResults.length, searchHistory.length, focusFirstCard, focusFirstHistoryChip]
+    [handleSearch, searchResults.length, searchHistory.length, focusFirstCard, focusFirstHistoryChip, onNavigateUp]
   );
 
   // Подписка на события контроллера для надежной вертикальной навигации между поиском и результатами
@@ -206,6 +233,14 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
         e.button === 22 ||
         e.button === 12;
 
+      const isRight =
+        e.button === RawButton.DPAD_RIGHT ||
+        e.button === RawButton.LEFTSTICK_RIGHT ||
+        e.button === RawButton.LEFTPAD_RIGHT ||
+        e.button === 5 ||
+        e.button === 23 ||
+        e.button === 13;
+
       const isL2 =
         e.button === RawButton.L2 ||
         e.button === 28;
@@ -224,10 +259,52 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
         e.button === 6 ||
         e.button === 21;
 
+      const chipEl = (active && (active.classList?.contains("projacktor-search-chip") ? active : (active as HTMLElement)?.closest?.(".projacktor-search-chip"))) as HTMLElement | null;
+      if (chipEl) {
+        const chips = Array.from(root.querySelectorAll<HTMLElement>(".projacktor-search-chip"));
+        const curIdx = chips.indexOf(chipEl);
+        if (isLeft) {
+          if (curIdx > 0) {
+            focusHistoryChip(curIdx - 1);
+          }
+          return;
+        }
+        if (isRight) {
+          if (curIdx < chips.length - 1) {
+            focusHistoryChip(curIdx + 1);
+          }
+          return;
+        }
+        if (isUp) {
+          focusSearchInput();
+          return;
+        }
+        if (isDown) {
+          if (searchResults.length > 0) {
+            focusFirstCard();
+          }
+          return;
+        }
+      }
+
       if (isLeft) {
         const isSearchBtn = !!(active && (active.classList?.contains("ds-btn") || (active as HTMLElement)?.closest?.(".ds-btn")));
         if (isSearchBtn) {
           focusSearchInput();
+        }
+      } else if (isRight) {
+        if (isInsideSearchBar) {
+          const input = root.querySelector<HTMLInputElement>("input.DialogInput, input");
+          if (active === input || input?.contains(active as Node)) {
+            const btnSearch = root.querySelector<HTMLElement>(".ds-btn--primary");
+            if (btnSearch) {
+              const doc = getActiveDocument(btnSearch);
+              doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+              btnSearch.focus();
+              btnSearch.classList.add("gpfocus", "gpfocuswithin");
+              try { (btnSearch as any).TakeFocus?.(0); } catch {}
+            }
+          }
         }
       } else if (isL2) {
         if (isInsideSearchBar) {
@@ -254,7 +331,7 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
     });
 
     return un;
-  }, [searchResults.length, searchHistory.length, searchQuery, handleSearch, focusSearchInput, focusFirstCard, focusFirstHistoryChip]);
+  }, [searchResults.length, searchHistory.length, searchQuery, handleSearch, focusSearchInput, focusFirstCard, focusFirstHistoryChip, focusHistoryChip, onNavigateUp]);
 
   return (
     <Focusable
@@ -275,12 +352,14 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
         if (btn === 9) {
           // DPAD_UP:
           if (isInsideSearchBar) {
-            // В строке поиска блокируем переход вверх на вкладки
-            try {
-              evt?.preventDefault?.();
-              evt?.stopPropagation?.();
-            } catch {}
-            return false;
+            if (onNavigateUp) {
+              try {
+                evt?.preventDefault?.();
+                evt?.stopPropagation?.();
+              } catch {}
+              onNavigateUp();
+              return false;
+            }
           } else {
             // На карточке или ниже — возвращаемся на строку поиска!
             try {
@@ -345,12 +424,14 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
             }
           }
           if (btn === 9) {
-            // DPAD_UP: блокируем переход на вкладки
-            try {
-              evt?.preventDefault?.();
-              evt?.stopPropagation?.();
-            } catch {}
-            return false;
+            if (onNavigateUp) {
+              try {
+                evt?.preventDefault?.();
+                evt?.stopPropagation?.();
+              } catch {}
+              onNavigateUp();
+              return false;
+            }
           } else if (btn === 10) {
             // DPAD_DOWN: переходим на карточки или на чипсы истории
             if (searchResults.length > 0) {
@@ -394,6 +475,33 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
                 return false;
               }
             }
+            if (btn === 9 || btn === GamepadButton.DIR_UP) {
+              if (onNavigateUp) {
+                try {
+                  evt?.preventDefault?.();
+                  evt?.stopPropagation?.();
+                } catch {}
+                onNavigateUp();
+                return false;
+              }
+            }
+            if (btn === 12 || btn === GamepadButton.DIR_RIGHT) {
+              const root = rootRef.current;
+              const btnSearch = root?.querySelector<HTMLElement>(".ds-btn--primary");
+              if (btnSearch) {
+                try {
+                  evt?.preventDefault?.();
+                  evt?.stopPropagation?.();
+                } catch {}
+                const doc = getActiveDocument(btnSearch);
+                doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+                btnSearch.focus();
+                btnSearch.classList.add("gpfocus");
+                btnSearch.classList.add("gpfocuswithin");
+                try { (btnSearch as any).TakeFocus?.(0); } catch {}
+                return false;
+              }
+            }
             if (btn === 10) {
               // DPAD_DOWN: переходим на карточки или историю
               if (searchResults.length > 0) {
@@ -419,9 +527,21 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
         <Focusable
           className="ds-btn ds-btn--primary"
           noFocusRing
+          tabIndex={0}
           onFocus={() => setBackdropMovie(null)}
           onActivate={() => handleSearch()}
           onClick={() => handleSearch()}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowUp") {
+              e.preventDefault();
+              e.stopPropagation();
+              onNavigateUp?.();
+            } else if (e.key === "ArrowLeft") {
+              e.preventDefault();
+              e.stopPropagation();
+              focusSearchInput();
+            }
+          }}
           style={{
             padding: "8px 16px",
             fontSize: 12,
@@ -461,13 +581,15 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
                 focusFirstHistoryChip();
                 return false;
               }
-            } else if (btn === 9) {
-              // DPAD_UP: блокируем переход на вкладки
-              try {
-                evt?.preventDefault?.();
-                evt?.stopPropagation?.();
-              } catch {}
-              return false;
+            } else if (btn === 9 || btn === GamepadButton.DIR_UP) {
+              if (onNavigateUp) {
+                try {
+                  evt?.preventDefault?.();
+                  evt?.stopPropagation?.();
+                } catch {}
+                onNavigateUp();
+                return false;
+              }
             }
             return undefined;
           }}
@@ -490,30 +612,75 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie }) => {
             flow-children="row"
             noFocusRing
             className="projacktor-search-history-chips"
-            onGamepadDirection={(evt: any) => {
-              const btn = evt?.detail?.button;
-              if (btn === 9 || btn === GamepadButton.DIR_UP) {
-                focusSearchInput();
-                return false;
-              }
-              return undefined;
-            }}
           >
-            {searchHistory.map((q) => (
+            {searchHistory.map((q, idx) => (
               <Focusable
                 key={q}
                 className="projacktor-search-chip"
                 noFocusRing
                 tabIndex={0}
-                onActivate={() => handleSelectHistory(q)}
-                onClick={() => handleSelectHistory(q)}
+                onActivate={() => {
+                  triggerHaptic("click", "both");
+                  handleSelectHistory(q);
+                }}
+                onClick={() => {
+                  triggerHaptic("click", "both");
+                  handleSelectHistory(q);
+                }}
                 onGamepadDirection={(evt: any) => {
                   const btn = evt?.detail?.button;
                   if (btn === 9 || btn === GamepadButton.DIR_UP) {
+                    try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
                     focusSearchInput();
                     return false;
                   }
+                  if (btn === 11 || btn === GamepadButton.DIR_LEFT) {
+                    if (idx > 0) {
+                      try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                      focusHistoryChip(idx - 1);
+                      return false;
+                    }
+                  }
+                  if (btn === 12 || btn === GamepadButton.DIR_RIGHT) {
+                    if (idx < searchHistory.length - 1) {
+                      try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                      focusHistoryChip(idx + 1);
+                      return false;
+                    }
+                  }
+                  if (btn === 10 || btn === GamepadButton.DIR_DOWN) {
+                    if (searchResults.length > 0) {
+                      try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                      focusFirstCard();
+                      return false;
+                    }
+                  }
                   return undefined;
+                }}
+                onKeyDown={(e: any) => {
+                  if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    focusSearchInput();
+                  } else if (e.key === "ArrowLeft") {
+                    if (idx > 0) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      focusHistoryChip(idx - 1);
+                    }
+                  } else if (e.key === "ArrowRight") {
+                    if (idx < searchHistory.length - 1) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      focusHistoryChip(idx + 1);
+                    }
+                  } else if (e.key === "ArrowDown") {
+                    if (searchResults.length > 0) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      focusFirstCard();
+                    }
+                  }
                 }}
               >
                 {q}

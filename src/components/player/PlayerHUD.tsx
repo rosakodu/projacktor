@@ -39,6 +39,23 @@ export const PlayerHUD: FC<PlayerHUDProps> = ({
   const [logoFailed, setLogoFailed] = useState(false);
   const [logoRetry, setLogoRetry] = useState(0);
 
+  const [splashMounted, setSplashMounted] = useState(!hasStartedPlayback);
+  const [splashOpacity, setSplashOpacity] = useState(hasStartedPlayback ? 0 : 1);
+
+  useEffect(() => {
+    if (hasStartedPlayback) {
+      setSplashOpacity(0);
+      const timer = setTimeout(() => {
+        setSplashMounted(false);
+      }, 450);
+      return () => clearTimeout(timer);
+    } else {
+      setSplashMounted(true);
+      setSplashOpacity(1);
+      return undefined;
+    }
+  }, [hasStartedPlayback]);
+
   useEffect(() => {
     setLogoFailed(false);
     setLogoRetry(0);
@@ -103,8 +120,9 @@ export const PlayerHUD: FC<PlayerHUDProps> = ({
       )}
 
       {/* 1. Экран начальной загрузки и буферизации с официальным логотипом фильма с TMDB */}
-      {!hasStartedPlayback && !errorMsg && (
+      {splashMounted && !errorMsg && (
         <div
+          className="projacktor-player-splash"
           style={{
             position: "absolute",
             top: 0,
@@ -119,7 +137,9 @@ export const PlayerHUD: FC<PlayerHUDProps> = ({
             zIndex: 25,
             overflow: "hidden",
             pointerEvents: "none",
-            transition: "opacity 0.4s ease",
+            opacity: splashOpacity,
+            transition: "opacity 0.45s cubic-bezier(0.2, 0, 0, 1)",
+            willChange: "opacity",
           }}
         >
           {/* Фоновый четкий бэкдроп фильма с умеренным затемнением */}

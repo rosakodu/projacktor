@@ -5,6 +5,7 @@ import { EpisodeItem, LibraryItem } from "../types";
 import { formatBytes, rpcGetEpisodes, sortEpisodes } from "../api";
 import { PROJACKTOR_STYLES } from "../styles";
 import { getActiveDocument } from "../runtime/activeDoc";
+import { triggerHaptic } from "../runtime/haptics";
 import { useI18n } from "../i18n";
 
 const modalBtnStyle: React.CSSProperties = {
@@ -48,11 +49,17 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
   const { t } = useI18n();
   const listRef = useRef<HTMLDivElement>(null);
   const [episodes, setEpisodes] = useState<EpisodeItem[]>([]);
+  const [localFiles, setLocalFiles] = useState<NonNullable<LibraryItem["files"]>>(item.files || []);
   const [loading, setLoading] = useState<boolean>(true);
   const [downloadingEpIdx, setDownloadingEpIdx] = useState<number | null>(null);
   const [cancellingEpIdx, setCancellingEpIdx] = useState<number | null>(null);
   const [deletingEpIdx, setDeletingEpIdx] = useState<number | null>(null);
+  const deletingEpIdxRef = useRef<number | null>(null);
   const [userSelectedEpIndices, setUserSelectedEpIndices] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    setLocalFiles(item.files || []);
+  }, [item.files]);
 
   const title = item.title || t("noTitle");
   const year = item.year ? String(item.year).split("-")[0] : "";
@@ -95,7 +102,15 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
         rpcGetEpisodes(item.id)
           .then((eps) => {
             if (active && Array.isArray(eps)) {
-              setEpisodes(sortEpisodes(eps));
+              setEpisodes(() => {
+                const sorted = sortEpisodes(eps);
+                return sorted.map((newEp) => {
+                  if (deletingEpIdxRef.current === newEp.index) {
+                    return { ...newEp, downloaded: false, completed: 0, selected: false };
+                  }
+                  return newEp;
+                });
+              });
             }
           })
           .catch(() => {});
@@ -133,7 +148,50 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
     return () => clearTimeout(t);
   }, [loading, episodes.length]);
 
+  // Автоматический скролл контейнера серий при перемещении фокуса
+  useEffect(() => {
+    const listEl = listRef.current;
+    if (!listEl) return;
+    const onFocusIn = (e: FocusEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target || !listEl.contains(target)) return;
+      const row = target.closest(".projacktor-torrent-ep-row") as HTMLElement | null;
+      if (row) {
+        const rowTop = row.offsetTop;
+        const rowHeight = row.offsetHeight;
+        const containerScrollTop = listEl.scrollTop;
+        const containerHeight = listEl.clientHeight;
+
+        if (rowTop < containerScrollTop) {
+          listEl.scrollTo({ top: rowTop, behavior: "smooth" });
+        } else if (rowTop + rowHeight > containerScrollTop + containerHeight) {
+          listEl.scrollTo({ top: rowTop + rowHeight - containerHeight, behavior: "smooth" });
+        }
+      }
+    };
+    listEl.addEventListener("focusin", onFocusIn);
+    return () => listEl.removeEventListener("focusin", onFocusIn);
+  }, []);
+
+  const restoreFocusToEpisodeBtn = useCallback((epIndex: number) => {
+    setTimeout(() => {
+      const row = listRef.current?.querySelector(`[data-ep-index="${epIndex}"]`);
+      const newBtn = row?.querySelector<HTMLElement>(".ds-btn");
+      if (newBtn) {
+        const doc = getActiveDocument(newBtn) || document;
+        doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+        newBtn.focus();
+        newBtn.classList.add("gpfocus");
+        newBtn.classList.add("gpfocuswithin");
+        try {
+          (newBtn as any).TakeFocus?.(0);
+        } catch {}
+      }
+    }, 60);
+  }, []);
+
   const handleWatchOnline = (epIndex: number) => {
+    triggerHaptic("click", "both");
     // Защита от фантомного клика / удержания кнопки A при открытии списка серий
     if (Date.now() - modalOpenedTimeRef.current < 450) {
       return;
@@ -142,14 +200,22 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
   };
 
   const handleDownload = async (ep: EpisodeItem) => {
+    triggerHaptic("click", "both");
     if (Date.now() - modalOpenedTimeRef.current < 450) {
       return;
     }
     setUserSelectedEpIndices((prev) => new Set(prev).add(ep.index));
     setDownloadingEpIdx(ep.index);
+    setEpisodes((prev) =>
+      prev.map((e) =>
+        e.index === ep.index ? { ...e, downloaded: false, completed: 0, selected: true } : e
+      )
+    );
+    restoreFocusToEpisodeBtn(ep.index);
     try {
       await onDownloadEpisode(item, ep);
       await fetchEpisodes(false);
+      restoreFocusToEpisodeBtn(ep.index);
     } finally {
       setDownloadingEpIdx(null);
     }
@@ -165,11 +231,18 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
       return next;
     });
     setCancellingEpIdx(ep.index);
+    setEpisodes((prev) =>
+      prev.map((e) =>
+        e.index === ep.index ? { ...e, downloaded: false, completed: 0, selected: false } : e
+      )
+    );
+    restoreFocusToEpisodeBtn(ep.index);
     try {
       if (onCancelEpisodeDownload) {
         await onCancelEpisodeDownload(item, ep);
       }
       await fetchEpisodes(false);
+      restoreFocusToEpisodeBtn(ep.index);
     } finally {
       setCancellingEpIdx(null);
     }
@@ -184,13 +257,40 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
       next.delete(ep.index);
       return next;
     });
+    deletingEpIdxRef.current = ep.index;
     setDeletingEpIdx(ep.index);
     try {
+      // Оптимистично удаляем файл из localFiles и сбрасываем статус серии в episodes
+      setLocalFiles((prev) =>
+        prev.filter((f) => {
+          if (f.file_name.toLowerCase() === ep.name.toLowerCase()) return false;
+          const epMatch =
+            ep.name.match(/(?:s|season\s*)(\d{1,3})(?:e|x|episode\s*|\b[.\s_-]+)(\d{1,4})/i) ||
+            ep.name.match(/(?:e|ep|серия\s*)(\d{1,4})/i) ||
+            ep.name.match(/(\d+)/);
+          const fMatch =
+            f.file_name.match(/(?:s|season\s*)(\d{1,3})(?:e|x|episode\s*|\b[.\s_-]+)(\d{1,4})/i) ||
+            f.file_name.match(/(?:e|ep|серия\s*)(\d{1,4})/i) ||
+            f.file_name.match(/(\d+)/);
+          if (epMatch && fMatch && epMatch[0].toLowerCase() === fMatch[0].toLowerCase()) return false;
+          return true;
+        })
+      );
+      setEpisodes((prev) =>
+        prev.map((e) =>
+          e.index === ep.index ? { ...e, downloaded: false, completed: 0, selected: false } : e
+        )
+      );
+
+      restoreFocusToEpisodeBtn(ep.index);
+
       if (onDeleteEpisode) {
         await onDeleteEpisode(item, ep);
       }
       await fetchEpisodes(false);
+      restoreFocusToEpisodeBtn(ep.index);
     } finally {
+      deletingEpIdxRef.current = null;
       setDeletingEpIdx(null);
     }
   };
@@ -381,8 +481,8 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                 </Focusable>
               </div>
             ) : (
-              episodes.map((ep: EpisodeItem) => {
-                const hasLocalFile = !!(item.files && item.files.some((f) => {
+              episodes.map((ep: EpisodeItem, epIdx: number) => {
+                const hasLocalFile = !!(localFiles && localFiles.some((f) => {
                   if (f.file_size <= 100 * 1024) return false;
                   if (f.file_name.toLowerCase() === ep.name.toLowerCase()) return true;
                   const epMatch = ep.name.match(/(?:s|season\s*)(\d{1,3})(?:e|x|episode\s*|\b[.\s_-]+)(\d{1,4})/i) || ep.name.match(/(?:e|ep|серия\s*)(\d{1,4})/i) || ep.name.match(/(\d+)/);
@@ -403,6 +503,7 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                 return (
                   <div
                     key={ep.index}
+                    data-ep-index={ep.index}
                     className="projacktor-torrent-ep-row"
                     style={{
                       display: "flex",
@@ -445,15 +546,18 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                         )}
                         {isEpPartial && (
                           <span style={{ color: "var(--ds-accent)" }}>
-                            {formatBytes(ep.completed)} / {formatBytes(ep.size)} (
-                            {((ep.completed / ep.size) * 100).toFixed(0)}%)
+                            {formatBytes(downloadingEpIdx === ep.index ? 0 : ep.completed)} / {formatBytes(ep.size)} (
+                            {(downloadingEpIdx === ep.index ? 0 : (ep.completed / ep.size) * 100).toFixed(0)}%)
                           </span>
                         )}
                       </div>
                     </div>
 
                     {/* Кнопки действий: единая фиксированная ширина 190px для предсказуемости layout */}
-                    <div
+                    <Focusable
+                      flow-children="horizontal"
+                      noFocusRing
+                      className="projacktor-episode-actions"
                       style={{
                         display: "flex",
                         gap: 6,
@@ -462,6 +566,36 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                         width: 190,
                         justifyContent: "flex-end",
                       }}
+                      onGamepadDirection={(evt: any) => {
+                        const btn = evt?.detail?.button;
+                        if (epIdx === episodes.length - 1 && (btn === 10 || btn === 6)) {
+                          const cancelBtn = (listRef.current?.closest(".projacktor-modal-root, form, div") || document)?.querySelector<HTMLElement>(".ds-btn--compact[tabindex='0']");
+                          if (cancelBtn) {
+                            try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                            const doc = getActiveDocument(cancelBtn) || document;
+                            doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+                            cancelBtn.focus();
+                            cancelBtn.classList.add("gpfocus", "gpfocuswithin");
+                            try { (cancelBtn as any).TakeFocus?.(0); } catch {}
+                            return false;
+                          }
+                        }
+                        return undefined;
+                      }}
+                      onKeyDown={(e: any) => {
+                        if (epIdx === episodes.length - 1 && e.key === "ArrowDown") {
+                          const cancelBtn = (listRef.current?.closest(".projacktor-modal-root, form, div") || document)?.querySelector<HTMLElement>(".ds-btn--compact[tabindex='0']");
+                          if (cancelBtn) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const doc = getActiveDocument(cancelBtn) || document;
+                            doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+                            cancelBtn.focus();
+                            cancelBtn.classList.add("gpfocus", "gpfocuswithin");
+                            try { (cancelBtn as any).TakeFocus?.(0); } catch {}
+                          }
+                        }
+                      }}
                     >
                       {/* Если скачано: Смотреть и Удалить */}
                       {isEpCompleted ? (
@@ -469,8 +603,15 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                           <Focusable
                             className="ds-btn ds-btn--compact ds-btn--success"
                             noFocusRing
-                            onActivate={() => handleWatchOnline(ep.index)}
-                            onClick={() => handleWatchOnline(ep.index)}
+                            tabIndex={0}
+                            onActivate={(e: any) => {
+                              try { e?.stopPropagation?.(); } catch {}
+                              handleWatchOnline(ep.index);
+                            }}
+                            onClick={(e: any) => {
+                              try { e?.stopPropagation?.(); } catch {}
+                              handleWatchOnline(ep.index);
+                            }}
                             onCancelButton={closeModal}
                             title={t("watchFile")}
                             style={modalBtnStyle}
@@ -481,8 +622,15 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                           <Focusable
                             className="ds-btn ds-btn--compact ds-btn--danger"
                             noFocusRing
-                            onActivate={() => handleDelete(ep)}
-                            onClick={() => handleDelete(ep)}
+                            tabIndex={0}
+                            onActivate={(e: any) => {
+                              try { e?.stopPropagation?.(); } catch {}
+                              handleDelete(ep);
+                            }}
+                            onClick={(e: any) => {
+                              try { e?.stopPropagation?.(); } catch {}
+                              handleDelete(ep);
+                            }}
                             onCancelButton={closeModal}
                             title={t("delete")}
                             style={modalBtnStyle}
@@ -498,8 +646,15 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                         <Focusable
                           className="ds-btn ds-btn--compact ds-btn--danger"
                           noFocusRing
-                          onActivate={() => handleCancelDownload(ep)}
-                          onClick={() => handleCancelDownload(ep)}
+                          tabIndex={0}
+                          onActivate={(e: any) => {
+                            try { e?.stopPropagation?.(); } catch {}
+                            handleCancelDownload(ep);
+                          }}
+                          onClick={(e: any) => {
+                            try { e?.stopPropagation?.(); } catch {}
+                            handleCancelDownload(ep);
+                          }}
                           onCancelButton={closeModal}
                           title={t("cancel")}
                           style={modalBtnStyle}
@@ -514,8 +669,15 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                         <Focusable
                           className="ds-btn ds-btn--compact"
                           noFocusRing
-                          onActivate={() => handleDownload(ep)}
-                          onClick={() => handleDownload(ep)}
+                          tabIndex={0}
+                          onActivate={(e: any) => {
+                            try { e?.stopPropagation?.(); } catch {}
+                            handleDownload(ep);
+                          }}
+                          onClick={(e: any) => {
+                            try { e?.stopPropagation?.(); } catch {}
+                            handleDownload(ep);
+                          }}
                           onCancelButton={closeModal}
                           title={t("downloadThisEpisode")}
                           style={modalBtnStyle}
@@ -523,7 +685,7 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                           {t("download")}
                         </Focusable>
                       )}
-                    </div>
+                    </Focusable>
                   </div>
                 );
               })
@@ -544,9 +706,47 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
           <Focusable
             className="ds-btn ds-btn--compact"
             noFocusRing
+            tabIndex={0}
             onActivate={closeModal}
             onClick={closeModal}
             onCancelButton={closeModal}
+            onGamepadDirection={(evt: any) => {
+              if (evt?.detail?.button === 9) {
+                const rows = listRef.current?.querySelectorAll<HTMLElement>(".projacktor-torrent-ep-row");
+                if (rows && rows.length > 0) {
+                  const lastRow = rows[rows.length - 1];
+                  const lastBtn = lastRow.querySelector<HTMLElement>(".ds-btn, [tabindex='0']");
+                  if (lastBtn) {
+                    try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                    const doc = getActiveDocument(lastBtn) || document;
+                    doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+                    lastBtn.focus();
+                    lastBtn.classList.add("gpfocus", "gpfocuswithin");
+                    try { (lastBtn as any).TakeFocus?.(0); } catch {}
+                    return false;
+                  }
+                }
+              }
+              return undefined;
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowUp") {
+                const rows = listRef.current?.querySelectorAll<HTMLElement>(".projacktor-torrent-ep-row");
+                if (rows && rows.length > 0) {
+                  const lastRow = rows[rows.length - 1];
+                  const lastBtn = lastRow.querySelector<HTMLElement>(".ds-btn, [tabindex='0']");
+                  if (lastBtn) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const doc = getActiveDocument(lastBtn) || document;
+                    doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+                    lastBtn.focus();
+                    lastBtn.classList.add("gpfocus", "gpfocuswithin");
+                    try { (lastBtn as any).TakeFocus?.(0); } catch {}
+                  }
+                }
+              }
+            }}
             style={modalBtnStyle}
           >
             {t("cancel")}

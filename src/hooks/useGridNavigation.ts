@@ -1,5 +1,5 @@
 import { RefObject, useCallback, useEffect, useRef } from "react";
-import { getActiveDocument } from "../runtime/activeDoc";
+import { getActiveDocument, getActiveWindow } from "../runtime/activeDoc";
 import { playCardNavSound } from "../runtime/navSound";
 import { isModalOpen, isPlayerActive } from "../runtime/homeInputBus";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
@@ -20,6 +20,7 @@ interface UseGridNavigationOptions<T = any> {
   items: T[];
   onCardFocus?: (item: T, cardEl: HTMLElement | null) => void;
   supportsPosterFocus?: boolean;
+  onNavigateUp?: () => void;
 }
 
 export function useGridNavigation<T = any>({
@@ -28,8 +29,10 @@ export function useGridNavigation<T = any>({
   items,
   onCardFocus,
   supportsPosterFocus = true,
+  onNavigateUp,
 }: UseGridNavigationOptions<T>) {
   const lastNavAtRef = useRef<number>(0);
+
 
   const handleDirection = useCallback(
     (dir: "up" | "down" | "left" | "right"): boolean => {
@@ -66,6 +69,23 @@ export function useGridNavigation<T = any>({
       };
 
       if (active.classList.contains("projacktor-empty-lib") || active.closest(".projacktor-empty-lib")) {
+        return false;
+      }
+
+      const clearBtn = root.querySelector(".projacktor-clear-hist-btn");
+      if (active && clearBtn && (active === clearBtn || clearBtn.contains(active))) {
+        if (dir === "up") {
+          if (onNavigateUp) {
+            onNavigateUp();
+            return true;
+          }
+        } else if (dir === "down") {
+          const firstCard = root.querySelector<HTMLElement>(".projacktor-dl-poster-btn");
+          if (firstCard) {
+            doFocus(firstCard);
+            return true;
+          }
+        }
         return false;
       }
 
@@ -110,7 +130,16 @@ export function useGridNavigation<T = any>({
           }
           return true;
         } else if (dir === "up") {
-          // Allow bubbling up to top tabs header
+          const clearBtn = root.querySelector<HTMLElement>(".projacktor-clear-hist-btn");
+          if (clearBtn) {
+            doFocus(clearBtn);
+            return true;
+          }
+          if (onNavigateUp) {
+            lastNavAtRef.current = Date.now();
+            onNavigateUp();
+            return true;
+          }
           return false;
         }
       } else if (isButton || !supportsPosterFocus) {
@@ -131,7 +160,12 @@ export function useGridNavigation<T = any>({
             if (poster) {
               doFocus(poster);
               if (items[cardIndex] && onCardFocus) onCardFocus(items[cardIndex], curCard);
+              return true;
             }
+          }
+          if (onNavigateUp) {
+            onNavigateUp();
+            return true;
           }
           return true;
         } else if (dir === "down") {
@@ -179,7 +213,7 @@ export function useGridNavigation<T = any>({
       }
       return false;
     },
-    [items, onCardFocus, rootRef, rowRef, supportsPosterFocus]
+    [items, onCardFocus, rootRef, rowRef, supportsPosterFocus, onNavigateUp]
   );
 
   const handleGamepadDirection = useCallback(
@@ -240,22 +274,16 @@ export function useGridNavigation<T = any>({
       else if (isDown) handleDirection("down");
       else if (isLeft) handleDirection("left");
       else if (isRight) handleDirection("right");
-      else if (e.button === RawButton.A || e.button === 0) {
-        try {
-          (active as HTMLElement).click();
-        } catch {}
-      }
     });
     return un;
   }, [handleDirection]);
 
   useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    const doc = getActiveDocument(root);
-
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isModalOpen() || isPlayerActive()) return;
+      const root = rootRef.current;
+      if (!root) return;
+      const doc = getActiveDocument(root);
       const active = doc?.activeElement;
       if (!active || !root.contains(active)) return;
 
@@ -264,12 +292,6 @@ export function useGridNavigation<T = any>({
       else if (e.key === "ArrowDown") handled = handleDirection("down");
       else if (e.key === "ArrowLeft") handled = handleDirection("left");
       else if (e.key === "ArrowRight") handled = handleDirection("right");
-      else if (e.key === "Enter" || e.key === " ") {
-        try {
-          (active as HTMLElement).click();
-          handled = true;
-        } catch {}
-      }
 
       if (handled) {
         e.preventDefault();
@@ -277,13 +299,25 @@ export function useGridNavigation<T = any>({
       }
     };
 
-    doc?.addEventListener?.("keydown", handleKeyDown, true);
-    window.addEventListener("keydown", handleKeyDown, true);
+    const targets: EventTarget[] = [];
+    if (typeof window !== "undefined") targets.push(window);
+    if (typeof document !== "undefined") targets.push(document);
+    try {
+      const activeWin = getActiveWindow();
+      if (activeWin && !targets.includes(activeWin)) targets.push(activeWin);
+      if (activeWin?.document && !targets.includes(activeWin.document)) targets.push(activeWin.document);
+    } catch {}
+
+    targets.forEach((t) => {
+      try { t.addEventListener("keydown", handleKeyDown as any, true); } catch {}
+    });
+
     return () => {
-      doc?.removeEventListener?.("keydown", handleKeyDown, true);
-      window.removeEventListener("keydown", handleKeyDown, true);
+      targets.forEach((t) => {
+        try { t.removeEventListener("keydown", handleKeyDown as any, true); } catch {}
+      });
     };
-  }, [handleDirection, rootRef]);
+  }, [handleDirection]);
 
   return {
     handleDirection,

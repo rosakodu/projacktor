@@ -350,6 +350,7 @@ class DownloadManager:
                 # Если задачи нет в aria2c, сбрасываем скорость и ставим на паузу
                 if row['status'] == 'downloading':
                     cursor.execute("UPDATE downloads SET download_speed=0, upload_speed=0, status='paused' WHERE id=?", (row_id,))
+                    db.commit()
                 continue
                 
             total = int(t.get('totalLength', 0))

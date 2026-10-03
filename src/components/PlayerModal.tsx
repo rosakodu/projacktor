@@ -124,6 +124,16 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   const retryTimeoutRef = useRef<any>(null);
   const hasInitialSeekedRef = useRef<boolean>(false);
 
+  const prevFilePathRef = useRef<string>(filePath);
+  useEffect(() => {
+    if (prevFilePathRef.current !== filePath) {
+      prevFilePathRef.current = filePath;
+      hasStartedPlaybackRef.current = false;
+      setHasStartedPlayback(false);
+      setIsBuffering(true);
+    }
+  }, [filePath]);
+
   // Фоновая загрузка официального логотипа с TMDB для заставки буферизации
   useEffect(() => {
     let active = true;
@@ -1135,16 +1145,42 @@ export const PlayerModal: FC<PlayerModalProps> = ({
       }
     };
 
+    let rvfcId: any = null;
+    const markFirstFramePresented = () => {
+      if (hasStartedPlaybackRef.current) return;
+      hasStartedPlaybackRef.current = true;
+      setHasStartedPlayback(true);
+      setErrorMsg(null);
+      retryCountRef.current = 0;
+      setIsBuffering(false);
+    };
+
+    const scheduleFirstFrameDetection = () => {
+      if (hasStartedPlaybackRef.current) return;
+      if (video && typeof (video as any).requestVideoFrameCallback === "function") {
+        try {
+          if (rvfcId !== null && typeof (video as any).cancelVideoFrameCallback === "function") {
+            (video as any).cancelVideoFrameCallback(rvfcId);
+          }
+          rvfcId = (video as any).requestVideoFrameCallback(() => {
+            markFirstFramePresented();
+          });
+        } catch {}
+      }
+    };
+
     let lastSaveSec = 0;
     const onTimeUpdate = () => {
       const vTime = video.currentTime;
       setVideoTime(vTime);
-      setIsBuffering(false);
       updateBuffered();
-      if (vTime > 0.05) {
-        setHasStartedPlayback(true);
-        setErrorMsg(null);
-        retryCountRef.current = 0;
+      if (!hasStartedPlaybackRef.current) {
+        scheduleFirstFrameDetection();
+        if (vTime > 0.25 && video.readyState >= 2) {
+          markFirstFramePresented();
+        }
+      } else {
+        setIsBuffering(false);
       }
       const totalCur = Math.floor(isDirectStream ? vTime : (baseTime + vTime));
       if (Math.abs(totalCur - lastSaveSec) >= 5) {
@@ -1178,37 +1214,50 @@ export const PlayerModal: FC<PlayerModalProps> = ({
           setVideoTime(savedStartTimeRef.current);
         } catch {}
       }
-      setIsBuffering(false);
       updateBuffered();
+      if (!hasStartedPlaybackRef.current) {
+        scheduleFirstFrameDetection();
+      }
       video.play().catch(() => {});
     };
     const onPlay = () => {
       setIsPlaying(true);
-      setIsBuffering(false);
       updateBuffered();
-      if (video.currentTime > 0.05) {
-        setHasStartedPlayback(true);
-        setErrorMsg(null);
-        retryCountRef.current = 0;
+      if (!hasStartedPlaybackRef.current) {
+        scheduleFirstFrameDetection();
+        if (video.currentTime > 0.25 && video.readyState >= 2) {
+          markFirstFramePresented();
+        }
+      } else {
+        setIsBuffering(false);
       }
     };
     const onPlaying = () => {
       setIsPlaying(true);
-      setIsBuffering(false);
       updateBuffered();
-      setHasStartedPlayback(true);
-      setErrorMsg(null);
-      retryCountRef.current = 0;
+      if (!hasStartedPlaybackRef.current) {
+        scheduleFirstFrameDetection();
+      } else {
+        setIsBuffering(false);
+      }
     };
     const onPause = () => {
       setIsPlaying(false);
       updateBuffered();
       saveProgressRef.current(isDirectStream ? video.currentTime : (baseTime + video.currentTime), durationRef.current);
     };
-    const onWaiting = () => setIsBuffering(true);
+    const onWaiting = () => {
+      if (hasStartedPlaybackRef.current) {
+        setIsBuffering(true);
+      }
+    };
     const onCanPlay = () => {
-      setIsBuffering(false);
       updateBuffered();
+      if (!hasStartedPlaybackRef.current) {
+        scheduleFirstFrameDetection();
+      } else {
+        setIsBuffering(false);
+      }
     };
     const onProgress = () => {
       updateBuffered();
@@ -1247,6 +1296,12 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     video.addEventListener("ended", onEnded);
 
     return () => {
+      if (rvfcId !== null && typeof (video as any).cancelVideoFrameCallback === "function") {
+        try {
+          (video as any).cancelVideoFrameCallback(rvfcId);
+        } catch {}
+        rvfcId = null;
+      }
       video.removeEventListener("timeupdate", onTimeUpdate);
       video.removeEventListener("loadedmetadata", onLoadedMetadata);
       video.removeEventListener("play", onPlay);
@@ -1474,70 +1529,6 @@ export const PlayerModal: FC<PlayerModalProps> = ({
                     <div style={{ color: "var(--ds-danger, #e53e3e)", fontSize: 16, fontWeight: 600, lineHeight: 1.4 }}>
                       {errorMsg}
                     </div>
-
-                    <Focusable
-                      flow-children="horizontal"
-                      style={{
-                        display: "flex",
-                        gap: 12,
-                        marginTop: 8,
-                      }}
-                      onFocusCapture={(e: any) => {
-                        const target = e?.target as HTMLElement | null;
-                        if (!target) return;
-                        const doc = getActiveDocument(target) || document;
-                        doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => {
-                          if (el !== target) el.classList.remove("gpfocus");
-                        });
-                        if (target.classList?.contains("ds-btn")) {
-                          target.classList.add("gpfocus");
-                        }
-                      }}
-                      onBlurCapture={(e: any) => {
-                        const target = e?.target as HTMLElement | null;
-                        if (target && target.classList?.contains("ds-btn")) {
-                          target.classList.remove("gpfocus");
-                        }
-                      }}
-                    >
-                      <Focusable
-                        className="ds-btn ds-btn--primary"
-                        onActivate={() => {
-                          retryCountRef.current = 0;
-                          retryPlayback();
-                        }}
-                        onClick={() => {
-                          retryCountRef.current = 0;
-                          retryPlayback();
-                        }}
-                        style={{
-                          padding: "10px 20px",
-                          fontSize: 14,
-                          fontWeight: 600,
-                          cursor: "pointer",
-                        }}
-                      >
-                        {t("retry")}
-                      </Focusable>
-
-                      <Focusable
-                        className="ds-btn ds-btn--secondary"
-                        onActivate={() => {
-                          closeModalRef.current?.();
-                        }}
-                        onClick={() => {
-                          closeModalRef.current?.();
-                        }}
-                        style={{
-                          padding: "10px 20px",
-                          fontSize: 14,
-                          fontWeight: 500,
-                          cursor: "pointer",
-                        }}
-                      >
-                        {t("closePlayer")}
-                      </Focusable>
-                    </Focusable>
                   </div>
                 </div>
               )}

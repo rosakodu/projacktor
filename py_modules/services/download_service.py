@@ -612,6 +612,24 @@ class DownloadService:
                 except Exception as ce:
                     logger.warning(f"cancel_episode_download: failed to remove file {p}: {ce}")
 
+            # Remove any folder-level or project-level .aria2 control files if cancelled
+            if ddir and os.path.isdir(ddir):
+                for root, _, files in os.walk(ddir):
+                    for f in files:
+                        if f.endswith('.aria2'):
+                            try:
+                                os.remove(os.path.join(root, f))
+                                logger.info(f"cancel_episode_download: removed stale aria2 bitfield {f}")
+                            except Exception as ctl_err:
+                                logger.debug(f"Failed to remove ctl {f}: {ctl_err}")
+
+            if dm:
+                try:
+                    dm.purge_download_result()
+                    dm._rpc_call("aria2.saveSession")
+                except Exception:
+                    pass
+
             # Remove records from media_files
             try:
                 if target_name:
@@ -842,6 +860,24 @@ class DownloadService:
                 except Exception as fe:
                     logger.warning(f"delete_episode: failed to remove file {p}: {fe}")
 
+            # Remove any folder-level or project-level .aria2 control files so stale bitfields are cleared
+            if ddir and os.path.isdir(ddir):
+                for root, _, files in os.walk(ddir):
+                    for f in files:
+                        if f.endswith('.aria2'):
+                            try:
+                                os.remove(os.path.join(root, f))
+                                logger.info(f"delete_episode: removed stale aria2 bitfield {f}")
+                            except Exception as ctl_err:
+                                logger.debug(f"Failed to remove ctl {f}: {ctl_err}")
+
+            if dm:
+                try:
+                    dm.purge_download_result()
+                    dm._rpc_call("aria2.saveSession")
+                except Exception:
+                    pass
+
             # 2. Delete from media_files table
             try:
                 if target_name:
@@ -944,6 +980,16 @@ class DownloadService:
                     pass
                 db.commit()
             elif has_remaining_files:
+                has_aria2_active = False
+                if dm and dl and dl.get('aria2_gid'):
+                    try:
+                        cst = dm.get_status(dl['aria2_gid'])
+                        if cst and cst.get('status') in ('active', 'waiting'):
+                            has_aria2_active = True
+                    except Exception:
+                        pass
+                if not has_aria2_active:
+                    db.execute("UPDATE downloads SET status='paused', download_speed=0 WHERE media_id=?", (mid,))
                 db.execute("UPDATE media SET in_library=1, status='downloaded' WHERE id=?", (mid,))
                 db.commit()
 

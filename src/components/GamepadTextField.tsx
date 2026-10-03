@@ -75,6 +75,7 @@ export const GamepadTextField: FC<GamepadTextFieldProps> = ({
         } catch {}
         onSubmit?.();
       }
+      onKeyDown?.(e);
     };
 
     input.addEventListener("vgp_onactivate", onActivate);
@@ -90,6 +91,7 @@ export const GamepadTextField: FC<GamepadTextFieldProps> = ({
         }
       };
       input.addEventListener("vgp_ondirection", dirHandler);
+      input.addEventListener("gamepaddirection", dirHandler);
     }
 
     return () => {
@@ -97,9 +99,10 @@ export const GamepadTextField: FC<GamepadTextFieldProps> = ({
       input.removeEventListener("keydown", onNativeKeyDown);
       if (dirHandler) {
         input.removeEventListener("vgp_ondirection", dirHandler);
+        input.removeEventListener("gamepaddirection", dirHandler);
       }
     };
-  }, [getInputElement, onSubmit, onGamepadDirection]);
+  }, [getInputElement, onSubmit, onGamepadDirection, onKeyDown]);
 
   const handleKeyDownInternal = useCallback(
     (e: KeyboardEvent<HTMLInputElement>) => {

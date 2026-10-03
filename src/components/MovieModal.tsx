@@ -200,6 +200,11 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
         if (epRows.length > 0) {
           const lastRow = epRows[epRows.length - 1];
           targetBtn = lastRow.querySelector<HTMLElement>(".projacktor-icon-btn") || lastRow;
+        } else {
+          const retryBtn = targetCard.querySelector<HTMLElement>(".projacktor-torrent-retry-btn, .projacktor-torrent-episodes .ds-btn");
+          if (retryBtn) {
+            targetBtn = retryBtn;
+          }
         }
       }
 
@@ -322,16 +327,28 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
           evt?.preventDefault?.();
           evt?.stopPropagation?.();
         } catch {}
-        if (isExpanded && epCount > 0) {
-          navigateToEpisode(cardIdx, 0);
-        } else if (cardIdx < sortedTorrentsRef.current.length - 1) {
+        if (isExpanded) {
+          if (epCount > 0) {
+            navigateToEpisode(cardIdx, 0);
+            return false;
+          }
+          const root = torrentsRef.current;
+          const cards = root?.querySelectorAll<HTMLElement>(".projacktor-torrent-card");
+          const card = cards?.[cardIdx];
+          const retryBtn = card?.querySelector<HTMLElement>(".projacktor-torrent-retry-btn, .projacktor-torrent-episodes .ds-btn");
+          if (retryBtn) {
+            focusEl(retryBtn);
+            return false;
+          }
+        }
+        if (cardIdx < sortedTorrentsRef.current.length - 1) {
           navigateToCard(cardIdx + 1, "first");
         }
         return false;
       }
       return undefined;
     },
-    [navigateUpToSortBar, navigateToCard, navigateToEpisode]
+    [navigateUpToSortBar, navigateToCard, navigateToEpisode, focusEl]
   );
 
   const handleEpisodeGamepad = useCallback(
@@ -453,6 +470,9 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
           const epRows = Array.from(currentCard.querySelectorAll<HTMLElement>(".projacktor-torrent-ep-row"));
           const epIndex = epRows.findIndex((row) => row.contains(active));
 
+          const retryBtn = currentCard.querySelector<HTMLElement>(".projacktor-torrent-retry-btn, .projacktor-torrent-episodes .ds-btn");
+          const isRetry = Boolean(retryBtn && (active === retryBtn || retryBtn.contains(active)));
+
           if (e.key === "ArrowDown") {
             e.preventDefault();
             e.stopPropagation();
@@ -462,9 +482,15 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
               } else if (cardIndex < cards.length - 1) {
                 navigateToCard(cardIndex + 1, "first");
               }
+            } else if (isRetry) {
+              if (cardIndex < cards.length - 1) {
+                navigateToCard(cardIndex + 1, "first");
+              }
             } else {
               if (epRows.length > 0) {
                 navigateToEpisode(cardIndex, 0);
+              } else if (retryBtn) {
+                focusEl(retryBtn);
               } else if (cardIndex < cards.length - 1) {
                 navigateToCard(cardIndex + 1, "first");
               }
@@ -478,6 +504,8 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
               } else {
                 navigateToEpisode(cardIndex, epIndex - 1);
               }
+            } else if (isRetry) {
+              navigateToCard(cardIndex, "first");
             } else {
               if (cardIndex === 0) {
                 navigateUpToSortBar();
@@ -1336,10 +1364,32 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
                                     {t("failedToGetEpisodesTimeout")}
                                   </span>
                                   <Focusable
-                                    className="ds-btn ds-btn--compact ds-btn--primary"
+                                    className="ds-btn ds-btn--compact ds-btn--primary projacktor-torrent-retry-btn"
                                     noFocusRing
+                                    tabIndex={0}
                                     onActivate={() => fetchEpisodesForTorrent(tor)}
                                     onClick={() => fetchEpisodesForTorrent(tor)}
+                                    onFocus={() => setFocusedTorrentId(tId)}
+                                    onMouseEnter={() => setFocusedTorrentId(tId)}
+                                    onGamepadDirection={(evt: any) => {
+                                      if (isEvtUp(evt)) {
+                                        try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                                        navigateToCard(idx, "first");
+                                        return false;
+                                      }
+                                      if (isEvtDown(evt)) {
+                                        try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                                        if (idx < sortedTorrentsRef.current.length - 1) {
+                                          navigateToCard(idx + 1, "first");
+                                        }
+                                        return false;
+                                      }
+                                      if (isEvtLeft(evt) || isEvtRight(evt)) {
+                                        try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                                        return false;
+                                      }
+                                      return undefined;
+                                    }}
                                     style={{ padding: "3px 12px", fontSize: 10, flexShrink: 0 }}
                                   >
                                     {t("retry")}

@@ -504,6 +504,11 @@ export const CARDS_STYLES = `
   background: rgba(0, 0, 0, 0.78) !important;
 }
 
+.projacktor-dl-badge-status.danger {
+  background: rgba(239, 68, 68, 0.9) !important;
+  color: #fff !important;
+}
+
 .projacktor-dl-badge-quality {
   position: absolute !important;
   top: 6px !important;

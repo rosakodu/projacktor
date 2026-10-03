@@ -7,6 +7,7 @@ import { useI18n } from "../i18n";
 interface CatalogViewProps {
   category: CatalogCategory;
   onSelectMovie: (movie: MediaItem) => void;
+  onNavigateUp?: () => void;
 }
 
 interface SectionConfig {
@@ -14,7 +15,7 @@ interface SectionConfig {
   title: string;
 }
 
-export const CatalogView: FC<CatalogViewProps> = memo(({ category, onSelectMovie }) => {
+export const CatalogView: FC<CatalogViewProps> = memo(({ category, onSelectMovie, onNavigateUp }) => {
   const { t } = useI18n();
   const { watchingItems, trendingItems, topRatedItems, loading } =
     useCatalogCategory(category);
@@ -64,6 +65,7 @@ export const CatalogView: FC<CatalogViewProps> = memo(({ category, onSelectMovie
         onNextSection={onNextSection}
         hasPrevSection={sectionIndex > 0}
         hasNextSection={sectionIndex < sections.length - 1}
+        onNavigateUp={onNavigateUp}
       />
     </div>
   );

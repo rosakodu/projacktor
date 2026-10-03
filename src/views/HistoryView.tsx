@@ -27,6 +27,7 @@ interface HistoryViewProps {
   ) => void;
   onSelectMovie?: (item: MediaItem) => void;
   onNavigateToCatalog?: () => void;
+  onNavigateUp?: () => void;
 }
 
 function formatTime(seconds: number): string {
@@ -41,13 +42,67 @@ function formatTime(seconds: number): string {
   return `${pad(m)}:${pad(s)}`;
 }
 
-export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onSelectMovie, onNavigateToCatalog }) => {
+export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onSelectMovie, onNavigateToCatalog, onNavigateUp }) => {
   const rootRef = useRef<HTMLDivElement>(null);
   const rowRef = useRef<HTMLDivElement>(null);
+  const clearBtnRef = useRef<HTMLDivElement>(null);
   const [items, setItems] = useState<WatchHistoryItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const mountedRef = useRef<boolean>(true);
   const { t } = useI18n();
+
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const doc = getActiveDocument(root);
+    const clearBtn = root.querySelector<HTMLElement>(".projacktor-clear-hist-btn");
+    if (!clearBtn) return;
+
+    const handleClearKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "ArrowUp") {
+        const active = doc?.activeElement;
+        if (active && clearBtn && (active === clearBtn || clearBtn.contains(active))) {
+          e.preventDefault();
+          e.stopPropagation();
+          onNavigateUp?.();
+        }
+      }
+    };
+    const handleClearDir = (e: any) => {
+      if (e?.detail?.button === 9) {
+        const active = doc?.activeElement;
+        if (active && clearBtn && (active === clearBtn || clearBtn.contains(active))) {
+          e.preventDefault?.();
+          e.stopPropagation?.();
+          onNavigateUp?.();
+        }
+      }
+    };
+
+    const win = doc?.defaultView || window;
+    const targets: EventTarget[] = [clearBtn];
+    if (win && !targets.includes(win)) targets.push(win);
+    if (doc && !targets.includes(doc)) targets.push(doc);
+
+    targets.forEach((t) => {
+      try {
+        t.addEventListener("keydown", handleClearKeyDown as any, true);
+        t.addEventListener("gamepaddirection", handleClearDir as any, true);
+        t.addEventListener("vgp_ondirection", handleClearDir as any, true);
+      } catch {}
+    });
+
+    return () => {
+      targets.forEach((t) => {
+        try {
+          t.removeEventListener("keydown", handleClearKeyDown as any, true);
+          t.removeEventListener("gamepaddirection", handleClearDir as any, true);
+          t.removeEventListener("vgp_ondirection", handleClearDir as any, true);
+        } catch {}
+      });
+    };
+  }, [items, onNavigateUp]);
 
   const refreshHistory = useCallback(async () => {
     try {
@@ -286,6 +341,7 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onSelectMo
     items,
     onCardFocus: handleCardFocus,
     supportsPosterFocus: true,
+    onNavigateUp,
   });
 
   return (
@@ -303,11 +359,43 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onSelectMo
 
         {items.length > 0 && (
           <Focusable
+            ref={clearBtnRef}
             className="ds-btn projacktor-clear-hist-btn"
             noFocusRing
             tabIndex={0}
             onClick={handleClearAll}
             onActivate={handleClearAll}
+            onGamepadDirection={(evt: any) => {
+              const btn = evt?.detail?.button;
+              if (btn === 10) {
+                const firstCard = rootRef.current?.querySelector<HTMLElement>(".projacktor-dl-poster-btn");
+                if (firstCard) {
+                  try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                  const doc = getActiveDocument(firstCard);
+                  doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+                  try { (firstCard as any).TakeFocus?.(0); } catch {}
+                  firstCard.focus();
+                  firstCard.classList.add("gpfocus", "gpfocuswithin");
+                  return false;
+                }
+              } else if (btn === 9) {
+                if (onNavigateUp) {
+                  try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                  onNavigateUp();
+                  return false;
+                }
+              }
+              return undefined;
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowUp") {
+                if (onNavigateUp) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onNavigateUp();
+                }
+              }
+            }}
             style={{
               fontSize: 11,
               padding: "4px 10px",
@@ -335,9 +423,25 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onSelectMo
           {onNavigateToCatalog && (
             <Focusable
               role="button"
+              tabIndex={0}
               className="ds-btn ds-btn--primary projacktor-empty-cta-btn"
               onClick={onNavigateToCatalog}
               onActivate={onNavigateToCatalog}
+              onGamepadDirection={(evt: any) => {
+                if (evt?.detail?.button === 9) {
+                  try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                  onNavigateUp?.();
+                  return false;
+                }
+                return undefined;
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onNavigateUp?.();
+                }
+              }}
               style={{
                 display: "inline-flex",
                 alignItems: "center",

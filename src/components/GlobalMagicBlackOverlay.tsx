@@ -61,6 +61,7 @@ function getNavManager(): any {
 export const GlobalMagicBlackOverlay: FC = memo(() => {
   const [active, setActive] = useState(isMagicBlack());
   const readyRef = useRef(false);
+  const activatedAtRef = useRef<number>(0);
   const teardownRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -70,7 +71,7 @@ export const GlobalMagicBlackOverlay: FC = memo(() => {
   }, []);
 
   const dismiss = useCallback(() => {
-    if (!readyRef.current) return;
+    if (!readyRef.current || Date.now() - activatedAtRef.current < 500) return;
     // Synchronously release gamepad capture and DOM listeners BEFORE changing state
     if (teardownRef.current) {
       teardownRef.current();
@@ -85,10 +86,12 @@ export const GlobalMagicBlackOverlay: FC = memo(() => {
       return;
     }
 
-    // Delay accepting dismiss by 200ms to prevent the activating button press from immediately waking
+    activatedAtRef.current = Date.now();
+
+    // Delay accepting dismiss by 500ms to prevent the activating button press from immediately waking
     const timer = setTimeout(() => {
       readyRef.current = true;
-    }, 200);
+    }, 500);
 
     const cleanupFns: Array<() => void> = [];
 
@@ -105,6 +108,7 @@ export const GlobalMagicBlackOverlay: FC = memo(() => {
 
         const catchAllHandler = (_btn: any, pressed: any) => {
           if (pressed === false || pressed === 0) return false;
+          if (Date.now() - activatedAtRef.current < 500) return true;
           dismiss();
           return true; // suppress the wake-up button press from activating UI underneath
         };
@@ -133,13 +137,17 @@ export const GlobalMagicBlackOverlay: FC = memo(() => {
     // 2. Raw controller input listener (D-pad, sticks, bumpers, triggers, face buttons, grips)
     const unController = subscribeControllerInput((e) => {
       if (e.pressed) {
+        if (Date.now() - activatedAtRef.current < 500) return;
         dismiss();
       }
     });
     cleanupFns.push(unController);
 
     // 3. DOM keyboard, touch, and pointer events across available windows
-    const onAction = () => dismiss();
+    const onAction = () => {
+      if (Date.now() - activatedAtRef.current < 500) return;
+      dismiss();
+    };
 
     const targets: EventTarget[] = [window];
     try {

@@ -245,6 +245,21 @@ body:has(.projacktor-app-playing) #Footer,
   box-shadow: none !important;
 }
 
+.projacktor-tab-item:focus,
+.projacktor-tab-item.gpfocus {
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  background: transparent !important;
+  outline: none !important;
+  outline-offset: 0 !important;
+  box-shadow: none !important;
+  border-radius: 0px !important;
+  border-top: none !important;
+  border-left: none !important;
+  border-right: none !important;
+}
+
+
 /* ───── Адаптивность для средних и больших экранов ПК (1080p) ───── */
 @media (min-width: 1101px) {
   .projacktor-nav-bar {

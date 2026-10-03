@@ -14,9 +14,10 @@ import { useI18n } from "../i18n";
 interface WatchlistViewProps {
   onSelectMovie: (movie: MediaItem) => void;
   onNavigateToCatalog?: () => void;
+  onNavigateUp?: () => void;
 }
 
-export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie, onNavigateToCatalog }) => {
+export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie, onNavigateToCatalog, onNavigateUp }) => {
   const rootRef = useRef<HTMLDivElement>(null);
   const rowRef = useRef<HTMLDivElement>(null);
   const [items, setItems] = useState<WatchlistItem[]>([]);
@@ -190,6 +191,7 @@ export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie, onNa
     items,
     onCardFocus: handleCardFocus,
     supportsPosterFocus: true,
+    onNavigateUp,
   });
 
   return (
@@ -227,9 +229,25 @@ export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie, onNa
               {onNavigateToCatalog && (
                 <Focusable
                   role="button"
+                  tabIndex={0}
                   className="ds-btn ds-btn--primary projacktor-empty-cta-btn"
                   onClick={onNavigateToCatalog}
                   onActivate={onNavigateToCatalog}
+                  onGamepadDirection={(evt: any) => {
+                    if (evt?.detail?.button === 9) {
+                      try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                      onNavigateUp?.();
+                      return false;
+                    }
+                    return undefined;
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onNavigateUp?.();
+                    }
+                  }}
                   style={{
                     display: "inline-flex",
                     alignItems: "center",

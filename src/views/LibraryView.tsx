@@ -1,5 +1,5 @@
 import { FC, memo, useEffect, useRef, useCallback, useState } from "react";
-import { Focusable, showModal, ConfirmModal } from "@decky/ui";
+import { Focusable, showModal } from "@decky/ui";
 import { FaPlay, FaPause, FaDownload, FaTrash, FaMoon, FaSync, FaFilm } from "react-icons/fa";
 import { LibraryItem, PlayerMediaInfo, PlaylistItem } from "../types";
 import { formatSpeed, getImageUrl } from "../api";
@@ -57,13 +57,17 @@ interface LibraryViewProps {
   ) => void;
   onActivateMagicBlack?: () => void;
   onNavigateToCatalog?: () => void;
+  onNavigateUp?: () => void;
 }
 
 export const LibraryView: FC<LibraryViewProps> = memo(
-  ({ onPlayVideo, onActivateMagicBlack, onNavigateToCatalog }) => {
+  ({ onPlayVideo, onActivateMagicBlack, onNavigateToCatalog, onNavigateUp }) => {
     const rootRef = useRef<HTMLDivElement>(null);
     const rowRef = useRef<HTMLDivElement>(null);
     const lastInteractedItemIdRef = useRef<number | string | null>(null);
+    const lastFocusedCardIdRef = useRef<string | null>(null);
+    const lastFocusedBtnSelectorRef = useRef<string | null>(null);
+    const isOpeningEpisodesModalRef = useRef<boolean>(false);
     const [isRescanning, setIsRescanning] = useState<boolean>(false);
     const [rescanResult, setRescanResult] = useState<string | null>(null);
     const { t, locale } = useI18n();
@@ -71,6 +75,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
     const {
       library,
       isInitialLoading,
+      refreshLibrary,
       rescanLibrary,
       pauseDownload,
       resumeDownload,
@@ -183,27 +188,39 @@ export const LibraryView: FC<LibraryViewProps> = memo(
 
     // Открытие модалки серий через нативный Decky showModal — B кнопка работает автоматически
     const handleOpenEpisodes = useCallback((item: LibraryItem) => {
+      if (isOpeningEpisodesModalRef.current) return;
+      const root = rootRef.current;
+      const doc = getActiveDocument(root);
+      if (doc?.querySelector(".projacktor-modal-root")) return;
+
+      isOpeningEpisodesModalRef.current = true;
+      setTimeout(() => {
+        isOpeningEpisodesModalRef.current = false;
+      }, 600);
+
       lastInteractedItemIdRef.current = item.id;
       let modalInstance: any = null;
       const close = (refocus = true) => {
+        isOpeningEpisodesModalRef.current = false;
         if (modalInstance && typeof modalInstance.Close === "function") {
           modalInstance.Close();
         }
+        refreshLibrary();
         if (!refocus) return;
         // Возвращаем фокус на карточку после закрытия
         setTimeout(() => {
           if (isModalOpen()) return;
-          const root = rootRef.current;
-          if (!root) return;
-          const doc = getActiveDocument(root);
-          const card = root.querySelector<HTMLElement>(
+          const currentRoot = rootRef.current;
+          if (!currentRoot) return;
+          const currentDoc = getActiveDocument(currentRoot);
+          const card = currentRoot.querySelector<HTMLElement>(
             `[data-item-id="${item.id}"]`
           );
           const target = card?.querySelector<HTMLElement>(
             ".projacktor-dl-poster-btn, .projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0']"
           );
           if (target) {
-            doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+            currentDoc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
             target.focus();
             target.classList.add("gpfocus");
             scrollCardHorizontal(rowRef.current, card);
@@ -223,9 +240,9 @@ export const LibraryView: FC<LibraryViewProps> = memo(
         getParentWindow(),
         { bHideActionIcons: true }
       );
-    }, [handleWatchEpisode, downloadEpisode, pauseEpisodeDownload, cancelEpisodeDownload, deleteEpisode]);
+    }, [handleWatchEpisode, downloadEpisode, pauseEpisodeDownload, cancelEpisodeDownload, deleteEpisode, refreshLibrary]);
 
-    const handlePromptDelete = useCallback(
+    const handleDelete = useCallback(
       (item: LibraryItem, e?: any) => {
         if (e) {
           try {
@@ -233,32 +250,54 @@ export const LibraryView: FC<LibraryViewProps> = memo(
             e.preventDefault();
           } catch {}
         }
-        const isTv = item.media_type === "tv";
-        const totalEps = item.total_episodes_count || 0;
-        const downloadedEps = item.downloaded_episodes_count || 0;
-        const hasLocalFiles = !!(item.files && item.files.length > 0);
-        const isItemCompleted = isTv
-          ? (totalEps > 0 && downloadedEps >= totalEps)
-          : (item.download_status === "completed" ||
-             (item.download_progress !== undefined && item.download_progress >= 99.9) ||
-             hasLocalFiles);
 
-        showModal(
-          <ConfirmModal
-            strTitle={!isItemCompleted ? (t("confirmCancelTitle") || t("cancel")) : t("confirmDeleteTitle")}
-            strDescription={`${item.title}${item.year ? ` (${item.year})` : ""}`}
-            strOKButtonText={!isItemCompleted ? t("cancel") : t("delete")}
-            strCancelButtonText={t("close") || "Закрыть"}
-            bDestructiveWarning={true}
-            onOK={() => {
-              deleteItem(item.id);
-            }}
-          />,
-          getParentWindow()
+        // Предварительный перенос фокуса на соседнюю карточку при удалении
+        const root = rootRef.current;
+        const doc = getActiveDocument(root);
+        const card = (e?.target as HTMLElement)?.closest(".projacktor-dl-grid-card") ||
+          root?.querySelector(`[data-item-id="${item.id}"]`);
+        const nextCard = (card?.nextElementSibling || card?.previousElementSibling) as HTMLElement;
+        const targetToFocus = nextCard?.querySelector<HTMLElement>(
+          ".projacktor-dl-poster-btn, .projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0']"
         );
+        if (targetToFocus && doc) {
+          doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+          try { (targetToFocus as any).TakeFocus?.(0); } catch {}
+          targetToFocus.focus();
+          targetToFocus.classList.add("gpfocus");
+        }
+
+        deleteItem(item.id);
       },
-      [deleteItem, t]
-    );    // Синхронизация бэкдропа с элементами библиотеки
+      [deleteItem]
+    );
+
+    const magicBlackCooldownRef = useRef<number>(0);
+
+    const handleActivateMagicBlack = useCallback(
+      (item: LibraryItem, e?: any) => {
+        if (e) {
+          try {
+            e.stopPropagation();
+            e.preventDefault();
+          } catch {}
+        }
+        const now = Date.now();
+        if (now - magicBlackCooldownRef.current < 600) return;
+        magicBlackCooldownRef.current = now;
+
+        if (item.download_status === "paused") {
+          resumeDownload(item.id);
+        } else if (item.download_status !== "downloading") {
+          startDownload(item);
+        }
+
+        onActivateMagicBlack?.();
+      },
+      [resumeDownload, startDownload, onActivateMagicBlack]
+    );
+
+    // Синхронизация бэкдропа с элементами библиотеки
     useEffect(() => {
       if (!isInitialLoading) {
         if (library.length === 0) {
@@ -339,7 +378,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
       };
     }, []);
 
-    // Авто-скролл карточки только по вертикали при фокусе
+    // Отслеживаем активную карточку и кнопку для сохранения фокуса при обновлении прогресса
     useEffect(() => {
       const root = rootRef.current;
       if (!root) return;
@@ -349,6 +388,23 @@ export const LibraryView: FC<LibraryViewProps> = memo(
         if (!target || !root.contains(target)) return;
         const card = target.closest(".projacktor-dl-grid-card") as HTMLElement | null;
         if (card) {
+          const id = card.getAttribute("data-item-id");
+          if (id) lastFocusedCardIdRef.current = id;
+          if (target.classList.contains("projacktor-dl-poster-btn")) {
+            lastFocusedBtnSelectorRef.current = ".projacktor-dl-poster-btn";
+          } else if (target.classList.contains("projacktor-dl-btn-play")) {
+            lastFocusedBtnSelectorRef.current = ".projacktor-dl-btn-play";
+          } else if (target.classList.contains("projacktor-dl-btn-pause")) {
+            lastFocusedBtnSelectorRef.current = ".projacktor-dl-btn-pause, .projacktor-dl-btn-resume";
+          } else if (target.classList.contains("projacktor-dl-btn-resume")) {
+            lastFocusedBtnSelectorRef.current = ".projacktor-dl-btn-resume, .projacktor-dl-btn-pause";
+          } else if (target.classList.contains("projacktor-dl-btn-cancel")) {
+            lastFocusedBtnSelectorRef.current = ".projacktor-dl-btn-cancel";
+          } else if (target.classList.contains("projacktor-dl-btn-magic-black")) {
+            lastFocusedBtnSelectorRef.current = ".projacktor-dl-btn-magic-black";
+          } else {
+            lastFocusedBtnSelectorRef.current = null;
+          }
           scrollCardHorizontal(rowRef.current, card);
         }
       };
@@ -357,37 +413,59 @@ export const LibraryView: FC<LibraryViewProps> = memo(
       return () => root.removeEventListener("focusin", onFocusIn);
     }, []);
 
-
-
     const { handleGamepadDirection: handleGamepadDir } = useGridNavigation({
       rootRef,
       rowRef,
       items: library,
       supportsPosterFocus: true,
       onCardFocus: (item) => setBackdropMovie(item as any),
+      onNavigateUp,
     });
 
     useEffect(() => {
-      if (isModalOpen() || isPlayerActive()) return;
+      if (isModalOpen() || isPlayerActive() || isUserInTabs()) return;
       const doc = getActiveDocument(rootRef.current);
       const active = doc?.activeElement;
       const root = rootRef.current;
       if (!root) return;
-      if (!active || active === doc?.body || !root.contains(active)) {
-        const target = root.querySelector<HTMLElement>(
+
+      // Если фокус УЖЕ находится внутри активного элемента библиотеки, не сбрасываем его!
+      if (active && active !== doc?.body && root.contains(active)) {
+        return;
+      }
+
+      // Если фокус потерян (например, при перерисовке списка загрузок React'ом):
+      let target: HTMLElement | null = null;
+      if (lastFocusedCardIdRef.current) {
+        const lastCard = root.querySelector<HTMLElement>(`[data-item-id="${lastFocusedCardIdRef.current}"]`);
+        if (lastCard) {
+          if (lastFocusedBtnSelectorRef.current) {
+            target = lastCard.querySelector<HTMLElement>(lastFocusedBtnSelectorRef.current);
+          }
+          if (!target) {
+            target = lastCard.querySelector<HTMLElement>(
+              ".projacktor-dl-poster-btn, .projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0']"
+            );
+          }
+        }
+      }
+
+      if (!target) {
+        target = root.querySelector<HTMLElement>(
           ".projacktor-dl-poster-btn, .projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0'], .projacktor-empty-cta-btn, .projacktor-empty-lib"
         );
-        if (target) {
+      }
+
+      if (target) {
+        try {
+          doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
           try {
-            doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-            try {
-              (target as any).TakeFocus?.(0);
-            } catch {}
-            target.focus();
-            target.classList.add("gpfocus");
-            target.classList.add("gpfocuswithin");
+            (target as any).TakeFocus?.(0);
           } catch {}
-        }
+          target.focus();
+          target.classList.add("gpfocus");
+          target.classList.add("gpfocuswithin");
+        } catch {}
       }
     }, [library]);
 
@@ -422,9 +500,10 @@ export const LibraryView: FC<LibraryViewProps> = memo(
               {rescanResult}
             </div>
           )}
-          <div style={{ display: "flex", gap: 12, justifyContent: "center", alignItems: "center", flexWrap: "wrap" }}>
+          <Focusable flow-children="row" noFocusRing style={{ display: "flex", gap: 12, justifyContent: "center", alignItems: "center", flexWrap: "wrap" }}>
             <Focusable
               role="button"
+              tabIndex={0}
               className="ds-btn ds-btn--secondary projacktor-rescan-btn"
               onClick={async () => {
                 if (isRescanning) return;
@@ -450,6 +529,21 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                   setRescanResult(`${t("rescannedSuccess")} 0`);
                 }
               }}
+              onGamepadDirection={(evt: any) => {
+                if (evt?.detail?.button === 9) {
+                  try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                  onNavigateUp?.();
+                  return false;
+                }
+                return undefined;
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onNavigateUp?.();
+                }
+              }}
               style={{
                 display: "inline-flex",
                 alignItems: "center",
@@ -470,9 +564,25 @@ export const LibraryView: FC<LibraryViewProps> = memo(
             {onNavigateToCatalog && (
               <Focusable
                 role="button"
+                tabIndex={0}
                 className="ds-btn ds-btn--primary projacktor-empty-cta-btn"
                 onClick={onNavigateToCatalog}
                 onActivate={onNavigateToCatalog}
+                onGamepadDirection={(evt: any) => {
+                  if (evt?.detail?.button === 9) {
+                    try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                    onNavigateUp?.();
+                    return false;
+                  }
+                  return undefined;
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onNavigateUp?.();
+                  }
+                }}
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
@@ -487,7 +597,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                 {t("goToCatalog")}
               </Focusable>
             )}
-          </div>
+          </Focusable>
         </div>
       )}
 
@@ -495,7 +605,9 @@ export const LibraryView: FC<LibraryViewProps> = memo(
         <div ref={rowRef} className="projacktor-downloads-grid">
             {library.map((item, index) => {
               const isTv = item.media_type === "tv" || (item.files && item.files.length > 1) || (item.total_episodes_count !== undefined && item.total_episodes_count > 1);
-              const isDownloading = item.download_status === "downloading";
+              const isError = item.download_status === "error";
+              const isActualDownloading = item.download_status === "downloading" && (!isTv || (item.download_speed || 0) > 0 || (item.download_progress || 0) > 0);
+              const isDownloading = isActualDownloading;
               const isPaused = item.download_status === "paused";
               const hasLocalFiles = !!(item.files && item.files.length > 0);
               const localFilePath = hasLocalFiles && item.files ? item.files[0].file_path : null;
@@ -505,12 +617,12 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                 : (item.files ? item.files.filter((f) => f.file_size > 100 * 1024).length : 0);
               const totalEps = item.total_episodes_count || 0;
 
-              // Фильм считается полностью скачанным, если есть локальный файл или статус completed
+              // Фильм считается полностью скачанным ТОЛЬКО если:
+              // 1) Для сериалов: все серии есть на диске
+              // 2) Для фильмов: есть реальный физический файл на диске (hasLocalFiles) И статус не error!
               const isCompleted = isTv
                 ? (totalEps > 0 && downloadedEps >= totalEps)
-                : (item.download_status === "completed" ||
-                   (item.download_progress !== undefined && item.download_progress >= 99.9) ||
-                   hasLocalFiles);
+                : (!isError && hasLocalFiles && (item.download_status === "completed" || (item.download_progress !== undefined && item.download_progress >= 99.9) || hasLocalFiles));
 
               // Если физический файл есть на диске, фильм или серия ВСЕГДА может быть проигран напрямую!
               const canPlayDirect = hasLocalFiles && !!localFilePath && (!isTv || totalEps <= 1 || downloadedEps >= totalEps);
@@ -523,6 +635,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                     e.preventDefault();
                   } catch {}
                 }
+                if (isOpeningEpisodesModalRef.current) return;
                 lastInteractedItemIdRef.current = item.id;
                 if (isTv) {
                   // Для сериалов ВСЕГДА открываем список серий, чтобы не включать случайно первую попавшуюся серию
@@ -543,10 +656,22 @@ export const LibraryView: FC<LibraryViewProps> = memo(
 
               let badgeText: string | null = null;
               let badgeClass = "";
-              if (isCompleted) {
+              if (isError) {
+                badgeText = locale === "en" ? "Error" : "Ошибка";
+                badgeClass = "danger";
+              } else if (isCompleted) {
                 // "✓ Скачано" пишем ТОЛЬКО когда загружены абсолютно все серии (или фильм целиком)
                 badgeText = t("downloadedBadge");
                 badgeClass = "completed";
+              } else if (isTv && downloadedEps > 0 && !isActualDownloading) {
+                // Скачана часть серий (например, одна или две) и активной загрузки нет - пишем точное количество серий
+                const epWord = locale === "en"
+                  ? (downloadedEps === 1 ? "episode" : "episodes")
+                  : (downloadedEps % 10 === 1 && downloadedEps % 100 !== 11 ? "серия" : (downloadedEps % 10 >= 2 && downloadedEps % 10 <= 4 && (downloadedEps % 100 < 10 || downloadedEps % 100 >= 20) ? "серии" : "серий"));
+                badgeText = totalEps > 0
+                  ? `${downloadedEps} ${t("episodesOf")} ${totalEps} ${t("episodesPlural")}`
+                  : `${downloadedEps} ${epWord}`;
+                badgeClass = "queued";
               } else if (isDownloading) {
                 const spd = formatSpeed(item.download_speed || 0);
                 badgeText = `${progress.toFixed(0)}% • ${spd}`;
@@ -555,7 +680,6 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                 badgeText = progress > 0 ? `${t("pausedBadge")} (${progress.toFixed(0)}%)` : t("pausedBadge");
                 badgeClass = "paused";
               } else if (isTv && downloadedEps > 0) {
-                // Скачана часть серий (например, одна или две) - пишем точное количество серий, а не "Скачано"
                 const epWord = locale === "en"
                   ? (downloadedEps === 1 ? "episode" : "episodes")
                   : (downloadedEps % 10 === 1 && downloadedEps % 100 !== 11 ? "серия" : (downloadedEps % 10 >= 2 && downloadedEps % 10 <= 4 && (downloadedEps % 100 < 10 || downloadedEps % 100 >= 20) ? "серии" : "серий"));
@@ -571,7 +695,10 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                   className="projacktor-dl-grid-card"
                   data-item-id={item.id}
                   data-card-index={index}
-                  onClick={(e: any) => handlePrimaryAction(e)}
+                  onClick={(e: any) => {
+                    if (e?.target?.closest?.('.projacktor-dl-poster-btn') || e?.target?.closest?.('.projacktor-dl-card-btns')) return;
+                    handlePrimaryAction(e);
+                  }}
                   onFocusCapture={() => setBackdropMovie(item as any)}
                   onMouseEnter={() => setBackdropMovie(item as any)}
                 >
@@ -695,7 +822,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                         </Focusable>
                       )
                     ) : (
-                      (canPlayDirect || hasLocalFiles) && (
+                      (canPlayDirect || (hasLocalFiles && !isError)) && (
                         <Focusable
                           className="projacktor-dl-btn-play success"
                           noFocusRing
@@ -711,8 +838,8 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                       )
                     )}
 
-                    {/* Кнопка Пауза / Загрузить (для сериалов — загрузка всех нескачанных серий) */}
-                    {!isCompleted && (
+                    {/* Кнопка Повторить при ошибке */}
+                    {isError && (
                       <Focusable
                         className="projacktor-dl-btn-icon"
                         noFocusRing
@@ -721,7 +848,33 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                           if (e) {
                             try { e.stopPropagation(); e.preventDefault(); } catch {}
                           }
-                          isDownloading
+                          startDownload(item);
+                        }}
+                        onClick={(e: any) => {
+                          if (e) {
+                            try { e.stopPropagation(); e.preventDefault(); } catch {}
+                          }
+                          startDownload(item);
+                        }}
+                        onFocus={() => setBackdropMovie(item as any)}
+                        onMouseEnter={() => setBackdropMovie(item as any)}
+                        title={t("checkAgain") || "Повторить"}
+                      >
+                        <FaSync style={{ fontSize: 9.5 }} />
+                      </Focusable>
+                    )}
+
+                    {/* Кнопка Пауза / Загрузить (для сериалов — загрузка всех нескачанных серий) */}
+                    {!isCompleted && !isError && (
+                      <Focusable
+                        className="projacktor-dl-btn-icon"
+                        noFocusRing
+                        tabIndex={0}
+                        onActivate={(e: any) => {
+                          if (e) {
+                            try { e.stopPropagation(); e.preventDefault(); } catch {}
+                          }
+                          isActualDownloading
                             ? pauseDownload(item.id)
                             : isPaused
                             ? resumeDownload(item.id)
@@ -731,7 +884,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                           if (e) {
                             try { e.stopPropagation(); e.preventDefault(); } catch {}
                           }
-                          isDownloading
+                          isActualDownloading
                             ? pauseDownload(item.id)
                             : isPaused
                             ? resumeDownload(item.id)
@@ -739,36 +892,20 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                         }}
                         onFocus={() => setBackdropMovie(item as any)}
                         onMouseEnter={() => setBackdropMovie(item as any)}
-                        title={isDownloading ? t("pause") : isPaused ? t("resume") : (isTv ? t("downloadAllEpisodes") : t("download"))}
+                        title={isActualDownloading ? t("pause") : isPaused ? t("resume") : (isTv ? t("downloadAllEpisodes") : t("download"))}
                       >
-                        {isDownloading ? <FaPause style={{ fontSize: 9.5 }} /> : <FaDownload style={{ fontSize: 9.5 }} />}
+                        {isActualDownloading ? <FaPause style={{ fontSize: 9.5 }} /> : <FaDownload style={{ fontSize: 9.5 }} />}
                       </Focusable>
                     )}
 
                     {/* Кнопка Загрузка в спящем режиме (Magic Black) */}
                     {!isCompleted && (
                       <Focusable
-                        className="projacktor-dl-btn-icon"
+                        className="projacktor-dl-btn-icon projacktor-magicblack-btn"
                         noFocusRing
                         tabIndex={0}
-                        onActivate={(e: any) => {
-                          if (e) {
-                            try { e.stopPropagation(); e.preventDefault(); } catch {}
-                          }
-                          if (isPaused) {
-                            resumeDownload(item.id);
-                          }
-                          onActivateMagicBlack?.();
-                        }}
-                        onClick={(e: any) => {
-                          if (e) {
-                            try { e.stopPropagation(); e.preventDefault(); } catch {}
-                          }
-                          if (isPaused) {
-                            resumeDownload(item.id);
-                          }
-                          onActivateMagicBlack?.();
-                        }}
+                        onActivate={(e: any) => handleActivateMagicBlack(item, e)}
+                        onClick={(e: any) => handleActivateMagicBlack(item, e)}
                         onFocus={() => setBackdropMovie(item as any)}
                         onMouseEnter={() => setBackdropMovie(item as any)}
                         title={t("downloadSleepMagicBlack")}
@@ -782,8 +919,8 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                       className="projacktor-dl-btn-icon danger"
                       noFocusRing
                       tabIndex={0}
-                      onActivate={(e: any) => handlePromptDelete(item, e)}
-                      onClick={(e: any) => handlePromptDelete(item, e)}
+                      onActivate={(e: any) => handleDelete(item, e)}
+                      onClick={(e: any) => handleDelete(item, e)}
                       onFocus={() => setBackdropMovie(item as any)}
                       onMouseEnter={() => setBackdropMovie(item as any)}
                       title={!isCompleted ? t("cancel") : t("delete")}

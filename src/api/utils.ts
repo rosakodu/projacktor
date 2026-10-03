@@ -99,3 +99,29 @@ export function sortEpisodes<T extends { name?: string; path?: string }>(episode
   });
 }
 
+export function isGhostCatalogItem(item: any, today?: string, isEn?: boolean): boolean {
+  if (!item) return true;
+  if (!item.poster_path) return true;
+
+  const curToday = today || new Date().toISOString().split("T")[0];
+  const rDate = item.release_date || item.first_air_date || "";
+  // Невышедшие в прокат (будущая дата релиза или отсутствие даты)
+  if (!rDate || rDate > curToday) return true;
+
+  // Заглушки с нулевым или очень низким количеством оценок (< 10)
+  const voteCount = Number(item.vote_count ?? 0);
+  if (voteCount < 10) return true;
+
+  const title = String(item.title || item.name || "");
+  const hasExotic = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f\uac00-\ud7af\u0600-\u06ff\u0900-\u097f]/.test(title);
+  const hasCyrillic = /[\u0400-\u04FF]/.test(title);
+
+  // Нелокализованные релизы без перевода на русский и без мировой известности (< 100 оценок)
+  const englishMode = isEn ?? (getLocale() === "en");
+  if (!englishMode && hasExotic && !hasCyrillic && voteCount < 100) {
+    return true;
+  }
+
+  return false;
+}
+

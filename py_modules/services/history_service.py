@@ -77,6 +77,19 @@ class HistoryService:
                         except Exception as e:
                             logger.warning(f"Failed to sync watch_history item {d.get('id')}: {e}")
 
+                    # If stream_url pointed to a local file that is now gone, clear it
+                    if d.get('stream_url') and 'file=' in d['stream_url']:
+                        m = re.search(r'[?&]file=([^&]+)', d['stream_url'])
+                        if m:
+                            unquoted = urllib.parse.unquote(m.group(1))
+                            if not os.path.isfile(unquoted):
+                                d['stream_url'] = None
+                                try:
+                                    db.execute("UPDATE watch_history SET stream_url=NULL WHERE id=?", (d['id'],))
+                                    db.commit()
+                                except Exception:
+                                    pass
+
                     dl_row = None
                     if d.get('media_id'):
                         dl_row = db.execute(

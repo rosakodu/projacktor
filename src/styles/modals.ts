@@ -474,4 +474,15 @@ div:has(> .projacktor-modal-root) {
   overflow: hidden !important;
   text-overflow: ellipsis !important;
 }
+
+.projacktor-torrent-retry-btn:focus,
+.projacktor-torrent-retry-btn.gpfocus {
+  outline: 2px solid #ffffff !important;
+  outline-offset: -1px !important;
+  box-shadow: 0 0 10px rgba(26, 159, 255, 0.7) !important;
+  background: var(--ds-accent, #1a9fff) !important;
+  color: #fff !important;
+  position: relative !important;
+  z-index: 5 !important;
+}
 `;

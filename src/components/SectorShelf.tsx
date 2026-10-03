@@ -6,6 +6,7 @@ import { RawButton, subscribeControllerInput } from "../runtime/controllerInput"
 import { isModalOpen, isPlayerActive } from "../runtime/homeInputBus";
 import { getActiveDocument } from "../runtime/activeDoc";
 import { playCardNavSound } from "../runtime/navSound";
+import { triggerHaptic } from "../runtime/haptics";
 import { setBackdropMovie } from "../runtime/backdropBus";
 import { useI18n } from "../i18n";
 
@@ -18,6 +19,7 @@ interface SectorShelfProps {
   onNextSection?: () => void;
   hasPrevSection?: boolean;
   hasNextSection?: boolean;
+  onNavigateUp?: () => void;
 }
 
 function computeCenteredScrollLeft(
@@ -42,6 +44,7 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
     onNextSection,
     hasPrevSection,
     hasNextSection,
+    onNavigateUp,
   }) => {
     const { t } = useI18n();
     const shelfRef = useRef<HTMLDivElement>(null);
@@ -53,21 +56,29 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
     itemsRef.current = items;
 
     const triggerPrevSection = useCallback(() => {
-      if (isModalOpen()) return;
-      const now = Date.now();
-      if (now - lastSectionChangeAtRef.current < SECTION_COOLDOWN_MS) return;
-      lastSectionChangeAtRef.current = now;
+      if (isModalOpen()) return false;
 
       if (!hasPrevSection) {
-        return;
+        if (onNavigateUp) {
+          onNavigateUp();
+          return true;
+        }
+        return false;
       }
+
+      const now = Date.now();
+      if (now - lastSectionChangeAtRef.current < SECTION_COOLDOWN_MS) return true;
+      lastSectionChangeAtRef.current = now;
       if (onPrevSection) {
+        triggerHaptic("medium", "both");
         playCardNavSound();
         const doc = getActiveDocument(rowRef.current);
         doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
         onPrevSection();
+        return true;
       }
-    }, [hasPrevSection, onPrevSection]);
+      return false;
+    }, [hasPrevSection, onPrevSection, onNavigateUp]);
 
     const triggerNextSection = useCallback(() => {
       if (isModalOpen()) return;
@@ -75,6 +86,7 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
       const now = Date.now();
       if (now - lastSectionChangeAtRef.current < SECTION_COOLDOWN_MS) return;
       lastSectionChangeAtRef.current = now;
+      triggerHaptic("medium", "both");
       playCardNavSound();
       const doc = getActiveDocument(rowRef.current);
       doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
@@ -114,6 +126,7 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
         );
         target.focus();
         target.classList.add("gpfocus");
+        triggerHaptic("light", "both");
         playCardNavSound();
 
         if (itemsRef.current[nextIdx]) {
@@ -134,12 +147,15 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
         const btn = evt?.detail?.button;
         if (btn === 9) {
           // DPAD_UP
-          try {
-            evt?.preventDefault?.();
-            evt?.stopPropagation?.();
-          } catch {}
-          triggerPrevSection();
-          return false;
+          const handled = triggerPrevSection();
+          if (handled) {
+            try {
+              evt?.preventDefault?.();
+              evt?.stopPropagation?.();
+            } catch {}
+            return false;
+          }
+          return undefined;
         } else if (btn === 10) {
           // DPAD_DOWN
           try {
@@ -326,9 +342,11 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
         if (inTabs) return;
 
         if (e.key === "ArrowUp") {
-          e.preventDefault();
-          e.stopPropagation();
-          triggerPrevSection();
+          const handled = triggerPrevSection();
+          if (handled) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
         } else if (e.key === "ArrowDown") {
           e.preventDefault();
           e.stopPropagation();

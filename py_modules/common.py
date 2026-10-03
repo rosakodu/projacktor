@@ -69,10 +69,11 @@ UNSUPPORTED_MEDIA_REGEX = re.compile(
     r'\.(rar|zip|7z|tar|gz|bz2|xz|iso|img)(?:$|[\s\?&"\'\)\]_#])|'
     r'\bpart\d+\.rar\b|'
     r'(?:^|[\s.\[\(_-])(?:rar|zip|7z|iso)(?:$|[\s.\]\)_-])|'
-    r'\b(?:bdmv|dvd-?9|dvd-?5|dvd9|dvd5)\b|'
-    r'(?:^|[\s.\[\(_-])(?:bdmv|dvd9|dvd5)(?:$|[\s.\]\)_-])|'
-    r'blu-?ray\s*(?:full|complete|образ)|'
-    r'полный\s*диск'
+    r'\b(?:bdmv|dvd-?9|dvd-?5|dvd9|dvd5|bd-?25|bd-?50|bd-?66|bd-?100|bd25|bd50|bd66|bd100)\b|'
+    r'(?:^|[\s.\[\(_-])(?:bdmv|dvd9|dvd5|bd-?25|bd-?50|bd-?66|bd-?100)(?:$|[\s.\]\)_-])|'
+    r'(?:uhd\s*)?blu-?ray[\s._\-\(\[]*(?:full|complete|образ|disc|disk|диск)|'
+    r'dvd[\s._\-\(\[]*(?:disc|disk|диск)|'
+    r'(?:полный|образ)\s*диск[а]?'
     r')'
 )
 
@@ -80,7 +81,14 @@ def is_unsupported_media_release(title: str, magnet: str = "") -> bool:
     if not title and not magnet:
         return False
     combined = f"{title or ''} {magnet or ''}"
-    return bool(UNSUPPORTED_MEDIA_REGEX.search(combined))
+    if UNSUPPORTED_MEDIA_REGEX.search(combined):
+        return True
+    lower = combined.lower()
+    if "blu-ray" in lower or "bluray" in lower:
+        if not re.search(r'\b(remux|rip)\b', lower):
+            if re.search(r'blu-?ray[\s._\-\(\[]*(?:\d+p|\d+i|cee|eur|rus|3d|custom)', lower):
+                return True
+    return False
 
 def normalize_jacred_url(url: str) -> str:
     if not url:

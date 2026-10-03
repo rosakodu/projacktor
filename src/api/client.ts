@@ -9,7 +9,7 @@ import {
   WatchlistItem,
   WatchHistoryItem,
 } from "../types";
-import { API_BASE, formatBytes } from "./utils";
+import { API_BASE, formatBytes, isGhostCatalogItem } from "./utils";
 import { getCachedCatalog, setCachedCatalog } from "./cache";
 import { getLocale } from "../i18n/state";
 
@@ -154,15 +154,35 @@ export async function fetchCatalog(
     const isEn = getLocale() === "en";
     const langParam = isEn ? "en-US" : "ru-RU";
     const separator = url.includes("?") ? "&" : "?";
-    url = `${url}${separator}language=${langParam}`;
+    const fetchUrl = `${url}${separator}language=${langParam}`;
 
-    const res = await fetch(url);
+    const res = await fetch(fetchUrl);
     if (!res.ok) {
       return getCachedCatalog(endpoint, mediaType) || [];
     }
     const data = await res.json();
+    let rawResults: any[] = data.results || [];
+
+    // Строгий фильтр релизов-призраков (невышедшие, < 10 голосов, нелокализованные без перевода)
+    let validResults = rawResults.filter((item: any) => !isGhostCatalogItem(item, today, isEn));
+
+    // Если после фильтрации карточек осталось мало (< 15) и мы на 1-й странице, догружаем 2-ю страницу
+    if (validResults.length < 15 && page === 1 && !fetchUrl.includes("page=2")) {
+      try {
+        const page2Url = fetchUrl.replace(/page=1\b/, "page=2");
+        if (page2Url !== fetchUrl) {
+          const res2 = await fetch(page2Url);
+          if (res2.ok) {
+            const data2 = await res2.json();
+            const page2Valid = (data2.results || []).filter((item: any) => !isGhostCatalogItem(item, today, isEn));
+            validResults.push(...page2Valid);
+          }
+        }
+      } catch {}
+    }
+
     const inferredType = mediaType === "cartoon" ? "movie" : mediaType === "anime" ? "tv" : mediaType;
-    const items = (data.results || []).map((item: any) => ({
+    const items = validResults.map((item: any) => ({
       ...item,
       title: item.title || item.name || (isEn ? "Untitled" : "Без названия"),
       release_date: item.release_date || item.first_air_date || "",
@@ -263,12 +283,23 @@ export function isExecutableRelease(title: string, magnet?: string): boolean {
 }
 
 const UNSUPPORTED_MEDIA_REGEX =
-  /(?:\.(rar|zip|7z|tar|gz|bz2|xz|iso|img)(?:$|[\s\?&"'\)\]_#])|\bpart\d+\.rar\b|(?:^|[\s.\[\(_-])(?:rar|zip|7z|iso)(?:$|[\s.\]\)_-])|\b(?:bdmv|dvd-?9|dvd-?5|dvd9|dvd5)\b|(?:^|[\s.\[\(_-])(?:bdmv|dvd9|dvd5)(?:$|[\s.\]\)_-])|blu-?ray\s*(?:full|complete|образ)|полный\s*диск)/iu;
+  /(?:\.(rar|zip|7z|tar|gz|bz2|xz|iso|img)(?:$|[\s\?&"'\)\]_#])|\bpart\d+\.rar\b|(?:^|[\s.\[\(_-])(?:rar|zip|7z|iso)(?:$|[\s.\]\)_-])|\b(?:bdmv|dvd-?9|dvd-?5|dvd9|dvd5|bd-?25|bd-?50|bd-?66|bd-?100|bd25|bd50|bd66|bd100)\b|(?:^|[\s.\[\(_-])(?:bdmv|dvd9|dvd5|bd-?25|bd-?50|bd-?66|bd-?100)(?:$|[\s.\]\)_-])|(?:uhd\s*)?blu-?ray[\s._\-\(\[]*(?:full|complete|образ|disc|disk|диск)|dvd[\s._\-\(\[]*(?:disc|disk|диск)|(?:полный|образ)\s*диск[а]?)/iu;
 
 export function isUnsupportedMediaRelease(title: string, magnet?: string): boolean {
   if (!title && !magnet) return false;
   const combined = `${title || ""} ${magnet || ""}`;
-  return UNSUPPORTED_MEDIA_REGEX.test(combined);
+  if (UNSUPPORTED_MEDIA_REGEX.test(combined)) {
+    return true;
+  }
+  const lower = combined.toLowerCase();
+  if (lower.includes("blu-ray") || lower.includes("bluray")) {
+    if (!/\b(remux|rip)\b/i.test(lower)) {
+      if (/blu-?ray[\s._\-\(\[]*(?:\d+p|\d+i|cee|eur|rus|3d|custom)/i.test(lower)) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function filterTorrents(

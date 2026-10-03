@@ -124,7 +124,20 @@ export function triggerHaptic(
     }
   } catch {}
 
-  // 2. Standard Web Vibration API fallback / complement
+  // 2. Native SteamOS GamepadUI Haptic & Sound integration
+  try {
+    const g = globalThis as any;
+    const store =
+      g.SteamUIStore?.m_GamepadUIAudioStore ||
+      g.opener?.SteamUIStore?.m_GamepadUIAudioStore ||
+      g.parent?.SteamUIStore?.m_GamepadUIAudioStore;
+    if (store && typeof store.PlayNavSound === "function") {
+      const soundType = strength === "click" || strength === "heavy" ? 10 : 15;
+      store.PlayNavSound(soundType);
+    }
+  } catch {}
+
+  // 3. Standard Web Vibration API fallback / complement
   try {
     if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
       navigator.vibrate(vibPattern);

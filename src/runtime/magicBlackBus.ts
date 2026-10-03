@@ -103,14 +103,18 @@ export function setMagicBlack(active: boolean): void {
   const wins = getAllSteamWindows();
 
   if (active) {
-    // 1. Save currently focused element and window, then blur so no focus outline/border remains
+    // 1. Save currently focused element and window, then defer blur so current activation does not jump to adjacent buttons
     try {
       const found = findActiveElement();
       savedFocusElement = found.el;
       savedWindow = found.win;
-      if (savedFocusElement && typeof savedFocusElement.blur === "function") {
-        savedFocusElement.blur();
-      }
+      setTimeout(() => {
+        try {
+          if (activeState && savedFocusElement && typeof savedFocusElement.blur === "function") {
+            savedFocusElement.blur();
+          }
+        } catch {}
+      }, 60);
     } catch {}
 
     // 2. Add global class to suppress any residual borders/focus-rings across all documents

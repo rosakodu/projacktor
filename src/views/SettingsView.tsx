@@ -16,7 +16,7 @@ import {
   formatBytes,
   StorageDrive,
 } from "../api";
-import { getActiveDocument } from "../runtime/activeDoc";
+import { getActiveDocument, getActiveWindow } from "../runtime/activeDoc";
 import { useI18n } from "../i18n";
 
 // Модульный кэш статуса и URL, чтобы при переключении между вкладками статус не сбрасывался и не мигал красным
@@ -27,7 +27,11 @@ let cachedTorrServerPort: number = 8095;
 
 const LOCAL_STORAGE_JACRED_KEY = "projacktor_jacred_url";
 
-export const SettingsView: FC = memo(() => {
+interface SettingsViewProps {
+  onNavigateUp?: () => void;
+}
+
+export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
   const rootRef = useRef<HTMLDivElement>(null);
   const { t } = useI18n();
   const [jacredUrl, setJacredUrl] = useState<string>(() => {
@@ -255,6 +259,42 @@ export const SettingsView: FC = memo(() => {
     }
   }, [clearingCache]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "ArrowUp") {
+        const root = rootRef.current;
+        if (!root) return;
+        const doc = getActiveDocument(root);
+        const active = doc?.activeElement;
+        const firstCard = root.querySelector(".projacktor-settings-card");
+        if (active && firstCard && (firstCard === active || firstCard.contains(active))) {
+          e.preventDefault();
+          e.stopPropagation();
+          onNavigateUp?.();
+        }
+      }
+    };
+
+    const targets: EventTarget[] = [];
+    if (typeof window !== "undefined") targets.push(window);
+    if (typeof document !== "undefined") targets.push(document);
+    try {
+      const activeWin = getActiveWindow();
+      if (activeWin && !targets.includes(activeWin)) targets.push(activeWin);
+      if (activeWin?.document && !targets.includes(activeWin.document)) targets.push(activeWin.document);
+    } catch {}
+
+    targets.forEach((t) => {
+      try { t.addEventListener("keydown", handleKeyDown as any, true); } catch {}
+    });
+
+    return () => {
+      targets.forEach((t) => {
+        try { t.removeEventListener("keydown", handleKeyDown as any, true); } catch {}
+      });
+    };
+  }, [onNavigateUp]);
+
   return (
     <Focusable
       ref={rootRef}
@@ -264,19 +304,36 @@ export const SettingsView: FC = memo(() => {
       onGamepadDirection={(evt: any) => {
         const btn = evt?.detail?.button;
         if (btn === 9) {
-          // DPAD_UP: блокируем переход вверх, если фокус в первом блоке настроек
+          // DPAD_UP: переходим в TabBar, если фокус в первом блоке настроек
           const doc = getActiveDocument(rootRef.current);
           const active = doc?.activeElement;
-          const firstSection = rootRef.current?.querySelector(".PanelSectionRow, [flow-children='row']");
-          if (active && firstSection && (firstSection === active || firstSection.contains(active))) {
-            try {
-              evt?.preventDefault?.();
-              evt?.stopPropagation?.();
-            } catch {}
-            return false;
+          const firstCard = rootRef.current?.querySelector(".projacktor-settings-card");
+          if (active && firstCard && (firstCard === active || firstCard.contains(active))) {
+            if (onNavigateUp) {
+              try {
+                evt?.preventDefault?.();
+                evt?.stopPropagation?.();
+              } catch {}
+              onNavigateUp();
+              return false;
+            }
           }
         }
         return undefined;
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "ArrowUp") {
+          const doc = getActiveDocument(rootRef.current);
+          const active = doc?.activeElement;
+          const firstCard = rootRef.current?.querySelector(".projacktor-settings-card");
+          if (active && firstCard && (firstCard === active || firstCard.contains(active))) {
+            if (onNavigateUp) {
+              e.preventDefault();
+              e.stopPropagation();
+              onNavigateUp();
+            }
+          }
+        }
       }}
       style={{
         width: "100%",
@@ -318,6 +375,13 @@ export const SettingsView: FC = memo(() => {
                   onChange={setJacredUrl}
                   onSubmit={handleSaveSettings}
                   onBlur={handleSaveSettings}
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onNavigateUp?.();
+                    }
+                  }}
                   placeholder={t("enterParserUrl")}
                 />
                 <Focusable
@@ -428,6 +492,7 @@ export const SettingsView: FC = memo(() => {
                     return (
                       <Focusable
                         noFocusRing
+                        tabIndex={0}
                         key={d.id}
                         onActivate={() => handleSelectDrivePreset(d)}
                         onClick={() => handleSelectDrivePreset(d)}
@@ -462,9 +527,7 @@ export const SettingsView: FC = memo(() => {
 
             {/* Сброс кэша */}
             <PanelSectionRow>
-              <Focusable
-                noFocusRing
-                flow-children="row"
+              <div
                 style={{
                   borderTop: "1px solid rgba(255,255,255,0.06)",
                   paddingTop: 8,
@@ -494,7 +557,7 @@ export const SettingsView: FC = memo(() => {
                   <FaTrash style={{ fontSize: 10 }} />
                   {clearingCache ? t("clearing") : cacheClearedSuccess ? `✓ ${t("cleared")}` : t("clearCache")}
                 </Focusable>
-              </Focusable>
+              </div>
             </PanelSectionRow>
           </PanelSection>
         </div>
