@@ -445,6 +445,8 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             self._handle_stream_probe(query)
         elif path == '/api/stream/subtitles':
             self._handle_stream_subtitles(query)
+        elif path == '/api/torrserver/prewarm':
+            self._handle_torrserver_prewarm(query)
         elif path == '/api/settings':
             self._send_json(load_settings())
         elif path == '/api/status':
@@ -841,6 +843,20 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             return
         self._send_json({"status": ping_jacred(url, timeout=5)})
 
+    def _handle_torrserver_prewarm(self, query):
+        magnet = query.get('magnet', [''])[0]
+        title = query.get('title', [''])[0]
+        poster = query.get('poster', [''])[0]
+        if magnet and plugin_instance and getattr(plugin_instance, 'ts', None):
+            def _async_prewarm():
+                try:
+                    plugin_instance.ts.ensure_running()
+                    plugin_instance.ts.add_torrent(magnet, title=title, poster=poster)
+                except Exception as e:
+                    logger.debug(f"[Prewarm] TorrServer async add error: {e}")
+            threading.Thread(target=_async_prewarm, daemon=True).start()
+        self._send_json({"success": True})
+
     def _handle_downloads_list(self):
         db = get_db()
         try:
@@ -1086,6 +1102,10 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             must_transcode = (transcode_mode == '1') or (transcode_mode == 'auto' and (plan["audio_needs_transcode"] or plan["video_needs_transcode"] or container_needs_remux))
 
         if must_transcode and transcode_mode != '0':
+            # Stop any older dangling stream processes before starting a new one
+            # to immediately free GPU/VAAPI encoder contexts and release file handles
+            stop_all_active_streams()
+
             self.send_response(200)
             self.send_cors_headers()
             self.send_header('Content-Type', 'video/mp4')
@@ -1107,9 +1127,6 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                 is_http=is_http,
                 is_online=is_online
             )
-
-            # Stop any older dangling stream processes
-            stop_all_active_streams()
 
             env = _clean_env()
             logger.info(f"[Stream] FFmpeg cmd: {' '.join(cmd[:6])}... source={source[:80]}")

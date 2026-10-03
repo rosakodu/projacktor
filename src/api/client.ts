@@ -424,6 +424,9 @@ export function parseQuality(title: string, existingQuality?: string): string {
   return "";
 }
 
+const torrentSearchCache = new Map<string, { time: number; data: TorrentItem[] }>();
+const TORRENT_CACHE_TTL = 10 * 60 * 1000; // 10 минут
+
 export async function searchTorrents(
   title: string,
   year?: string,
@@ -431,6 +434,19 @@ export async function searchTorrents(
   originalTitle?: string
 ): Promise<TorrentItem[]> {
   try {
+    const cleanTitle = title.replace(/[№#]/g, " ").replace(/\s+/g, " ").trim();
+    const hasOriginal = originalTitle && originalTitle.trim() && originalTitle.toLowerCase() !== cleanTitle.toLowerCase();
+    let cleanOrig = "";
+    if (hasOriginal && !hasCJK(originalTitle)) {
+      cleanOrig = originalTitle.replace(/[№#]/g, " ").replace(/\s+/g, " ").trim();
+    }
+
+    const cacheKey = `${cleanTitle}_${year || ""}_${mediaType}_${cleanOrig}`.toLowerCase();
+    const cached = torrentSearchCache.get(cacheKey);
+    if (cached && Date.now() - cached.time < TORRENT_CACHE_TTL && cached.data.length > 0) {
+      return cached.data;
+    }
+
     const cat = mediaType === "movie" ? "2000,5070" : "5000,5070";
 
     const fetchQ = async (q: string, category: string = cat): Promise<any[]> => {
@@ -444,60 +460,39 @@ export async function searchTorrents(
       }
     };
 
-    const cleanTitle = title.replace(/[№#]/g, " ").replace(/\s+/g, " ").trim();
-
-    const queries = new Set<string>();
-    queries.add(cleanTitle);
-
-    const hasOriginal = originalTitle && originalTitle.trim() && originalTitle.toLowerCase() !== cleanTitle.toLowerCase();
-    let cleanOrig = "";
-    if (hasOriginal && !hasCJK(originalTitle)) {
-      cleanOrig = originalTitle.replace(/[№#]/g, " ").replace(/\s+/g, " ").trim();
-      queries.add(cleanOrig);
-    }
-
-    if (year) {
-      queries.add(`${cleanTitle} ${year}`);
-      if (cleanOrig) {
-        queries.add(`${cleanOrig} ${year}`);
-      }
-    }
-
-    const colonIdx = cleanTitle.indexOf(":");
-    if (colonIdx > 2) {
-      const shortTitle = cleanTitle.substring(0, colonIdx).trim();
-      if (shortTitle.length >= 3) {
-        queries.add(shortTitle);
-      }
-    }
-
-    const queryList = Array.from(queries).slice(0, 4);
     let rawCandidates: any[] = [];
 
-    // Последовательный опрос с ранним выходом, чтобы избежать Cloudflare 429 Too Many Requests
-    for (let i = 0; i < queryList.length; i++) {
-      const q = queryList[i];
-      try {
-        const res = await fetchQ(q);
-        if (Array.isArray(res) && res.length > 0) {
-          rawCandidates.push(...res);
-          // Если уже найдено достаточно раздач (>= 5), прекращаем нагружать сервер
-          if (rawCandidates.length >= 8) {
-            break;
-          }
-        }
-      } catch (err) {
-        // Одиночная ошибка запроса не должна ломать весь поиск
-      }
-      // Небольшая пауза между запросами для сглаживания нагрузки
-      if (i < queryList.length - 1 && rawCandidates.length < 8) {
-        await new Promise((resolve) => setTimeout(resolve, 150));
+    // Этап 1: Быстрый параллельный опрос основного и оригинального названий (~300-400 мс)
+    const stage1Queries = [cleanTitle];
+    if (cleanOrig) {
+      stage1Queries.push(cleanOrig);
+    }
+
+    const stage1Results = await Promise.allSettled(stage1Queries.map((q) => fetchQ(q)));
+    for (const r of stage1Results) {
+      if (r.status === "fulfilled" && Array.isArray(r.value)) {
+        rawCandidates.push(...r.value);
       }
     }
 
-    if (rawCandidates.length === 0 && queryList.length > 0) {
+    // Этап 2: Если результатов мало (< 6) и указан год — опрашиваем запросы с годом
+    if (rawCandidates.length < 6 && year) {
+      const stage2Queries = [`${cleanTitle} ${year}`];
+      if (cleanOrig) {
+        stage2Queries.push(`${cleanOrig} ${year}`);
+      }
+      const stage2Results = await Promise.allSettled(stage2Queries.map((q) => fetchQ(q)));
+      for (const r of stage2Results) {
+        if (r.status === "fulfilled" && Array.isArray(r.value)) {
+          rawCandidates.push(...r.value);
+        }
+      }
+    }
+
+    // Этап 3: Если раздач вообще не найдено — запасной опрос без фильтра категорий
+    if (rawCandidates.length === 0) {
       try {
-        const fallbackRes = await fetchQ(queryList[0], "");
+        const fallbackRes = await fetchQ(cleanTitle, "");
         if (Array.isArray(fallbackRes)) {
           rawCandidates.push(...fallbackRes);
         }
@@ -563,6 +558,9 @@ export async function searchTorrents(
     };
 
     deduplicated.sort((a, b) => scoreTorrent(b) - scoreTorrent(a));
+    if (deduplicated.length > 0) {
+      torrentSearchCache.set(cacheKey, { time: Date.now(), data: deduplicated });
+    }
     return deduplicated;
   } catch {
     return [];

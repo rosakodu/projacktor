@@ -28,6 +28,7 @@ import {
   isTvRelease,
   fetchMovieLogo,
   getLogoUrl,
+  API_BASE,
 } from "../api";
 import { useI18n } from "../i18n";
 
@@ -626,6 +627,9 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
           );
           setTorrents(safeResults);
           setLoading(false);
+          if (safeResults.length > 0 && safeResults[0]?.magnet) {
+            fetch(`${API_BASE}/torrserver/prewarm?magnet=${encodeURIComponent(safeResults[0].magnet)}&title=${encodeURIComponent(title)}`).catch(() => {});
+          }
         }
       })
       .catch(() => {

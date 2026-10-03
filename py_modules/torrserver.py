@@ -123,7 +123,7 @@ class TorrServerManager:
             bt_settings = {
                 "CacheSize": 268435456,        # 256MB RAM cache
                 "ReaderReadAHead": 95,          # Buffer ahead percentage
-                "PreloadCache": 15,             # 15% preload buffer for faster start
+                "PreloadCache": 4,              # 4% preload buffer (~10MB) for ultra-fast startup without buffering
                 "UseDisk": False,               # RAM only, zero disk writes
                 "TorrentsSavePath": "",
                 "RemoveCacheOnDrop": False,     # Keep cache across seeks and probe reconnects

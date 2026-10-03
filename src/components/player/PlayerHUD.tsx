@@ -2,7 +2,6 @@ import { FC, RefObject, useState, useEffect } from "react";
 import { FaVolumeUp, FaVolumeMute, FaSearchMinus, FaSearchPlus } from "react-icons/fa";
 import { getBackdropUrl, getLogoUrl } from "../../api";
 import { PlayerMediaInfo } from "../../types";
-import { useI18n } from "../../i18n";
 
 interface PlayerHUDProps {
   volumeHudVisible: boolean;
@@ -12,12 +11,12 @@ interface PlayerHUDProps {
   zoomHudBarRef: RefObject<HTMLDivElement | null>;
   zoomHudTextRef: RefObject<HTMLSpanElement | null>;
   hasStartedPlayback: boolean;
-  isBuffering: boolean;
+  isBuffering?: boolean;
   errorMsg: string | null;
   mediaInfo?: PlayerMediaInfo;
   logoPath: string | null;
   title: string;
-  isOnline: boolean;
+  isOnline?: boolean;
 }
 
 export const PlayerHUD: FC<PlayerHUDProps> = ({
@@ -28,14 +27,11 @@ export const PlayerHUD: FC<PlayerHUDProps> = ({
   zoomHudBarRef,
   zoomHudTextRef,
   hasStartedPlayback,
-  isBuffering,
   errorMsg,
   mediaInfo,
   logoPath,
   title,
-  isOnline,
 }) => {
-  const { t } = useI18n();
   const [logoFailed, setLogoFailed] = useState(false);
   const [logoRetry, setLogoRetry] = useState(0);
 
@@ -231,40 +227,6 @@ export const PlayerHUD: FC<PlayerHUDProps> = ({
         </div>
       )}
 
-      {/* 2. Компактный спиннер повторной буферизации во время просмотра */}
-      {isBuffering && hasStartedPlayback && !errorMsg && (
-        <div
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "rgba(0, 0, 0, 0.5)",
-            zIndex: 10,
-            pointerEvents: "none",
-          }}
-        >
-          <div
-            style={{
-              width: 44,
-              height: 44,
-              border: "4px solid rgba(255, 255, 255, 0.2)",
-              borderTop: "4px solid var(--ds-accent)",
-              borderRadius: "50%",
-              animation: "projacktor-spin 0.9s linear infinite",
-              marginBottom: 14,
-            }}
-          />
-          <div style={{ color: "#fff", fontSize: 13.5, fontWeight: 500, letterSpacing: 0.3 }}>
-            {isOnline ? t("bufferingStream") : t("loading")}
-          </div>
-        </div>
-      )}
     </>
   );
 };

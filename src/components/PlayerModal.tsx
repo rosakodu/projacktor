@@ -509,11 +509,11 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   const touchMovedRef = useRef<boolean>(false);
 
   const getStreamUrl = useCallback(
-    (startTime: number = 0, track?: number) => {
+    (startTime: number = 0, track?: number, cacheBust: boolean = false) => {
       const isHttp = filePath.startsWith("http://") || filePath.startsWith("https://");
       let base = isHttp ? filePath : `${API_BASE}/stream?file=${encodeURIComponent(filePath)}`;
-      // Strip any existing start= or audio= params to avoid duplicates
-      base = base.replace(/([?&])start=\d+(&|$)/g, "$1").replace(/([?&])audio=\d+(&|$)/g, "$1").replace(/[?&]$/, "");
+      // Strip any existing start= or audio= or t= params to avoid duplicates
+      base = base.replace(/([?&])start=\d+(&|$)/g, "$1").replace(/([?&])audio=\d+(&|$)/g, "$1").replace(/([?&])t=\d+(&|$)/g, "$1").replace(/[?&]$/, "");
       const separator = base.includes("?") ? "&" : "?";
       const params: string[] = [];
 
@@ -525,6 +525,9 @@ export const PlayerModal: FC<PlayerModalProps> = ({
       }
       if (track !== undefined) {
         params.push(`audio=${track}`);
+      }
+      if (cacheBust) {
+        params.push(`t=${Date.now()}`);
       }
 
       return params.length > 0 ? `${base}${separator}${params.join("&")}` : base;
@@ -623,10 +626,15 @@ export const PlayerModal: FC<PlayerModalProps> = ({
         videoRef.current.currentTime = target;
         setVideoTime(target);
       } else {
+        try {
+          videoRef.current?.pause();
+        } catch {}
+        hasStartedPlaybackRef.current = false;
+        retryCountRef.current = 0;
         setBaseTime(target);
         setVideoTime(0);
         setBufferedPercent(0);
-        setStreamUrl(getStreamUrl(target, selectedAudio));
+        setStreamUrl(getStreamUrl(target, selectedAudio, true));
       }
     }
   }, [getStreamUrl, isDirectStream, selectedAudio]);
@@ -680,7 +688,14 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     const cur = (isDirectStream && videoRef.current) ? videoRef.current.currentTime : (baseTime + (videoRef.current ? videoRef.current.currentTime : 0));
     setBaseTime(cur);
     setVideoTime(0);
-    setStreamUrl(getStreamUrl(cur, trackIndex));
+    if (!isDirectStream) {
+      try {
+        videoRef.current?.pause();
+      } catch {}
+      hasStartedPlaybackRef.current = false;
+      retryCountRef.current = 0;
+    }
+    setStreamUrl(getStreamUrl(cur, trackIndex, true));
     resetControlsTimer();
     setTimeout(() => {
       if (audioBtnRef.current) {
@@ -723,10 +738,15 @@ export const PlayerModal: FC<PlayerModalProps> = ({
       videoRef.current.currentTime = newTime;
       setVideoTime(newTime);
     } else {
+      try {
+        videoRef.current?.pause();
+      } catch {}
+      hasStartedPlaybackRef.current = false;
+      retryCountRef.current = 0;
       setBaseTime(newTime);
       setVideoTime(0);
       setBufferedPercent(0);
-      setStreamUrl(getStreamUrl(newTime, selectedAudio));
+      setStreamUrl(getStreamUrl(newTime, selectedAudio, true));
     }
     resetControlsTimer();
   };
@@ -1097,16 +1117,18 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     const codeName = err ? (codeMap[err.code] || `ERR_${err.code}`) : "UNKNOWN";
     console.error(`[PlayerModal] Video error: ${codeName} - ${err?.message || "no details"}`);
 
-    // Если воспроизведение ещё не началось и это сетевой/онлайн поток (например, торрент ещё качает чанки),
-    // пробуем авто-повтор до 4 раз с паузой 2.5 секунды
-    if (!hasStartedPlaybackRef.current && (isOnline || filePath.includes("/api/stream") || filePath.startsWith("http")) && retryCountRef.current < 4) {
+    const isTranscodeOrOnline = isOnline || filePath.includes("/api/stream") || filePath.startsWith("http") || !isDirectStream;
+
+    // Быстрый автоповтор для сглаживания переходных ошибок демультиплексора при перемотке или рестарте
+    if (isTranscodeOrOnline && retryCountRef.current < 3) {
       retryCountRef.current += 1;
-      console.log(`[PlayerModal] Auto-retrying stream playback (attempt ${retryCountRef.current}/4) in 2.5s...`);
+      const delayMs = hasStartedPlaybackRef.current ? 400 : 1500;
+      console.log(`[PlayerModal] Auto-retrying stream playback (attempt ${retryCountRef.current}/3) in ${delayMs}ms...`);
       setIsBuffering(true);
       if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
       retryTimeoutRef.current = setTimeout(() => {
         retryPlayback();
-      }, 2500);
+      }, delayMs);
       return;
     }
 
@@ -1116,7 +1138,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
       setErrorMsg(t("streamPlaybackError") + (err ? ` (${codeName})` : ""));
     }
     setIsBuffering(false);
-  }, [filePath, isOnline, retryPlayback, t]);
+  }, [filePath, isDirectStream, isOnline, retryPlayback, t]);
 
   useEffect(() => {
     setErrorMsg(null);
@@ -1533,8 +1555,8 @@ export const PlayerModal: FC<PlayerModalProps> = ({
                 </div>
               )}
 
-              {/* Custom Subtitle Overlay (Zoom-independent, hidden during buffering) */}
-              {selectedSubtitle !== null && currentSubtitleText && !isBuffering && hasStartedPlayback && (
+              {/* Custom Subtitle Overlay (Zoom-independent) */}
+              {selectedSubtitle !== null && currentSubtitleText && hasStartedPlayback && (
                 <div
                   className="projacktor-subtitle-overlay"
                   style={{
