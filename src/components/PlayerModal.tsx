@@ -379,16 +379,6 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     }, 1200);
   }, []);
 
-  // Mute video audio during the pulsating loading splash until playback actually starts
-  useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.muted = !hasStartedPlayback;
-      if (hasStartedPlayback) {
-        videoRef.current.volume = volume;
-      }
-    }
-  }, [hasStartedPlayback, volume]);
-
   const focusControl = useCallback((el: HTMLElement) => {
     try {
       const doc = getActiveDocument(el) || document;
@@ -1529,7 +1519,6 @@ export const PlayerModal: FC<PlayerModalProps> = ({
                 src={streamUrl}
                 autoPlay
                 preload="auto"
-                muted={!hasStartedPlayback}
                 onError={handleVideoError}
                 crossOrigin="anonymous"
                 style={{
