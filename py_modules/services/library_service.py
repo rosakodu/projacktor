@@ -6,6 +6,8 @@ import json
 import shutil
 import sqlite3
 import asyncio
+import time
+import threading
 
 from ..db import (
     get_db,
@@ -67,6 +69,31 @@ def _episode_sort_key(ep):
         return (season, int(e_m3.group(1)), _natural_keys(name))
     # 7. Fallback: natural sort
     return (season, 999999, _natural_keys(name))
+
+
+_last_auto_scan_time = 0
+_is_auto_scanning = False
+
+
+def trigger_background_auto_scan():
+    global _last_auto_scan_time, _is_auto_scanning
+    now = time.time()
+    if (now - _last_auto_scan_time) < 25 or _is_auto_scanning:
+        return
+    _is_auto_scanning = True
+    _last_auto_scan_time = now
+
+    def _worker():
+        global _is_auto_scanning
+        try:
+            rescan_library_from_disk()
+        except Exception as e:
+            logger.error(f"[auto_scan] Error in background rescan: {e}")
+        finally:
+            _is_auto_scanning = False
+
+    t = threading.Thread(target=_worker, name="Projacktor-AutoScanWorker", daemon=True)
+    t.start()
 
 
 class LibraryService:
@@ -385,6 +412,10 @@ class LibraryService:
             return []
 
     async def get_library(self) -> list[dict]:
+        try:
+            trigger_background_auto_scan()
+        except Exception:
+            pass
         db = get_db()
         try:
             rows = db.execute("""
@@ -425,7 +456,8 @@ class LibraryService:
                 valid_files = []
                 for f in m_files:
                     f_dict = dict(f)
-                    has_aria2_companion = os.path.exists(fp + ".aria2")
+                    fp = f_dict.get('file_path') or ''
+                    has_aria2_companion = os.path.exists(fp + ".aria2") if fp else False
                     if fp and os.path.isfile(fp) and is_header_ready(fp) and not has_aria2_companion:
                         valid_files.append(f_dict)
                     elif fp and os.path.isfile(fp) and not is_header_ready(fp):

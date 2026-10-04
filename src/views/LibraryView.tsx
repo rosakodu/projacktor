@@ -1,4 +1,4 @@
-import { FC, memo, useEffect, useRef, useCallback, useState } from "react";
+import { FC, memo, useEffect, useRef, useCallback } from "react";
 import { Focusable, showModal } from "@decky/ui";
 import { FaPlay, FaPause, FaDownload, FaTrash, FaMoon, FaSync, FaFilm } from "react-icons/fa";
 import { LibraryItem, PlayerMediaInfo, PlaylistItem } from "../types";
@@ -68,15 +68,12 @@ export const LibraryView: FC<LibraryViewProps> = memo(
     const lastFocusedCardIdRef = useRef<string | null>(null);
     const lastFocusedBtnSelectorRef = useRef<string | null>(null);
     const isOpeningEpisodesModalRef = useRef<boolean>(false);
-    const [isRescanning, setIsRescanning] = useState<boolean>(false);
-    const [rescanResult, setRescanResult] = useState<string | null>(null);
     const { t, locale } = useI18n();
 
     const {
       library,
       isInitialLoading,
       refreshLibrary,
-      rescanLibrary,
       pauseDownload,
       resumeDownload,
       startDownload,
@@ -516,40 +513,13 @@ export const LibraryView: FC<LibraryViewProps> = memo(
           <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.6)", marginBottom: 20 }}>
             {t("libraryEmptyDesc")}
           </div>
-          {rescanResult && (
-            <div style={{ fontSize: 13, color: "#4ade80", marginBottom: 16, fontWeight: 600 }}>
-              {rescanResult}
-            </div>
-          )}
-          <Focusable flow-children="row" noFocusRing style={{ display: "flex", gap: 12, justifyContent: "center", alignItems: "center", flexWrap: "wrap" }}>
+          {onNavigateToCatalog && (
             <Focusable
               role="button"
               tabIndex={0}
-              className="ds-btn ds-btn--secondary projacktor-rescan-btn"
-              onClick={async () => {
-                if (isRescanning) return;
-                setIsRescanning(true);
-                setRescanResult(null);
-                const res = await rescanLibrary();
-                setIsRescanning(false);
-                if (res && res.restored_count > 0) {
-                  setRescanResult(`${t("rescannedSuccess")} ${res.restored_count}`);
-                } else {
-                  setRescanResult(`${t("rescannedSuccess")} 0`);
-                }
-              }}
-              onActivate={async () => {
-                if (isRescanning) return;
-                setIsRescanning(true);
-                setRescanResult(null);
-                const res = await rescanLibrary();
-                setIsRescanning(false);
-                if (res && res.restored_count > 0) {
-                  setRescanResult(`${t("rescannedSuccess")} ${res.restored_count}`);
-                } else {
-                  setRescanResult(`${t("rescannedSuccess")} 0`);
-                }
-              }}
+              className="ds-btn ds-btn--primary projacktor-empty-cta-btn"
+              onClick={onNavigateToCatalog}
+              onActivate={onNavigateToCatalog}
               onGamepadDirection={(evt: any) => {
                 if (evt?.detail?.button === 9) {
                   try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
@@ -570,55 +540,19 @@ export const LibraryView: FC<LibraryViewProps> = memo(
                 alignItems: "center",
                 justifyContent: "center",
                 gap: 8,
-                padding: "10px 20px",
+                padding: "10px 24px",
                 fontSize: 13,
-                fontWeight: 600,
+                fontWeight: 700,
                 borderRadius: 4,
                 cursor: "pointer",
-                backgroundColor: "rgba(255, 255, 255, 0.1)",
+                backgroundColor: "#0078d4",
                 color: "#fff",
               }}
             >
-              <FaSync className={isRescanning ? "spin-animation" : ""} style={{ fontSize: 12 }} />
-              {isRescanning ? t("rescanningLibraryBtn") : t("rescanLibraryBtn")}
+              <FaFilm style={{ fontSize: 13 }} />
+              {t("goToCatalog")}
             </Focusable>
-            {onNavigateToCatalog && (
-              <Focusable
-                role="button"
-                tabIndex={0}
-                className="ds-btn ds-btn--primary projacktor-empty-cta-btn"
-                onClick={onNavigateToCatalog}
-                onActivate={onNavigateToCatalog}
-                onGamepadDirection={(evt: any) => {
-                  if (evt?.detail?.button === 9) {
-                    try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
-                    onNavigateUp?.();
-                    return false;
-                  }
-                  return undefined;
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "ArrowUp") {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onNavigateUp?.();
-                  }
-                }}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  padding: "10px 24px",
-                  fontSize: 13,
-                  fontWeight: 700,
-                  borderRadius: 4,
-                  cursor: "pointer",
-                }}
-              >
-                {t("goToCatalog")}
-              </Focusable>
-            )}
-          </Focusable>
+          )}
         </div>
       )}
 
