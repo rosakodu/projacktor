@@ -11,7 +11,7 @@ import { HistoryView } from "./HistoryView";
 import { LibraryView } from "./LibraryView";
 import { SettingsView } from "./SettingsView";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
-import { isModalOpen, isUserInTabs, subscribeHomeKey, isPlayerActive, setPlayerActive } from "../runtime/homeInputBus";
+import { isModalOpen, subscribeHomeKey, isPlayerActive, setPlayerActive } from "../runtime/homeInputBus";
 import { setMagicBlack } from "../runtime/magicBlackBus";
 import { playNavSound } from "../runtime/navSound";
 import { getActiveDocument } from "../runtime/activeDoc";
@@ -309,10 +309,9 @@ export const ProjacktorApp: FC = () => {
   }, []);
 
   // Гарантированная фокусировка на контенте активного раздела при переключении вкладок или потере фокуса
-  const ensureContentFocus = useCallback((forceContent = false) => {
+  const ensureContentFocus = useCallback((_forceContent = false) => {
     if (!ready) return false;
     if (isPlayerOpen || isPlayerActive() || isModalOpen()) return true;
-    if (isUserInTabs() && !forceContent) return true;
 
     const root = rootRef.current;
     if (!root) return false;
@@ -398,7 +397,7 @@ export const ProjacktorApp: FC = () => {
       const delay = delays[idx++];
       timerId = setTimeout(() => {
         if (cancelled) return;
-        const focused = ensureContentFocus(false);
+        const focused = ensureContentFocus(true);
         // Если фокус успешно захвачен целевым элементом контента, прекращаем дальнейшие попытки
         if (!focused) {
           scheduleNext();

@@ -236,13 +236,6 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
           }
           return;
         }
-        const inTabs = !!(
-          currentActive &&
-          (currentActive.classList?.contains("projacktor-tab-item") ||
-            currentDoc?.querySelector(".projacktor-nav-bar")?.contains(currentActive as Node))
-        );
-        if (inTabs) return;
-
         const firstCard = rowRef.current?.querySelector<HTMLElement>(".projacktor-card");
         if (firstCard) {
           currentDoc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
@@ -275,14 +268,11 @@ export const SectorShelf: FC<SectorShelfProps> = memo(
         const doc = getActiveDocument(rowRef.current);
         const active = doc?.activeElement;
         const inRow = !!(active && rowRef.current?.contains(active as Node));
-        if (!inRow) return;
-
-        const inTabs = !!(
-          active &&
-          (active.classList?.contains("projacktor-tab-item") ||
-            doc?.querySelector(".projacktor-nav-bar")?.contains(active as Node))
-        );
-        if (inTabs) return;
+        if (!inRow) {
+          if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.closest?.(".projacktor-modal-root"))) {
+            return;
+          }
+        }
 
         const isUp =
           e.button === RawButton.DPAD_UP ||
