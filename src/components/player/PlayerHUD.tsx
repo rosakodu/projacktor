@@ -2,6 +2,7 @@ import { FC, RefObject, useState, useEffect } from "react";
 import { FaVolumeUp, FaVolumeMute, FaSearchMinus, FaSearchPlus } from "react-icons/fa";
 import { getBackdropUrl, getLogoUrl } from "../../api";
 import { PlayerMediaInfo } from "../../types";
+import { triggerHeartbeatHaptic } from "../../runtime/haptics";
 
 interface PlayerHUDProps {
   volumeHudVisible: boolean;
@@ -56,6 +57,41 @@ export const PlayerHUD: FC<PlayerHUDProps> = ({
     setLogoFailed(false);
     setLogoRetry(0);
   }, [logoPath]);
+
+  // Нежная тактильная вибрация в такт пульсирующему логотипу
+  useEffect(() => {
+    if (!splashMounted || splashOpacity === 0 || !!errorMsg) {
+      return undefined;
+    }
+
+    let isCancelled = false;
+    let secondaryTimer: ReturnType<typeof setTimeout> | null = null;
+    let cycleInterval: ReturnType<typeof setInterval> | null = null;
+
+    const runHeartbeat = () => {
+      if (isCancelled) return;
+      triggerHeartbeatHaptic("primary");
+      secondaryTimer = setTimeout(() => {
+        if (!isCancelled) {
+          triggerHeartbeatHaptic("secondary");
+        }
+      }, 450);
+    };
+
+    // Первый такт синхронизирован с пиком первого расширения логотипа (14% от 1.6s ≈ 220ms, с учетом задержки ≈ 140ms)
+    const initialDelay = setTimeout(() => {
+      if (isCancelled) return;
+      runHeartbeat();
+      cycleInterval = setInterval(runHeartbeat, 1600);
+    }, 140);
+
+    return () => {
+      isCancelled = true;
+      if (initialDelay) clearTimeout(initialDelay);
+      if (secondaryTimer) clearTimeout(secondaryTimer);
+      if (cycleInterval) clearInterval(cycleInterval);
+    };
+  }, [splashMounted, splashOpacity, errorMsg]);
 
   const handleLogoError = () => {
     if (logoRetry < 3) {

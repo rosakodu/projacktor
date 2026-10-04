@@ -144,3 +144,78 @@ export function triggerHaptic(
     }
   } catch {}
 }
+
+/**
+ * Triggers a soft, subtle heartbeat haptic pulse specifically tuned
+ * for pulsating logos (without playing navigation UI audio sounds).
+ * Works across Steam Deck trackpads, connected gamepads (DualSense/Xbox), and Web Vibration.
+ *
+ * @param phase 'primary' for the main heartbeat peak, 'secondary' for the softer follow-up peak.
+ */
+export function triggerHeartbeatHaptic(phase: "primary" | "secondary" = "primary"): void {
+  const isPrimary = phase === "primary";
+  // Microseconds for trackpad actuator pulse: very delicate, velvety tick
+  const pulseMicroSec = isPrimary ? 180 : 110;
+  const intensity = 1;
+  const eType = 3; // light tick
+
+  // 1. SteamOS Input API (Steam Deck trackpads & Steam Input connected controllers)
+  try {
+    const input = getInputApi();
+    if (input) {
+      const locs = [3, 1, 2]; // both, left, right trackpads/actuators
+      // Send to controller index 0 (main Steam Deck / primary gamepad)
+      // and index 1-2 if external controllers are attached via Steam Input
+      for (let controllerIdx = 0; controllerIdx <= 2; controllerIdx++) {
+        if (typeof input.TriggerHapticPulse === "function") {
+          for (const loc of locs) {
+            try {
+              input.TriggerHapticPulse(controllerIdx, loc, pulseMicroSec, pulseMicroSec);
+            } catch {}
+          }
+        }
+        if (typeof input.TriggerSimpleHapticEvent === "function") {
+          for (const loc of locs) {
+            try {
+              input.TriggerSimpleHapticEvent(controllerIdx, loc, eType, intensity, 0);
+            } catch {}
+          }
+        }
+      }
+    }
+  } catch {}
+
+  // 2. HTML5 Gamepad API (External controllers: DualSense, Xbox, Switch Pro, etc.)
+  try {
+    if (typeof navigator !== "undefined" && typeof navigator.getGamepads === "function") {
+      const gamepads = navigator.getGamepads();
+      if (gamepads) {
+        const duration = isPrimary ? 60 : 40;
+        const weak = isPrimary ? 0.12 : 0.07; // high-frequency delicate motor
+        const strong = isPrimary ? 0.03 : 0.01; // barely perceptible low rumble
+
+        for (let i = 0; i < gamepads.length; i++) {
+          const gp = gamepads[i];
+          const actuator = (gp as any)?.vibrationActuator;
+          if (actuator && typeof actuator.playEffect === "function") {
+            try {
+              actuator.playEffect("dual-rumble", {
+                startDelay: 0,
+                duration,
+                weakMagnitude: weak,
+                strongMagnitude: strong,
+              });
+            } catch {}
+          }
+        }
+      }
+    }
+  } catch {}
+
+  // 3. Web Vibration API fallback
+  try {
+    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+      navigator.vibrate(isPrimary ? 12 : 8);
+    }
+  } catch {}
+}
