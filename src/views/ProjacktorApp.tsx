@@ -14,6 +14,7 @@ import { RawButton, subscribeControllerInput } from "../runtime/controllerInput"
 import { isModalOpen, subscribeHomeKey, isPlayerActive, setPlayerActive } from "../runtime/homeInputBus";
 import { setMagicBlack } from "../runtime/magicBlackBus";
 import { playNavSound } from "../runtime/navSound";
+import { triggerHaptic } from "../runtime/haptics";
 import { getActiveDocument } from "../runtime/activeDoc";
 import { useI18n, initI18n } from "../i18n";
 
@@ -276,6 +277,7 @@ export const ProjacktorApp: FC = () => {
     const now = Date.now();
     if (now - lastTabSwitchAtRef.current < 180) return;
     lastTabSwitchAtRef.current = now;
+    triggerHaptic("medium", "left", true);
     playNavSound();
     holdFocusOnFallback();
     setActiveTab((cur) => {
@@ -289,6 +291,7 @@ export const ProjacktorApp: FC = () => {
     const now = Date.now();
     if (now - lastTabSwitchAtRef.current < 180) return;
     lastTabSwitchAtRef.current = now;
+    triggerHaptic("medium", "right", true);
     playNavSound();
     holdFocusOnFallback();
     setActiveTab((cur) => {

@@ -36,7 +36,6 @@ export const TabBar: FC<TabBarProps> = memo(
         <div
           className="projacktor-bumper-pill l1"
           onClick={() => {
-            triggerHaptic("medium", "both");
             onPrevTab();
           }}
           role="button"
@@ -68,7 +67,6 @@ export const TabBar: FC<TabBarProps> = memo(
         <div
           className="projacktor-bumper-pill r1"
           onClick={() => {
-            triggerHaptic("medium", "both");
             onNextTab();
           }}
           role="button"

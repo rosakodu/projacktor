@@ -177,24 +177,23 @@ export function triggerHaptic(
 
   // 2. HTML5 Gamepad API fallback for external connected gamepads
   try {
-    if (typeof navigator !== "undefined" && typeof navigator.getGamepads === "function") {
-      const gamepads = navigator.getGamepads();
-      if (gamepads) {
-        const duration = strength === "heavy" ? 50 : strength === "medium" ? 35 : 20;
-        const mag = strength === "heavy" ? 0.3 : strength === "medium" ? 0.18 : 0.08;
-        for (let i = 0; i < gamepads.length; i++) {
-          const gp = gamepads[i];
-          const actuator = (gp as any)?.vibrationActuator;
-          if (actuator && typeof actuator.playEffect === "function") {
-            try {
-              actuator.playEffect("dual-rumble", {
-                startDelay: 0,
-                duration,
-                weakMagnitude: mag,
-                strongMagnitude: mag * 0.4,
-              });
-            } catch {}
-          }
+    const gamepads = getAllGamepads();
+    if (gamepads && gamepads.length > 0) {
+      const duration = strength === "heavy" ? 50 : strength === "medium" ? 40 : 25;
+      const mag = strength === "heavy" ? 0.35 : strength === "medium" ? 0.24 : 0.12;
+      const strongMag = pad === "right" ? 0 : (pad === "both" ? mag * 0.7 : mag);
+      const weakMag = pad === "left" ? 0 : mag;
+      for (const gp of gamepads) {
+        const actuator = (gp as any)?.vibrationActuator;
+        if (actuator && typeof actuator.playEffect === "function") {
+          try {
+            actuator.playEffect("dual-rumble", {
+              startDelay: 0,
+              duration,
+              weakMagnitude: weakMag,
+              strongMagnitude: strongMag,
+            });
+          } catch {}
         }
       }
     }
