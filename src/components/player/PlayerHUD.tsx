@@ -59,8 +59,10 @@ export const PlayerHUD: FC<PlayerHUDProps> = ({
   }, [logoPath]);
 
   // Нежная тактильная вибрация в такт пульсирующему логотипу
+  const isPulsingLogoVisible = splashMounted && splashOpacity > 0 && !errorMsg && !!logoPath && !logoFailed;
+
   useEffect(() => {
-    if (!splashMounted || splashOpacity === 0 || !!errorMsg) {
+    if (!isPulsingLogoVisible) {
       return undefined;
     }
 
@@ -78,12 +80,12 @@ export const PlayerHUD: FC<PlayerHUDProps> = ({
       }, 450);
     };
 
-    // Первый такт синхронизирован с пиком первого расширения логотипа (14% от 1.6s ≈ 220ms, с учетом задержки ≈ 140ms)
+    // Первый такт синхронизирован с пиком первого расширения логотипа (14% от 1.6s ≈ 224ms)
     const initialDelay = setTimeout(() => {
       if (isCancelled) return;
       runHeartbeat();
       cycleInterval = setInterval(runHeartbeat, 1600);
-    }, 140);
+    }, 180);
 
     return () => {
       isCancelled = true;
@@ -91,7 +93,7 @@ export const PlayerHUD: FC<PlayerHUDProps> = ({
       if (secondaryTimer) clearTimeout(secondaryTimer);
       if (cycleInterval) clearInterval(cycleInterval);
     };
-  }, [splashMounted, splashOpacity, errorMsg]);
+  }, [isPulsingLogoVisible]);
 
   const handleLogoError = () => {
     if (logoRetry < 3) {

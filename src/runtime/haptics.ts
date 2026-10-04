@@ -47,11 +47,56 @@ function getInputApi(): any {
   return candidates[0] || null;
 }
 
+function getTargetControllers(): number[] {
+  const g = globalThis as any;
+  const csCandidates = [
+    g.ControllerStore,
+    g.opener?.ControllerStore,
+    g.parent?.ControllerStore,
+    g.top?.ControllerStore,
+    g.__projacktor_input_bp_view?.ControllerStore,
+    g.__projacktor_input_bp_view?.opener?.ControllerStore,
+  ];
+
+  try {
+    const docView = (typeof document !== "undefined" ? document.defaultView : null) as any;
+    if (docView) {
+      csCandidates.push(docView.ControllerStore);
+      csCandidates.push(docView.opener?.ControllerStore);
+      csCandidates.push(docView.parent?.ControllerStore);
+      csCandidates.push(docView.top?.ControllerStore);
+    }
+  } catch {}
+
+  const indices = new Set<number>();
+
+  for (const cs of csCandidates) {
+    if (cs && typeof cs.GetControllers === "function") {
+      try {
+        const list = cs.GetControllers();
+        if (Array.isArray(list)) {
+          for (const c of list) {
+            if (c && typeof c.nControllerIndex === "number") {
+              indices.add(c.nControllerIndex);
+            }
+          }
+        }
+      } catch {}
+    }
+  }
+
+  // Always include native Steam Deck hardware index 15 and primary slots 0, 1
+  indices.add(15);
+  indices.add(0);
+
+  return Array.from(indices);
+}
+
 let lastHapticAt = 0;
 const MIN_HAPTIC_INTERVAL_MS = 35; // prevent motor queue saturation
 
 /**
- * Triggers a tactile haptic pulse on Steam Deck trackpads.
+ * Triggers a tactile haptic pulse on Steam Deck trackpads and connected gamepads.
  *
  * @param strength 'light' for ticks/steps, 'medium' for bumper jumps, 'heavy' for fast seek, 'click' for 100% notch.
  * @param pad 'both' (both pads), 'left' (left trackpad), or 'right' (right trackpad).
@@ -69,62 +114,73 @@ export function triggerHaptic(
   lastHapticAt = now;
 
   let intensity = 1;
-  let pulseMicroSec = 180;
-  let eType = 3; // default: tick (3)
+  let pulseMicroSec = 25000;
+  let eType = 1; // 1 = Tick, 2 = Click, 6 = Rumble
+  let gain = 0;
   let vibPattern: number | number[] = 10;
 
   switch (strength) {
     case "light":
       intensity = 1;
-      pulseMicroSec = 200;
-      eType = 3; // tick
+      pulseMicroSec = 20000;
+      eType = 1; // tick
+      gain = -3;
       vibPattern = 10;
       break;
     case "medium":
       intensity = 2;
-      pulseMicroSec = 360;
-      eType = 6; // rumble
+      pulseMicroSec = 35000;
+      eType = 2; // click
+      gain = -1;
       vibPattern = 20;
       break;
     case "heavy":
       intensity = 3;
-      pulseMicroSec = 540;
-      eType = 6; // strong rumble
+      pulseMicroSec = 50000;
+      eType = 6; // rumble
+      gain = 0;
       vibPattern = 35;
       break;
     case "click":
-      intensity = 3;
-      pulseMicroSec = 450;
+      intensity = 2;
+      pulseMicroSec = 40000;
       eType = 2; // click
+      gain = 0;
       vibPattern = [15, 25, 20];
       break;
   }
 
-  // 1. Native SteamOS GamepadUI API
+  // 1. Native SteamOS GamepadUI API (Steam Deck trackpads & Steam Input controllers)
   try {
     const input = getInputApi();
     if (input) {
-      // Determine pad locations (supports 1=left, 2=right, 3=both and legacy indices)
-      const locs = pad === "left" ? [1, 3] : pad === "right" ? [2, 4] : [3, 1, 2];
+      const controllers = getTargetControllers();
+      // pad locations: 0=left, 1=right, 2=both/stereopair, 3=both
+      const locs = pad === "left" ? [0] : pad === "right" ? [1] : [0, 1, 2, 3];
 
-      if (typeof input.TriggerSimpleHapticEvent === "function") {
+      for (const controllerIdx of controllers) {
         for (const loc of locs) {
           try {
-            input.TriggerSimpleHapticEvent(0, loc, eType, intensity, 0);
+            if (typeof input.ForceSimpleHapticEvent === "function") {
+              input.ForceSimpleHapticEvent(controllerIdx, loc, eType, intensity, gain);
+            }
           } catch {}
-        }
-      }
-      if (typeof input.TriggerHapticPulse === "function") {
-        for (const loc of locs) {
           try {
-            input.TriggerHapticPulse(0, loc, pulseMicroSec, pulseMicroSec);
+            if (typeof input.TriggerSimpleHapticEvent === "function") {
+              input.TriggerSimpleHapticEvent(controllerIdx, loc, eType, intensity, gain);
+            }
+          } catch {}
+          try {
+            if (typeof input.TriggerHapticPulse === "function") {
+              input.TriggerHapticPulse(controllerIdx, loc, pulseMicroSec, pulseMicroSec);
+            }
           } catch {}
         }
       }
     }
   } catch {}
 
-  // 2. Native SteamOS GamepadUI Haptic & Sound integration
+  // 2. Native SteamOS GamepadUI Navigation Sound
   try {
     const g = globalThis as any;
     const store =
@@ -137,7 +193,32 @@ export function triggerHaptic(
     }
   } catch {}
 
-  // 3. Standard Web Vibration API fallback / complement
+  // 3. HTML5 Gamepad API fallback for external controllers
+  try {
+    if (typeof navigator !== "undefined" && typeof navigator.getGamepads === "function") {
+      const gamepads = navigator.getGamepads();
+      if (gamepads) {
+        const duration = strength === "heavy" ? 60 : strength === "medium" ? 40 : 25;
+        const mag = strength === "heavy" ? 0.35 : strength === "medium" ? 0.2 : 0.1;
+        for (let i = 0; i < gamepads.length; i++) {
+          const gp = gamepads[i];
+          const actuator = (gp as any)?.vibrationActuator;
+          if (actuator && typeof actuator.playEffect === "function") {
+            try {
+              actuator.playEffect("dual-rumble", {
+                startDelay: 0,
+                duration,
+                weakMagnitude: mag,
+                strongMagnitude: mag * 0.4,
+              });
+            } catch {}
+          }
+        }
+      }
+    }
+  } catch {}
+
+  // 4. Standard Web Vibration API fallback
   try {
     if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
       navigator.vibrate(vibPattern);
@@ -154,45 +235,57 @@ export function triggerHaptic(
  */
 export function triggerHeartbeatHaptic(phase: "primary" | "secondary" = "primary"): void {
   const isPrimary = phase === "primary";
-  // Microseconds for trackpad actuator pulse: very delicate, velvety tick
-  const pulseMicroSec = isPrimary ? 180 : 110;
-  const intensity = 1;
-  const eType = 3; // light tick
 
   // 1. SteamOS Input API (Steam Deck trackpads & Steam Input connected controllers)
   try {
     const input = getInputApi();
     if (input) {
-      const locs = [3, 1, 2]; // both, left, right trackpads/actuators
-      // Send to controller index 0 (main Steam Deck / primary gamepad)
-      // and index 1-2 if external controllers are attached via Steam Input
-      for (let controllerIdx = 0; controllerIdx <= 2; controllerIdx++) {
-        if (typeof input.TriggerHapticPulse === "function") {
-          for (const loc of locs) {
-            try {
-              input.TriggerHapticPulse(controllerIdx, loc, pulseMicroSec, pulseMicroSec);
-            } catch {}
-          }
-        }
-        if (typeof input.TriggerSimpleHapticEvent === "function") {
-          for (const loc of locs) {
-            try {
-              input.TriggerSimpleHapticEvent(controllerIdx, loc, eType, intensity, 0);
-            } catch {}
-          }
+      const controllers = getTargetControllers();
+      const locs = [0, 1, 2, 3]; // Left, Right, Stereo pair, Both
+
+      for (const controllerIdx of controllers) {
+        for (const loc of locs) {
+          // Tactile impulse: Click (2) for primary, Tick (1) for secondary
+          const tactileType = isPrimary ? 2 : 1;
+          const tactileGain = isPrimary ? -2 : -4;
+          // Delicate rumble pulse: type 6 (Rumble)
+          const rumbleGain = isPrimary ? 0 : -5;
+
+          try {
+            if (typeof input.ForceSimpleHapticEvent === "function") {
+              input.ForceSimpleHapticEvent(controllerIdx, loc, 6, 1, rumbleGain);
+              input.ForceSimpleHapticEvent(controllerIdx, loc, tactileType, 1, tactileGain);
+            }
+          } catch {}
+
+          try {
+            if (typeof input.TriggerSimpleHapticEvent === "function") {
+              input.TriggerSimpleHapticEvent(controllerIdx, loc, 6, 1, rumbleGain);
+              input.TriggerSimpleHapticEvent(controllerIdx, loc, tactileType, 1, tactileGain);
+            }
+          } catch {}
+
+          try {
+            if (typeof input.TriggerHapticPulse === "function") {
+              const us = isPrimary ? 30000 : 18000;
+              input.TriggerHapticPulse(controllerIdx, loc, us, us);
+            }
+          } catch {}
         }
       }
     }
-  } catch {}
+  } catch (e) {
+    console.warn("[Projacktor Haptics] Error in triggerHeartbeatHaptic:", e);
+  }
 
   // 2. HTML5 Gamepad API (External controllers: DualSense, Xbox, Switch Pro, etc.)
   try {
     if (typeof navigator !== "undefined" && typeof navigator.getGamepads === "function") {
       const gamepads = navigator.getGamepads();
       if (gamepads) {
-        const duration = isPrimary ? 60 : 40;
-        const weak = isPrimary ? 0.12 : 0.07; // high-frequency delicate motor
-        const strong = isPrimary ? 0.03 : 0.01; // barely perceptible low rumble
+        const duration = isPrimary ? 70 : 45;
+        const weak = isPrimary ? 0.35 : 0.18; // soft high-frequency motor
+        const strong = isPrimary ? 0.12 : 0.05; // delicate low-frequency rumble
 
         for (let i = 0; i < gamepads.length; i++) {
           const gp = gamepads[i];
@@ -215,7 +308,7 @@ export function triggerHeartbeatHaptic(phase: "primary" | "secondary" = "primary
   // 3. Web Vibration API fallback
   try {
     if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
-      navigator.vibrate(isPrimary ? 12 : 8);
+      navigator.vibrate(isPrimary ? 25 : 15);
     }
   } catch {}
 }
