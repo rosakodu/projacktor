@@ -208,6 +208,37 @@ export function triggerHaptic(
   } catch {}
 }
 
+function getAllGamepads(): Gamepad[] {
+  const result: Gamepad[] = [];
+  const seenIds = new Set<string>();
+
+  const collect = (targetNav: any) => {
+    try {
+      if (targetNav && typeof targetNav.getGamepads === "function") {
+        const gps = targetNav.getGamepads();
+        if (gps) {
+          for (let i = 0; i < gps.length; i++) {
+            const gp = gps[i];
+            if (gp) {
+              const uniqueKey = `${gp.index}-${gp.id}`;
+              if (!seenIds.has(uniqueKey)) {
+                seenIds.add(uniqueKey);
+                result.push(gp);
+              }
+            }
+          }
+        }
+      }
+    } catch {}
+  };
+
+  if (typeof navigator !== "undefined") collect(navigator);
+  try { collect((window as any).opener?.navigator); } catch {}
+  try { collect((window as any).top?.navigator); } catch {}
+
+  return result;
+}
+
 /**
  * Triggers a spatial stereo heartbeat haptic pulse specifically tuned
  * for pulsating movie logos (completely silent: rolling tactile wave from left to right
@@ -260,62 +291,65 @@ export function triggerHeartbeatHaptic(phase: "primary" | "secondary" = "primary
     console.warn("[Projacktor Haptics] Error in triggerHeartbeatHaptic SteamOS:", e);
   }
 
-  // 2. HTML5 Gamepad API (External controllers: DualSense, Xbox, Switch Pro, etc.)
-  // Heavy low-frequency motor on the left, refined high-frequency motor on the right
+  // 2. HTML5 Gamepad API (External controllers: Xbox, DualSense, Switch Pro, PC controllers)
+  // Left motor = Heavy low-frequency rumble; Right motor = Light high-frequency vibration
   try {
-    if (typeof navigator !== "undefined" && typeof navigator.getGamepads === "function") {
-      const gamepads = navigator.getGamepads();
-      if (gamepads) {
-        for (let i = 0; i < gamepads.length; i++) {
-          const gp = gamepads[i];
-          const actuator = (gp as any)?.vibrationActuator;
-          if (actuator && typeof actuator.playEffect === "function") {
-            if (isPrimary) {
-              // Heavy motor initiates deep pulse
-              actuator
-                .playEffect("dual-rumble", {
-                  startDelay: 0,
-                  duration: 65,
-                  strongMagnitude: 0.36,
-                  weakMagnitude: 0.08,
-                })
-                .catch(() => {});
+    const gamepads = getAllGamepads();
+    for (const gp of gamepads) {
+      const actuator = (gp as any)?.vibrationActuator;
+      if (actuator && typeof actuator.playEffect === "function") {
+        if (isPrimary) {
+          // Heavy motor initiates deep pulse
+          actuator
+            .playEffect("dual-rumble", {
+              startDelay: 0,
+              duration: 65,
+              strongMagnitude: 0.36,
+              weakMagnitude: 0.08,
+            })
+            .catch(() => {});
 
-              // High-frequency motor adds crisp wave peak after 24ms
-              setTimeout(() => {
-                actuator
-                  .playEffect("dual-rumble", {
-                    startDelay: 0,
-                    duration: 55,
-                    strongMagnitude: 0.08,
-                    weakMagnitude: 0.32,
-                  })
-                  .catch(() => {});
-              }, 24);
+          // High-frequency motor adds crisp wave peak after 24ms
+          setTimeout(() => {
+            actuator
+              .playEffect("dual-rumble", {
+                startDelay: 0,
+                duration: 55,
+                strongMagnitude: 0.08,
+                weakMagnitude: 0.32,
+              })
+              .catch(() => {});
+          }, 24);
 
-              // Soft closing micro-echo after 75ms
-              setTimeout(() => {
-                actuator
-                  .playEffect("dual-rumble", {
-                    startDelay: 0,
-                    duration: 35,
-                    strongMagnitude: 0.04,
-                    weakMagnitude: 0.14,
-                  })
-                  .catch(() => {});
-              }, 75);
-            } else {
-              // Gentle diastolic breath
-              actuator
-                .playEffect("dual-rumble", {
-                  startDelay: 0,
-                  duration: 50,
-                  strongMagnitude: 0.12,
-                  weakMagnitude: 0.14,
-                })
-                .catch(() => {});
-            }
-          }
+          // Soft closing micro-echo after 75ms
+          setTimeout(() => {
+            actuator
+              .playEffect("dual-rumble", {
+                startDelay: 0,
+                duration: 35,
+                strongMagnitude: 0.04,
+                weakMagnitude: 0.14,
+              })
+              .catch(() => {});
+          }, 75);
+        } else {
+          // Gentle diastolic breath
+          actuator
+            .playEffect("dual-rumble", {
+              startDelay: 0,
+              duration: 50,
+              strongMagnitude: 0.12,
+              weakMagnitude: 0.14,
+            })
+            .catch(() => {});
+        }
+      } else {
+        // Fallback for GamepadHapticActuator pulse API (legacy / direct rumble)
+        const haptics = (gp as any)?.hapticActuators;
+        if (Array.isArray(haptics) && haptics[0] && typeof haptics[0].pulse === "function") {
+          try {
+            haptics[0].pulse(isPrimary ? 0.35 : 0.15, isPrimary ? 65 : 45);
+          } catch {}
         }
       }
     }
