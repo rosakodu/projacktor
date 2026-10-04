@@ -209,68 +209,124 @@ export function triggerHaptic(
 }
 
 /**
- * Triggers a soft, subtle heartbeat haptic pulse specifically tuned
- * for pulsating movie logos (completely silent: gentle tactile impulse on both trackpads,
- * and dual-rumble on external gamepads, without any beeps, tones, or UI audio sounds).
+ * Triggers a spatial stereo heartbeat haptic pulse specifically tuned
+ * for pulsating movie logos (completely silent: rolling tactile wave from left to right
+ * trackpad on Steam Deck, dual-frequency motor depth on external gamepads, without any beeps or sounds).
  *
- * @param phase 'primary' for the main heartbeat peak, 'secondary' for the softer follow-up peak.
+ * @param phase 'primary' for the main heartbeat peak (stereo wave + micro-thump), 'secondary' for the soft diastolic echo.
  */
 export function triggerHeartbeatHaptic(phase: "primary" | "secondary" = "primary"): void {
   const isPrimary = phase === "primary";
 
-  // 1. SteamOS Input API (Steam Deck trackpads)
-  // Uses eType = 1 (Tick / SimpleHapticTickWorkItem), giving clean tactile rumble without acoustic tone (eType=6 is tone)
+  // 1. SteamOS Input API (Steam Deck trackpads: 0=Left, 1=Right, 2=Stereo pair)
+  // Uses eType = 1 (Tick / SimpleHapticTickWorkItem) for clean, silent tactile physical feedback
   try {
     const input = getInputApi();
     if (input && typeof input.TriggerSimpleHapticEvent === "function") {
       const controllers = getTargetControllers();
-      // Pad 2 is stereo pair (both trackpads). Pad 0 is Left, Pad 1 is Right.
-      const pads = [2];
 
-      const intensity = isPrimary ? 2 : 1;
-      const gain = isPrimary ? 0 : -2;
-
-      for (const controllerIdx of controllers) {
-        for (const pad of pads) {
+      if (isPrimary) {
+        // Phase 1 (Systole): Rolling spatial stereo wave from left to right trackpad + grounding closing thump
+        for (const controllerIdx of controllers) {
+          // Left trackpad initiates the pulse
           try {
-            input.TriggerSimpleHapticEvent(controllerIdx, pad, 1, intensity, gain);
+            input.TriggerSimpleHapticEvent(controllerIdx, 0, 1, 2, 0);
+          } catch {}
+
+          // 24ms: Right trackpad responds (creates a physical tactile wave rolling across the Deck)
+          setTimeout(() => {
+            try {
+              input.TriggerSimpleHapticEvent(controllerIdx, 1, 1, 2, 0);
+            } catch {}
+          }, 24);
+
+          // 75ms: Grounding soft micro-thump on both trackpads (the "dub" of systolic heartbeat)
+          setTimeout(() => {
+            try {
+              input.TriggerSimpleHapticEvent(controllerIdx, 2, 1, 1, -2);
+            } catch {}
+          }, 75);
+        }
+      } else {
+        // Phase 2 (Diastole): Gentle resonant breath across both trackpads simultaneously
+        for (const controllerIdx of controllers) {
+          try {
+            input.TriggerSimpleHapticEvent(controllerIdx, 2, 1, 1, -1);
           } catch {}
         }
       }
     }
-  } catch {}
+  } catch (e) {
+    console.warn("[Projacktor Haptics] Error in triggerHeartbeatHaptic SteamOS:", e);
+  }
 
   // 2. HTML5 Gamepad API (External controllers: DualSense, Xbox, Switch Pro, etc.)
+  // Heavy low-frequency motor on the left, refined high-frequency motor on the right
   try {
     if (typeof navigator !== "undefined" && typeof navigator.getGamepads === "function") {
       const gamepads = navigator.getGamepads();
       if (gamepads) {
-        const duration = isPrimary ? 75 : 45;
-        const weak = isPrimary ? 0.32 : 0.16; // gentle high-frequency motor
-        const strong = isPrimary ? 0.12 : 0.05; // subtle low-frequency rumble
-
         for (let i = 0; i < gamepads.length; i++) {
           const gp = gamepads[i];
           const actuator = (gp as any)?.vibrationActuator;
           if (actuator && typeof actuator.playEffect === "function") {
-            try {
-              actuator.playEffect("dual-rumble", {
-                startDelay: 0,
-                duration,
-                weakMagnitude: weak,
-                strongMagnitude: strong,
-              });
-            } catch {}
+            if (isPrimary) {
+              // Heavy motor initiates deep pulse
+              actuator
+                .playEffect("dual-rumble", {
+                  startDelay: 0,
+                  duration: 65,
+                  strongMagnitude: 0.36,
+                  weakMagnitude: 0.08,
+                })
+                .catch(() => {});
+
+              // High-frequency motor adds crisp wave peak after 24ms
+              setTimeout(() => {
+                actuator
+                  .playEffect("dual-rumble", {
+                    startDelay: 0,
+                    duration: 55,
+                    strongMagnitude: 0.08,
+                    weakMagnitude: 0.32,
+                  })
+                  .catch(() => {});
+              }, 24);
+
+              // Soft closing micro-echo after 75ms
+              setTimeout(() => {
+                actuator
+                  .playEffect("dual-rumble", {
+                    startDelay: 0,
+                    duration: 35,
+                    strongMagnitude: 0.04,
+                    weakMagnitude: 0.14,
+                  })
+                  .catch(() => {});
+              }, 75);
+            } else {
+              // Gentle diastolic breath
+              actuator
+                .playEffect("dual-rumble", {
+                  startDelay: 0,
+                  duration: 50,
+                  strongMagnitude: 0.12,
+                  weakMagnitude: 0.14,
+                })
+                .catch(() => {});
+            }
           }
         }
       }
     }
-  } catch {}
+  } catch (e) {
+    console.warn("[Projacktor Haptics] Error in triggerHeartbeatHaptic Gamepad API:", e);
+  }
 
   // 3. Web Vibration API fallback
   try {
     if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
-      navigator.vibrate(isPrimary ? 20 : 10);
+      navigator.vibrate(isPrimary ? [28, 20, 16] : 18);
     }
   } catch {}
 }
