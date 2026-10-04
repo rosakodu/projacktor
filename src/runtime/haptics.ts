@@ -136,14 +136,14 @@ export function triggerHaptic(
       break;
     case "heavy":
       intensity = 3;
-      pulseMicroSec = 50000;
-      eType = 6; // rumble
+      pulseMicroSec = 25000;
+      eType = 2; // strong click
       gain = 0;
       vibPattern = 35;
       break;
     case "click":
       intensity = 2;
-      pulseMicroSec = 40000;
+      pulseMicroSec = 25000;
       eType = 2; // click
       gain = 0;
       vibPattern = [15, 25, 20];
@@ -155,8 +155,8 @@ export function triggerHaptic(
     const input = getInputApi();
     if (input) {
       const controllers = getTargetControllers();
-      // pad locations: 0=left, 1=right, 2=both/stereopair, 3=both
-      const locs = pad === "left" ? [0] : pad === "right" ? [1] : [0, 1, 2, 3];
+      // pad locations: 1=left, 2=right, [1, 2]=both
+      const locs = pad === "left" ? [1] : pad === "right" ? [2] : [1, 2];
 
       for (const controllerIdx of controllers) {
         for (const loc of locs) {
@@ -228,8 +228,8 @@ export function triggerHaptic(
 
 /**
  * Triggers a soft, subtle heartbeat haptic pulse specifically tuned
- * for pulsating logos (completely silent: pure vibration rumble, without any
- * mechanical clicks, acoustic actuator buzzes, or navigation sounds).
+ * for pulsating logos (completely silent: gentle tactile impulse on both trackpads,
+ * without any beeps, tones, mechanical loud clicks, or audio sounds).
  * Works across Steam Deck trackpads, connected gamepads (DualSense/Xbox), and Web Vibration.
  *
  * @param phase 'primary' for the main heartbeat peak, 'secondary' for the softer follow-up peak.
@@ -238,31 +238,40 @@ export function triggerHeartbeatHaptic(phase: "primary" | "secondary" = "primary
   const isPrimary = phase === "primary";
 
   // 1. SteamOS Input API (Steam Deck trackpads & Steam Input connected controllers)
-  // Completely silent pure rumble (type 6) without mechanical click (type 2) or acoustic coil buzz (TriggerHapticPulse)
+  // Uses eType = 1 (Tick - SimpleHapticTickWorkItem), which gives a pure tactile tap with NO acoustic beeping/tone
   try {
     const input = getInputApi();
     if (input) {
       const controllers = getTargetControllers();
-      // Use pad location 2 (stereo pair / both pads simultaneously)
-      const loc = 2;
+      // Pads 1 (left) and 2 (right)
+      const pads = [1, 2];
 
-      for (const controllerIdx of controllers) {
-        // Delicate pure rumble pulse: type 6 (Rumble)
-        // Primary: gentle organic pulse (intensity 1, gain 0)
-        // Secondary: softer follow-up pulse (intensity 1, gain -4 dB)
-        const rumbleGain = isPrimary ? 0 : -4;
-
-        try {
-          if (typeof input.ForceSimpleHapticEvent === "function") {
-            input.ForceSimpleHapticEvent(controllerIdx, loc, 6, 1, rumbleGain);
+      const fireTick = (intensity: number, gain: number) => {
+        for (const controllerIdx of controllers) {
+          for (const pad of pads) {
+            try {
+              if (typeof input.ForceSimpleHapticEvent === "function") {
+                input.ForceSimpleHapticEvent(controllerIdx, pad, 1, intensity, gain);
+              }
+            } catch {}
+            try {
+              if (typeof input.TriggerSimpleHapticEvent === "function") {
+                input.TriggerSimpleHapticEvent(controllerIdx, pad, 1, intensity, gain);
+              }
+            } catch {}
           }
-        } catch {}
+        }
+      };
 
-        try {
-          if (typeof input.TriggerSimpleHapticEvent === "function") {
-            input.TriggerSimpleHapticEvent(controllerIdx, loc, 6, 1, rumbleGain);
-          }
-        } catch {}
+      if (isPrimary) {
+        // Primary heartbeat beat: velvety double-thump (main pulse + micro follow-up after 35ms)
+        fireTick(2, -2);
+        setTimeout(() => {
+          fireTick(1, -5);
+        }, 35);
+      } else {
+        // Secondary heartbeat beat: single soft pulse
+        fireTick(1, -4);
       }
     }
   } catch (e) {
@@ -274,9 +283,9 @@ export function triggerHeartbeatHaptic(phase: "primary" | "secondary" = "primary
     if (typeof navigator !== "undefined" && typeof navigator.getGamepads === "function") {
       const gamepads = navigator.getGamepads();
       if (gamepads) {
-        const duration = isPrimary ? 70 : 45;
-        const weak = isPrimary ? 0.25 : 0.12; // gentle vibration
-        const strong = isPrimary ? 0.08 : 0.03; // subtle low rumble
+        const duration = isPrimary ? 65 : 40;
+        const weak = isPrimary ? 0.22 : 0.12; // gentle high-frequency motor
+        const strong = isPrimary ? 0.08 : 0.03; // delicate low-frequency rumble
 
         for (let i = 0; i < gamepads.length; i++) {
           const gp = gamepads[i];
@@ -299,7 +308,7 @@ export function triggerHeartbeatHaptic(phase: "primary" | "secondary" = "primary
   // 3. Web Vibration API fallback
   try {
     if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
-      navigator.vibrate(isPrimary ? 20 : 10);
+      navigator.vibrate(isPrimary ? 18 : 10);
     }
   } catch {}
 }
