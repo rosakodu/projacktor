@@ -63,6 +63,7 @@ interface PlayerControlsProps {
   onChangeVolume?: (delta: number) => void;
   hasNextEpisode?: boolean;
   onPlayNextEpisode?: () => void;
+  onBtnFocus?: (el: HTMLElement) => void;
 }
 
 export const PlayerControls: FC<PlayerControlsProps> = ({
@@ -99,6 +100,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
   onChangeVolume,
   hasNextEpisode,
   onPlayNextEpisode,
+  onBtnFocus,
 }) => {
   const { t } = useI18n();
   const isAnyMenuOpen = showAudioMenu || showSubtitleMenu;
@@ -128,7 +130,8 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
       }
     });
     current.classList.add("gpfocus");
-  }, []);
+    onBtnFocus?.(current);
+  }, [onBtnFocus]);
 
   const handleBtnBlur = useCallback((e: any) => {
     const current = e?.currentTarget as HTMLElement | null;
@@ -154,6 +157,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
           if (el !== target) el.classList.remove("gpfocus");
         });
         target.classList.add("gpfocus");
+        onBtnFocus?.(target);
       }
     };
 
@@ -477,6 +481,7 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
             });
             if (target.classList?.contains("ds-btn")) {
               target.classList.add("gpfocus");
+              onBtnFocus?.(target);
             }
           }}
           onBlurCapture={(e: any) => {

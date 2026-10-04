@@ -243,17 +243,17 @@ class DownloadManager:
 
     def _update_db_inner(self, db, task_map, all_tasks):
         cursor = db.cursor()
-        cursor.execute("SELECT id, aria2_gid, status, download_dir, media_id, magnet_uri FROM downloads WHERE status NOT IN ('completed')")
+        cursor.execute("SELECT id, aria2_gid, status, download_dir, media_id, magnet_uri FROM downloads")
         for row in cursor.fetchall():
             row_id = row['id']
             gid = row['aria2_gid']
             row_dir = row['download_dir']
             
-            # 1. Приоритетная проверка диска: если файл уже полностью скачан (видеофайл без .aria2), отмечаем завершённым
+            # Проверяем, есть ли на диске служебные файлы .aria2
+            has_aria2 = False
+            found_videos = []
             if row_dir and os.path.isdir(row_dir):
                 video_exts = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov'}
-                has_aria2 = False
-                found_videos = []
                 for r_root, _, r_files in os.walk(row_dir):
                     for r_f in r_files:
                         if r_f.endswith('.aria2'):
@@ -266,23 +266,28 @@ class DownloadManager:
                                     found_videos.append((fp, sz))
                             except (OSError, IOError) as e:
                                 logger.debug(f"Could not get file size for {fp}: {e}")
-                
-                if found_videos and not has_aria2:
-                    total_sz = sum(sz for _, sz in found_videos)
-                    logger.info(f"Download id={row_id} confirmed complete on disk ({total_sz} bytes), updating DB")
-                    cursor.execute("""
-                        UPDATE downloads 
-                        SET status='completed', progress=100.0, download_speed=0, upload_speed=0,
-                            total_size=CASE WHEN total_size > 0 THEN total_size ELSE ? END,
-                            downloaded_size=CASE WHEN total_size > 0 THEN total_size ELSE ? END,
-                            completed_at=COALESCE(completed_at, CURRENT_TIMESTAMP),
-                            error_message=NULL
-                        WHERE id=?
-                    """, (total_sz, total_sz, row_id))
-                    if row['media_id']:
-                        self._scan_and_add_files(cursor, row['media_id'], row_dir)
-                    db.commit()
-                    continue
+
+            # Если задача уже числится как 'completed', но на диске нет .aria2 — пропускаем её
+            if row['status'] == 'completed' and not has_aria2:
+                continue
+
+            # 1. Приоритетная проверка диска: если видеофайл готов и .aria2 файла нет, и нет активной задачи aria2c
+            if found_videos and not has_aria2 and not task_map.get(gid):
+                total_sz = sum(sz for _, sz in found_videos)
+                logger.info(f"Download id={row_id} confirmed complete on disk ({total_sz} bytes), updating DB")
+                cursor.execute("""
+                    UPDATE downloads 
+                    SET status='completed', progress=100.0, download_speed=0, upload_speed=0,
+                        total_size=CASE WHEN total_size > 0 THEN total_size ELSE ? END,
+                        downloaded_size=CASE WHEN total_size > 0 THEN total_size ELSE ? END,
+                        completed_at=COALESCE(completed_at, CURRENT_TIMESTAMP),
+                        error_message=NULL
+                    WHERE id=?
+                """, (total_sz, total_sz, row_id))
+                if row['media_id']:
+                    self._scan_and_add_files(cursor, row['media_id'], row_dir)
+                db.commit()
+                continue
 
             # 2. Поиск активной задачи в aria2c
             t = task_map.get(gid)
@@ -385,9 +390,9 @@ class DownloadManager:
                         db.commit()
                         continue
             
+            is_metadata_only = not real_files
             if raw_status == 'complete':
-                if has_followed:
-                    # Only metadata finished, content task is in progress
+                if has_followed or is_metadata_only or has_aria2:
                     new_status = 'downloading'
                 else:
                     new_status = 'completed'
@@ -429,7 +434,7 @@ class DownloadManager:
                 WHERE id=?
             """, (new_status, prog, down_speed, up_speed, total, completed, row_id))
             
-            if new_status == 'completed' and not has_followed and row['status'] != 'completed':
+            if new_status == 'completed' and not has_followed and not has_aria2 and not is_metadata_only and row['status'] != 'completed':
                 cursor.execute("UPDATE downloads SET completed_at=CURRENT_TIMESTAMP WHERE id=?", (row_id,))
                 if row['download_dir'] and row['media_id']:
                     self._scan_and_add_files(cursor, row['media_id'], row['download_dir'])
@@ -467,5 +472,9 @@ class DownloadManager:
                     if not cursor.fetchone():
                         cursor.execute("INSERT INTO media_files (media_id, file_path, file_name, file_size) VALUES (?, ?, ?, ?)",
                                        (media_id, fp, f, sz))
-        cursor.execute("UPDATE media SET status='downloaded' WHERE id=?", (media_id,))
+        has_any_aria2 = any(f.endswith('.aria2') for _, _, fs in os.walk(ddir) for f in fs)
+        if not has_any_aria2:
+            cursor.execute("UPDATE media SET status='downloaded' WHERE id=?", (media_id,))
+        else:
+            cursor.execute("UPDATE media SET status='downloading' WHERE id=?", (media_id,))
 

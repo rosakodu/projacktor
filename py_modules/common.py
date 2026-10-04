@@ -90,6 +90,34 @@ def is_unsupported_media_release(title: str, magnet: str = "") -> bool:
                 return True
     return False
 
+# Список трекеров с закрытым passkey / неработающими анонимными раздачами
+BLOCKED_TRACKERS = {"korsars"}
+
+def is_blocked_tracker(tracker: str, magnet: str = "") -> bool:
+    """
+    Проверяет, относится ли раздача к заблокированным/недоступным трекерам (например korsars с закрытым passkey).
+    Если раздача мульти-трекерная (например rutracker, rutor, korsars), она не блокируется.
+    Блокируется только если единственный заявленный трекер — в черном списке, либо magnet ссылается только на закрытый трекер.
+    """
+    if not tracker and not magnet:
+        return False
+    
+    t_clean = str(tracker or "").lower().strip()
+    # Разделяем список трекеров по запятой/пробелам
+    trackers = [t.strip() for t in re.split(r'[,;|\s]+', t_clean) if t.strip()]
+    if trackers and all(t in BLOCKED_TRACKERS for t in trackers):
+        return True
+
+    # Проверка URL в magnet
+    mag_decoded = urllib.parse.unquote((magnet or "").lower())
+    if "korsars.pro" in mag_decoded:
+        # Если в magnet нет ни одного известного открытого трекера, значит это чисто korsars раздача
+        has_public_tracker = any(p in mag_decoded for p in ["rutor", "rutracker", "t-ru.org", "nnm-club", "nnmclub", "opentrackr", "opentor", "openbittorrent", "torrent.by", "dler"])
+        if not has_public_tracker:
+            return True
+
+    return False
+
 def normalize_jacred_url(url: str) -> str:
     if not url:
         return ""

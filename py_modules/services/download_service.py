@@ -286,12 +286,10 @@ class DownloadService:
             existing_gid = dl['aria2_gid'] if dl else None
             existing_st = dm.get_status(existing_gid) if (existing_gid and dm) else None
 
-            # If fresh download, pass target file index so aria2 downloads ONLY this episode from the start
-            initial_indices = ""
-            if not existing_st and target_ep and target_ep.get('index'):
-                initial_indices = str(target_ep['index'])
-
-            start_res = await self.start_download(mid, initial_indices, dm)
+            # Do not pass unverified initial_indices to start_download for individual episode downloads,
+            # because TorrServer episode index != aria2 torrent internal file index!
+            # Instead, let start_download fetch metadata, then we match the exact aria2 file and select it.
+            start_res = await self.start_download(mid, "", dm)
             gid = start_res.get('gid')
             if not gid or not dm:
                 return start_res
@@ -362,66 +360,23 @@ class DownloadService:
                 target_aria2_idx = str(matched_af['index'])
                 current_selected = set(str(af['index']) for af in af_list if af.get('selected') == 'true')
                 
-                if len(current_selected) >= len(af_list) and len(af_list) > 1:
+                # If everything was selected (or fresh download where all files are selected by default),
+                # isolate ONLY the target episode
+                if not existing_st or len(current_selected) >= len(af_list) or len(current_selected) == 0:
                     current_selected = {target_aria2_idx}
-                    needs_restart = True
-                elif target_aria2_idx not in current_selected:
+                else:
                     current_selected.add(target_aria2_idx)
-                    needs_restart = True
-                else:
-                    needs_restart = False
 
-                if needs_restart:
-                    selected_str = ",".join(sorted(current_selected, key=int))
-                    dm._rpc_call("aria2.forceRemove", [gid])
-                    dm._rpc_call("aria2.removeDownloadResult", [gid])
-                    
-                    target_hash = ""
-                    if "xt=urn:btih:" in (m.get('magnet_uri') or "").lower():
-                        try:
-                            target_hash = m['magnet_uri'].lower().split("xt=urn:btih:")[1].split("&")[0].strip()
-                        except Exception:
-                            pass
-
-                    torrent_path = os.path.join(m['download_dir'], f"{target_hash}.torrent") if target_hash else ""
-                    new_gid = None
-                    if torrent_path and os.path.isfile(torrent_path):
-                        try:
-                            import base64
-                            with open(torrent_path, "rb") as tf:
-                                b64 = base64.b64encode(tf.read()).decode('utf-8')
-                            opt = {
-                                "dir": m['download_dir'],
-                                "file-allocation": "none",
-                                "allow-overwrite": "true",
-                                "auto-file-renaming": "false",
-                                "bt-prioritize-piece": "head=50M,tail=15M",
-                                "select-file": selected_str
-                            }
-                            new_gid = dm.add_torrent(b64, m['download_dir'], opt)
-                            logger.info(f"download_episode: added torrent with select-file {selected_str}, new gid {new_gid}")
-                        except Exception as te:
-                            logger.warning(f"download_episode: failed to add_torrent: {te}")
-
-                    if not new_gid:
-                        opt = {
-                            "dir": m['download_dir'],
-                            "file-allocation": "none",
-                            "allow-overwrite": "true",
-                            "auto-file-renaming": "false",
-                            "bt-prioritize-piece": "head=50M,tail=15M",
-                            "select-file": selected_str
-                        }
-                        new_gid = dm.add_download(m['magnet_uri'], m['download_dir'], opt)
-
-                    db = get_db()
-                    db.execute("UPDATE downloads SET aria2_gid=?, status='downloading' WHERE media_id=?", (new_gid, mid))
-                    db.commit()
-                    db.close()
-                    gid = new_gid
-                    logger.info(f"download_episode: restarted aria2 task with files {selected_str} for mid {mid}, new gid {gid}")
-                else:
+                selected_str = ",".join(sorted(current_selected, key=int))
+                
+                # Apply selection directly via aria2.changeOption if possible
+                try:
+                    dm.select_files(gid, selected_str)
                     dm.resume(gid)
+                    logger.info(f"download_episode: selected file(s) {selected_str} for gid {gid}")
+                except Exception as ce:
+                    logger.warning(f"download_episode: changeOption select-file failed: {ce}")
+
                 return {"success": True, "gid": gid, "aria2_index": target_aria2_idx}
             else:
                 logger.warning(f"download_episode: could not match aria2 file for {target_name}, keeping background download active")

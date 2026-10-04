@@ -425,8 +425,8 @@ class LibraryService:
                 valid_files = []
                 for f in m_files:
                     f_dict = dict(f)
-                    fp = f_dict.get('file_path')
-                    if fp and os.path.isfile(fp) and is_header_ready(fp):
+                    has_aria2_companion = os.path.exists(fp + ".aria2")
+                    if fp and os.path.isfile(fp) and is_header_ready(fp) and not has_aria2_companion:
                         valid_files.append(f_dict)
                     elif fp and os.path.isfile(fp) and not is_header_ready(fp):
                         try:
@@ -455,10 +455,21 @@ class LibraryService:
 
                 # Проверка статусов для фильмов: ошибка или отсутствие файлов не могут быть 'completed'
                 if d.get('media_type') != 'tv':
+                    ddir = d.get('effective_download_dir') or d.get('download_dir') or ''
+                    has_active_aria2 = False
+                    if ddir and os.path.isdir(ddir):
+                        try:
+                            has_active_aria2 = any(f.endswith('.aria2') for _, _, fs in os.walk(ddir) for f in fs)
+                        except Exception:
+                            has_active_aria2 = False
+
                     if d.get('download_status') == 'error':
                         if not valid_files:
                             d['download_progress'] = 0.0
-                    elif valid_files:
+                    elif has_active_aria2 or d.get('download_status') in ('downloading', 'queued', 'paused'):
+                        if has_active_aria2 and d.get('download_status') not in ('downloading', 'paused'):
+                            d['download_status'] = 'downloading'
+                    elif valid_files and not has_active_aria2:
                         d['download_status'] = 'completed'
                         d['download_progress'] = 100.0
                     elif d.get('download_status') == 'completed' and not valid_files:
@@ -908,19 +919,20 @@ def rescan_library_from_disk(download_path: str = None, conn=None) -> int:
                 except Exception:
                     pass
 
+            media_status = 'downloading' if has_aria2 else 'downloaded'
             if row:
                 mid = row['id'] if isinstance(row, dict) else row[0]
                 cursor.execute("""
                     UPDATE media 
-                    SET in_library = 1, status = 'downloaded', download_dir = ?,
+                    SET in_library = 1, status = ?, download_dir = ?,
                         magnet_uri = COALESCE(NULLIF(magnet_uri, ''), ?)
                     WHERE id = ?
-                """, (item_dir, detected_magnet, mid))
+                """, (media_status, item_dir, detected_magnet, mid))
             else:
                 cursor.execute("""
                     INSERT INTO media (title, year, media_type, in_library, status, download_dir, magnet_uri)
-                    VALUES (?, ?, ?, 1, 'downloaded', ?, ?)
-                """, (parsed_title, parsed_year, media_type, item_dir, detected_magnet))
+                    VALUES (?, ?, ?, 1, ?, ?, ?)
+                """, (parsed_title, parsed_year, media_type, media_status, item_dir, detected_magnet))
                 mid = cursor.lastrowid
 
             for fp, fn, sz in vfiles:
@@ -984,18 +996,19 @@ def rescan_library_from_disk(download_path: str = None, conn=None) -> int:
                 WHERE mf.file_path = ? LIMIT 1
             """, (fp,)).fetchone()
 
+            media_status = 'downloading' if has_aria2 else 'downloaded'
             if mf_row:
                 mid = mf_row['media_id'] if isinstance(mf_row, dict) else mf_row[0]
                 cursor.execute("""
                     UPDATE media 
-                    SET in_library = 1, status = 'downloaded', download_dir = ?
+                    SET in_library = 1, status = ?, download_dir = ?
                     WHERE id = ?
-                """, (parent_dir, mid))
+                """, (media_status, parent_dir, mid))
             else:
                 cursor.execute("""
                     INSERT INTO media (title, year, media_type, in_library, status, download_dir)
-                    VALUES (?, ?, ?, 1, 'downloaded', ?)
-                """, (file_title, p_year, media_type, parent_dir))
+                    VALUES (?, ?, ?, 1, ?, ?)
+                """, (file_title, p_year, media_type, media_status, parent_dir))
                 mid = cursor.lastrowid
 
                 ep_num = None

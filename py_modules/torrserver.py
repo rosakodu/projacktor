@@ -10,7 +10,7 @@ import threading
 import json
 
 from .db import CONFIG_DIR, get_user_home, logger
-from .common import get_bin_path, _clean_env, write_pid_file, terminate_process
+from .common import get_bin_path, _clean_env, write_pid_file, terminate_process, POPULAR_TRACKERS
 
 def extract_hash_from_magnet(magnet):
     if not magnet:
@@ -202,13 +202,7 @@ class TorrServerManager:
             return None
         try:
             if magnet_or_link and magnet_or_link.startswith("magnet:?"):
-                trackers = [
-                    "udp://tracker.opentrackr.org:1337/announce",
-                    "udp://open.stealth.si:80/announce",
-                    "udp://tracker.torrent.eu.org:451/announce",
-                    "udp://explodie.org:6969/announce"
-                ]
-                for tr in trackers:
+                for tr in POPULAR_TRACKERS:
                     if tr not in magnet_or_link:
                         magnet_or_link += f"&tr={urllib.parse.quote(tr, safe='')}"
 

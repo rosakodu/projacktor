@@ -103,7 +103,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
 
     // Просмотр конкретной серии из модалки с созданием плейлиста для автоперехода
     const handleWatchEpisode = useCallback(
-      (item: LibraryItem, epIdx: number) => {
+      (item: LibraryItem, epIdx: number, localFilePath?: string, epName?: string) => {
         const sorted = getSortedDownloadedEpisodes(item);
         if (sorted.length > 0) {
           const playlist: PlaylistItem[] = sorted.map((ep) => {
@@ -130,7 +130,28 @@ export const LibraryView: FC<LibraryViewProps> = memo(
             };
           });
 
-          let targetItem = playlist.find((p) => p.mediaInfo?.episodeNumber === epIdx);
+          // 1. Если был передан точный путь к файлу
+          let targetItem = localFilePath ? playlist.find((p) => p.filePath === localFilePath) : undefined;
+
+          // 2. Если имя серии передано — пробуем сопоставить по имени / SxxExx
+          if (!targetItem && epName) {
+            const epNameClean = epName.toLowerCase();
+            targetItem = playlist.find((p) => p.filePath.toLowerCase().endsWith(epNameClean) || p.title.toLowerCase().includes(epNameClean));
+            if (!targetItem) {
+              const epMatch = epName.match(/(?:s|season\s*)(\d{1,3})(?:e|x|episode\s*|\b[.\s_-]+)(\d{1,4})/i) || epName.match(/(?:e|ep|серия\s*)(\d{1,4})/i);
+              if (epMatch) {
+                targetItem = playlist.find((p) => {
+                  const pMatch = p.filePath.match(/(?:s|season\s*)(\d{1,3})(?:e|x|episode\s*|\b[.\s_-]+)(\d{1,4})/i) || p.filePath.match(/(?:e|ep|серия\s*)(\d{1,4})/i);
+                  return pMatch && pMatch[0].toLowerCase() === epMatch[0].toLowerCase();
+                });
+              }
+            }
+          }
+
+          // 3. Fallback: по номеру эпизода
+          if (!targetItem) {
+            targetItem = playlist.find((p) => p.mediaInfo?.episodeNumber === epIdx);
+          }
           if (!targetItem && epIdx > 0 && epIdx <= playlist.length) {
             targetItem = playlist[epIdx - 1];
           }
@@ -231,7 +252,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
         <EpisodesModal
           item={item}
           closeModal={() => close(true)}
-          onWatchOnline={(i, epIdx) => { close(false); handleWatchEpisode(i, epIdx); }}
+          onWatchOnline={(i, epIdx, localFilePath, epName) => { close(false); handleWatchEpisode(i, epIdx, localFilePath, epName); }}
           onDownloadEpisode={(i, ep) => downloadEpisode(i, ep)}
           onPauseEpisodeDownload={(i, ep) => pauseEpisodeDownload(i, ep)}
           onCancelEpisodeDownload={(i, ep) => cancelEpisodeDownload(i, ep)}

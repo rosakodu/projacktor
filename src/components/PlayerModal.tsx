@@ -175,6 +175,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
   const audioBtnRef = useRef<HTMLDivElement>(null);
   const subtitleMenuRef = useRef<HTMLDivElement>(null);
   const audioMenuRef = useRef<HTMLDivElement>(null);
+  const lastFocusedBtnRef = useRef<HTMLElement | null>(null);
 
   const audioTracksRef = useRef<AudioTrack[]>(audioTracks);
   audioTracksRef.current = audioTracks;
@@ -378,6 +379,55 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     }, 1200);
   }, []);
 
+  const focusControl = useCallback((el: HTMLElement) => {
+    try {
+      const doc = getActiveDocument(el) || document;
+      doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((item) => {
+        if (item !== el) item.classList.remove("gpfocus");
+      });
+      el.focus();
+      el.classList.add("gpfocus");
+      el.classList.add("gpfocuswithin");
+      try {
+        (el as any).TakeFocus?.(0);
+      } catch {}
+      lastFocusedBtnRef.current = el;
+    } catch {}
+  }, []);
+
+  const restoreControlsFocus = useCallback(() => {
+    const targetEl =
+      (lastFocusedBtnRef.current &&
+        containerRef.current?.contains(lastFocusedBtnRef.current) &&
+        lastFocusedBtnRef.current.isConnected)
+        ? lastFocusedBtnRef.current
+        : playBtnRef.current;
+
+    if (targetEl) {
+      focusControl(targetEl);
+    }
+  }, [focusControl]);
+
+  // Непрерывное отслеживание текущей активной кнопки панели управления:
+  // Любое получение фокуса кнопкой (навигация D-pad, стиком, тачем) запоминается
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const onFocusIn = (e: FocusEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (
+        target !== container &&
+        target.classList?.contains("ds-btn") &&
+        !target.closest(".projacktor-player-dropdown-menu")
+      ) {
+        lastFocusedBtnRef.current = target;
+      }
+    };
+    container.addEventListener("focusin", onFocusIn);
+    return () => container.removeEventListener("focusin", onFocusIn);
+  }, []);
+
   const selectSubtitleTrack = useCallback((trackIndex: number | string | null) => {
     userInteractedWithSubtitlesRef.current = true;
     setSelectedSubtitle(trackIndex);
@@ -385,27 +435,17 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     // Синхронно переводим фокус на кнопку субтитров ДО закрытия меню,
     // чтобы фокус браузера/Decky не сбрасывался на первый элемент (перемотку назад)
     if (subtitleBtnRef.current) {
-      try {
-        const doc = getActiveDocument(subtitleBtnRef.current) || document;
-        doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-        subtitleBtnRef.current.focus();
-        subtitleBtnRef.current.classList.add("gpfocus");
-      } catch {}
+      focusControl(subtitleBtnRef.current);
     }
 
     setShowSubtitleMenu(false);
     resetControlsTimer();
     setTimeout(() => {
       if (subtitleBtnRef.current) {
-        try {
-          const doc = getActiveDocument(subtitleBtnRef.current) || document;
-          doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-          subtitleBtnRef.current.focus();
-          subtitleBtnRef.current.classList.add("gpfocus");
-        } catch {}
+        focusControl(subtitleBtnRef.current);
       }
     }, 50);
-  }, [resetControlsTimer]);
+  }, [focusControl, resetControlsTimer]);
 
   useEffect(() => {
     resetControlsTimer();
@@ -426,10 +466,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
       if (cancelled) return false;
       if (playBtnRef.current) {
         try {
-          const doc = getActiveDocument(playBtnRef.current) || document;
-          doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-          playBtnRef.current.focus();
-          playBtnRef.current.classList.add("gpfocus");
+          focusControl(playBtnRef.current);
           return true;
         } catch {}
       }
@@ -454,7 +491,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
       cancelled = true;
       if (timerId) clearTimeout(timerId as any);
     };
-  }, []);
+  }, [focusControl]);
 
   const prevShowControlsRef = useRef<boolean>(showControls);
 
@@ -463,25 +500,12 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     prevShowControlsRef.current = showControls;
 
     if (showControls) {
-      // Восстанавливаем фокус на playBtnRef ТОЛЬКО если контролы только что появились из скрытого состояния,
+      // Восстанавливаем фокус на последний активный элемент ТОЛЬКО если контролы только что появились из скрытого состояния,
       // а НЕ при закрытии/открытии меню субтитров/аудио, когда контролы уже были видны!
       if (wasHidden && !showSubtitleMenu && !showAudioMenu) {
         const t = setTimeout(() => {
-          if (playBtnRef.current) {
-            try {
-              const doc = getActiveDocument(playBtnRef.current) || document;
-              const activeEl = doc.activeElement as HTMLElement | null;
-              const hasActivePlayerFocus =
-                doc.querySelector(".projacktor-player-fullscreen .gpfocus") ||
-                (activeEl && activeEl !== doc.body && containerRef.current?.contains(activeEl));
-              if (!hasActivePlayerFocus) {
-                doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-                playBtnRef.current.focus();
-                playBtnRef.current.classList.add("gpfocus");
-              }
-            } catch {}
-          }
-        }, 60);
+          restoreControlsFocus();
+        }, 40);
         return () => clearTimeout(t);
       }
     } else {
@@ -502,7 +526,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     }
 
     return undefined;
-  }, [showControls, showSubtitleMenu, showAudioMenu]);
+  }, [showControls, showSubtitleMenu, showAudioMenu, restoreControlsFocus]);
 
   const touchStartXRef = useRef<number | null>(null);
   const touchStartYRef = useRef<number | null>(null);
@@ -675,12 +699,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
 
     // Синхронно переводим фокус на кнопку аудио ДО закрытия меню
     if (audioBtnRef.current) {
-      try {
-        const doc = getActiveDocument(audioBtnRef.current) || document;
-        doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-        audioBtnRef.current.focus();
-        audioBtnRef.current.classList.add("gpfocus");
-      } catch {}
+      focusControl(audioBtnRef.current);
     }
 
     setShowAudioMenu(false);
@@ -699,15 +718,10 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     resetControlsTimer();
     setTimeout(() => {
       if (audioBtnRef.current) {
-        try {
-          const doc = getActiveDocument(audioBtnRef.current) || document;
-          doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-          audioBtnRef.current.focus();
-          audioBtnRef.current.classList.add("gpfocus");
-        } catch {}
+        focusControl(audioBtnRef.current);
       }
     }, 50);
-  }, [baseTime, getStreamUrl, isDirectStream, resetControlsTimer]);
+  }, [baseTime, focusControl, getStreamUrl, isDirectStream, resetControlsTimer]);
 
   const lastSubToggleRef = useRef<number>(0);
   const toggleSubtitleMenu = useCallback(() => {
@@ -836,6 +850,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     changeVolume,
     resetControlsTimer,
     toggleControls,
+    restoreControlsFocus,
     handleMenuDirection,
     zoom: zoomControls,
   });
@@ -1611,6 +1626,9 @@ export const PlayerModal: FC<PlayerModalProps> = ({
           onChangeVolume={changeVolume}
           hasNextEpisode={!!hasNextEpisode}
           onPlayNextEpisode={() => onPlayNext?.()}
+          onBtnFocus={(el) => {
+            lastFocusedBtnRef.current = el;
+          }}
         />
       </Focusable>
   );

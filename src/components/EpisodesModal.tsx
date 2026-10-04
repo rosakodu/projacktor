@@ -1,5 +1,5 @@
 import { FC, useState, useEffect, useRef, useCallback } from "react";
-import { ModalRoot, Focusable, Spinner } from "@decky/ui";
+import { ModalRoot, Focusable, Spinner, GamepadButton } from "@decky/ui";
 import { FaPlay, FaSpinner } from "react-icons/fa";
 import { EpisodeItem, LibraryItem } from "../types";
 import { formatBytes, rpcGetEpisodes, sortEpisodes } from "../api";
@@ -7,6 +7,20 @@ import { PROJACKTOR_STYLES } from "../styles";
 import { getActiveDocument } from "../runtime/activeDoc";
 import { triggerHaptic } from "../runtime/haptics";
 import { useI18n } from "../i18n";
+import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
+import { isPlayerActive } from "../runtime/homeInputBus";
+
+const isEvtUp = (evt: any) => {
+  const dir = evt?.detail?.dir;
+  const btn = evt?.detail?.button;
+  return dir === "up" || btn === 9 || btn === GamepadButton.DIR_UP;
+};
+
+const isEvtDown = (evt: any) => {
+  const dir = evt?.detail?.dir;
+  const btn = evt?.detail?.button;
+  return dir === "down" || btn === 10 || btn === GamepadButton.DIR_DOWN;
+};
 
 const modalBtnStyle: React.CSSProperties = {
   width: 92,
@@ -30,7 +44,7 @@ const modalBtnStyle: React.CSSProperties = {
 interface EpisodesModalProps {
   item: LibraryItem;
   closeModal?: () => void;
-  onWatchOnline: (item: LibraryItem, epIndex: number) => void;
+  onWatchOnline: (item: LibraryItem, epIndex: number, localFilePath?: string, epName?: string) => void;
   onDownloadEpisode: (item: LibraryItem, ep: EpisodeItem) => void;
   onPauseEpisodeDownload?: (item: LibraryItem, ep: EpisodeItem) => void;
   onCancelEpisodeDownload?: (item: LibraryItem, ep: EpisodeItem) => void;
@@ -173,30 +187,134 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
     return () => listEl.removeEventListener("focusin", onFocusIn);
   }, []);
 
+  const focusEl = useCallback((el: HTMLElement) => {
+    const doc = getActiveDocument(el) || document;
+    doc.querySelectorAll(".gpfocus").forEach((item) => item.classList.remove("gpfocus"));
+    el.focus();
+    el.classList.add("gpfocus");
+    el.classList.add("gpfocuswithin");
+    try {
+      (el as any).TakeFocus?.(0);
+    } catch {}
+  }, []);
+
+  const navigateToEpisode = useCallback(
+    (targetEpIdx: number) => {
+      const listEl = listRef.current;
+      if (!listEl) return false;
+      const rows = Array.from(listEl.querySelectorAll<HTMLElement>(".projacktor-torrent-ep-row"));
+      if (targetEpIdx < 0 || targetEpIdx >= rows.length) return false;
+      const row = rows[targetEpIdx];
+      if (!row) return false;
+      const btn = row.querySelector<HTMLElement>(".ds-btn, [tabindex='0'], button") || row;
+      if (btn) {
+        focusEl(btn);
+        return true;
+      }
+      return false;
+    },
+    [focusEl]
+  );
+
+  const navigateToCancel = useCallback(() => {
+    const cancelBtn = (listRef.current?.closest(".projacktor-modal-root, form, div") || document)?.querySelector<HTMLElement>(
+      ".ds-btn--compact[tabindex='0']"
+    );
+    if (cancelBtn) {
+      focusEl(cancelBtn);
+      return true;
+    }
+    return false;
+  }, [focusEl]);
+
+  const closeModalRef = useRef(closeModal);
+  closeModalRef.current = closeModal;
+
+  // Обработка кнопки B геймпада и клавиш Escape/Backspace
+  useEffect(() => {
+    let lastCloseAt = 0;
+    const triggerClose = () => {
+      const now = Date.now();
+      if (now - lastCloseAt < 250) return;
+      lastCloseAt = now;
+      if (closeModalRef.current) {
+        closeModalRef.current();
+      }
+    };
+
+    const un = subscribeControllerInput((e) => {
+      if (!e.pressed) return;
+      if (isPlayerActive()) return;
+
+      if (e.button === RawButton.B || e.button === 1) {
+        triggerClose();
+        return;
+      }
+    });
+
+    const doc = getActiveDocument(listRef.current);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (isPlayerActive()) return;
+      if (e.key === "Escape" || e.key === "Backspace") {
+        e.preventDefault();
+        e.stopPropagation();
+        triggerClose();
+        return;
+      }
+
+      const active = doc?.activeElement as HTMLElement | null;
+      if (!active) return;
+
+      const listEl = listRef.current;
+      if (listEl && listEl.contains(active)) {
+        const rows = Array.from(listEl.querySelectorAll<HTMLElement>(".projacktor-torrent-ep-row"));
+        const epIndex = rows.findIndex((r) => r.contains(active));
+        if (epIndex !== -1) {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            e.stopPropagation();
+            if (epIndex < rows.length - 1) {
+              navigateToEpisode(epIndex + 1);
+            } else {
+              navigateToCancel();
+            }
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            e.stopPropagation();
+            if (epIndex > 0) {
+              navigateToEpisode(epIndex - 1);
+            }
+          }
+        }
+      }
+    };
+
+    const targetDoc = doc || document;
+    targetDoc.addEventListener("keydown", handleKeyDown, true);
+
+    return () => {
+      un();
+      targetDoc.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [navigateToEpisode, navigateToCancel]);
+
   const restoreFocusToEpisodeBtn = useCallback((epIndex: number) => {
     setTimeout(() => {
       const row = listRef.current?.querySelector(`[data-ep-index="${epIndex}"]`);
       const newBtn = row?.querySelector<HTMLElement>(".ds-btn");
       if (newBtn) {
-        const doc = getActiveDocument(newBtn) || document;
-        doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-        newBtn.focus();
-        newBtn.classList.add("gpfocus");
-        newBtn.classList.add("gpfocuswithin");
-        try {
-          (newBtn as any).TakeFocus?.(0);
-        } catch {}
+        focusEl(newBtn);
       }
     }, 60);
-  }, []);
+  }, [focusEl]);
 
-  const handleWatchOnline = (epIndex: number) => {
+  const handleWatchOnline = (epIndex: number, localFilePath?: string, epName?: string) => {
     triggerHaptic("click", "both");
     // Защита от фантомного клика / удержания кнопки A при открытии списка серий
     if (Date.now() - modalOpenedTimeRef.current < 450) {
       return;
     }
-    onWatchOnline(item, epIndex);
+    onWatchOnline(item, epIndex, localFilePath, epName);
   };
 
   const handleDownload = async (ep: EpisodeItem) => {
@@ -482,14 +600,15 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
               </div>
             ) : (
               episodes.map((ep: EpisodeItem, epIdx: number) => {
-                const hasLocalFile = !!(localFiles && localFiles.some((f) => {
+                const matchedLocalFile = localFiles?.find((f) => {
                   if (f.file_size <= 100 * 1024) return false;
                   if (f.file_name.toLowerCase() === ep.name.toLowerCase()) return true;
                   const epMatch = ep.name.match(/(?:s|season\s*)(\d{1,3})(?:e|x|episode\s*|\b[.\s_-]+)(\d{1,4})/i) || ep.name.match(/(?:e|ep|серия\s*)(\d{1,4})/i) || ep.name.match(/(\d+)/);
                   const fMatch = f.file_name.match(/(?:s|season\s*)(\d{1,3})(?:e|x|episode\s*|\b[.\s_-]+)(\d{1,4})/i) || f.file_name.match(/(?:e|ep|серия\s*)(\d{1,4})/i) || f.file_name.match(/(\d+)/);
                   if (epMatch && fMatch && epMatch[0].toLowerCase() === fMatch[0].toLowerCase()) return true;
                   return false;
-                }));
+                });
+                const hasLocalFile = !!matchedLocalFile;
 
                 const isEpCompleted =
                   ep.downloaded === true || hasLocalFile;
@@ -567,32 +686,38 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                         justifyContent: "flex-end",
                       }}
                       onGamepadDirection={(evt: any) => {
-                        const btn = evt?.detail?.button;
-                        if (epIdx === episodes.length - 1 && (btn === 10 || btn === 6)) {
-                          const cancelBtn = (listRef.current?.closest(".projacktor-modal-root, form, div") || document)?.querySelector<HTMLElement>(".ds-btn--compact[tabindex='0']");
-                          if (cancelBtn) {
-                            try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
-                            const doc = getActiveDocument(cancelBtn) || document;
-                            doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-                            cancelBtn.focus();
-                            cancelBtn.classList.add("gpfocus", "gpfocuswithin");
-                            try { (cancelBtn as any).TakeFocus?.(0); } catch {}
-                            return false;
+                        if (isEvtUp(evt)) {
+                          try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                          if (epIdx > 0) {
+                            navigateToEpisode(epIdx - 1);
                           }
+                          return false;
+                        }
+                        if (isEvtDown(evt)) {
+                          try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                          if (epIdx < episodes.length - 1) {
+                            navigateToEpisode(epIdx + 1);
+                          } else {
+                            navigateToCancel();
+                          }
+                          return false;
                         }
                         return undefined;
                       }}
                       onKeyDown={(e: any) => {
-                        if (epIdx === episodes.length - 1 && e.key === "ArrowDown") {
-                          const cancelBtn = (listRef.current?.closest(".projacktor-modal-root, form, div") || document)?.querySelector<HTMLElement>(".ds-btn--compact[tabindex='0']");
-                          if (cancelBtn) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            const doc = getActiveDocument(cancelBtn) || document;
-                            doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-                            cancelBtn.focus();
-                            cancelBtn.classList.add("gpfocus", "gpfocuswithin");
-                            try { (cancelBtn as any).TakeFocus?.(0); } catch {}
+                        if (e.key === "ArrowDown") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (epIdx < episodes.length - 1) {
+                            navigateToEpisode(epIdx + 1);
+                          } else {
+                            navigateToCancel();
+                          }
+                        } else if (e.key === "ArrowUp") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (epIdx > 0) {
+                            navigateToEpisode(epIdx - 1);
                           }
                         }
                       }}
@@ -606,11 +731,11 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                             tabIndex={0}
                             onActivate={(e: any) => {
                               try { e?.stopPropagation?.(); } catch {}
-                              handleWatchOnline(ep.index);
+                              handleWatchOnline(ep.index, matchedLocalFile?.file_path, ep.name);
                             }}
                             onClick={(e: any) => {
                               try { e?.stopPropagation?.(); } catch {}
-                              handleWatchOnline(ep.index);
+                              handleWatchOnline(ep.index, matchedLocalFile?.file_path, ep.name);
                             }}
                             onCancelButton={closeModal}
                             title={t("watchFile")}
@@ -711,39 +836,23 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
             onClick={closeModal}
             onCancelButton={closeModal}
             onGamepadDirection={(evt: any) => {
-              if (evt?.detail?.button === 9) {
+              if (isEvtUp(evt)) {
+                try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
                 const rows = listRef.current?.querySelectorAll<HTMLElement>(".projacktor-torrent-ep-row");
                 if (rows && rows.length > 0) {
-                  const lastRow = rows[rows.length - 1];
-                  const lastBtn = lastRow.querySelector<HTMLElement>(".ds-btn, [tabindex='0']");
-                  if (lastBtn) {
-                    try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
-                    const doc = getActiveDocument(lastBtn) || document;
-                    doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-                    lastBtn.focus();
-                    lastBtn.classList.add("gpfocus", "gpfocuswithin");
-                    try { (lastBtn as any).TakeFocus?.(0); } catch {}
-                    return false;
-                  }
+                  navigateToEpisode(rows.length - 1);
+                  return false;
                 }
               }
               return undefined;
             }}
             onKeyDown={(e) => {
               if (e.key === "ArrowUp") {
+                e.preventDefault();
+                e.stopPropagation();
                 const rows = listRef.current?.querySelectorAll<HTMLElement>(".projacktor-torrent-ep-row");
                 if (rows && rows.length > 0) {
-                  const lastRow = rows[rows.length - 1];
-                  const lastBtn = lastRow.querySelector<HTMLElement>(".ds-btn, [tabindex='0']");
-                  if (lastBtn) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const doc = getActiveDocument(lastBtn) || document;
-                    doc.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-                    lastBtn.focus();
-                    lastBtn.classList.add("gpfocus", "gpfocuswithin");
-                    try { (lastBtn as any).TakeFocus?.(0); } catch {}
-                  }
+                  navigateToEpisode(rows.length - 1);
                 }
               }
             }}
