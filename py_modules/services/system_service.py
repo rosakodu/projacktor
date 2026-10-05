@@ -6,6 +6,8 @@ import json
 import shutil
 import asyncio
 import subprocess
+import time
+import threading
 
 from ..db import get_db, logger, CONFIG_DIR, get_user_home
 from ..common import (
@@ -21,42 +23,108 @@ from ..constants import DEFAULT_HTTP_PORT
 class SystemService:
     def __init__(self):
         self.inhibit_proc = None
+        self._lock = threading.Lock()
+        self._active_reasons = set()
+        self._last_heartbeat = time.time()
+        self._watchdog_running = True
+        self._watchdog_thread = threading.Thread(target=self._watchdog_loop, name="Projacktor-SleepWatchdog", daemon=True)
+        self._watchdog_thread.start()
 
-    async def inhibit_sleep(self) -> dict:
+    def _reset_screensaver_idle(self):
+        """Reset idle timer on X11 / Gamescope / Freedesktop."""
         try:
-            if not self.inhibit_proc or self.inhibit_proc.poll() is not None:
-                self.inhibit_proc = subprocess.Popen(
-                    ["systemd-inhibit", "--what=idle", "--who=Projacktor", "--why=Downloading in MagicBlack screen-off mode", "sleep", "infinity"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
-                )
-                logger.info("Projacktor: Sleep inhibited for MagicBlack screen-off download")
+            subprocess.Popen(
+                ["dbus-send", "--session", "--dest=org.freedesktop.ScreenSaver",
+                 "--type=method_call", "/org/freedesktop/ScreenSaver",
+                 "org.freedesktop.ScreenSaver.SimulateUserActivity"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+        except Exception:
+            pass
+        try:
+            subprocess.Popen(["xdg-screensaver", "reset"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
+    async def inhibit_sleep(self, reason: str = "video") -> dict:
+        try:
+            with self._lock:
+                self._active_reasons.add(reason)
+                self._last_heartbeat = time.time()
+                self._ensure_inhibit_proc_running()
+            self._reset_screensaver_idle()
+            logger.info(f"Projacktor: Sleep inhibited (reason='{reason}', active={self._active_reasons})")
             return {"success": True}
         except Exception as e:
             logger.error(f"SystemService inhibit_sleep error: {e}")
             return {"success": False, "error": str(e)}
 
-    async def uninhibit_sleep(self) -> dict:
+    async def uninhibit_sleep(self, reason: str = "video") -> dict:
         try:
-            if self.inhibit_proc and self.inhibit_proc.poll() is None:
-                self.inhibit_proc.terminate()
-                try:
-                    self.inhibit_proc.wait(timeout=1)
-                except Exception:
-                    self.inhibit_proc.kill()
-                self.inhibit_proc = None
-                logger.info("Projacktor: Sleep uninhibited")
+            with self._lock:
+                self._active_reasons.discard(reason)
+                if not self._active_reasons:
+                    self._stop_inhibit_proc()
+            logger.info(f"Projacktor: Sleep uninhibited (reason='{reason}', active={self._active_reasons})")
             return {"success": True}
         except Exception as e:
             logger.error(f"SystemService uninhibit_sleep error: {e}")
             return {"success": False, "error": str(e)}
 
-    def stop_inhibit(self):
+    async def ping_sleep_inhibit(self) -> dict:
+        with self._lock:
+            self._last_heartbeat = time.time()
+            if "video" in self._active_reasons:
+                self._ensure_inhibit_proc_running()
+        self._reset_screensaver_idle()
+        return {"success": True}
+
+    def _ensure_inhibit_proc_running(self):
+        if not self.inhibit_proc or self.inhibit_proc.poll() is not None:
+            reasons_str = ", ".join(sorted(self._active_reasons)) or "active playback"
+            self.inhibit_proc = subprocess.Popen(
+                [
+                    "systemd-inhibit",
+                    "--what=idle",
+                    "--who=Projacktor",
+                    f"--why=Active in Projacktor ({reasons_str})",
+                    "sleep",
+                    "infinity"
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            logger.info(f"Projacktor: Started systemd-inhibit proc PID={self.inhibit_proc.pid}")
+
+    def _stop_inhibit_proc(self):
         if self.inhibit_proc and self.inhibit_proc.poll() is None:
             try:
                 self.inhibit_proc.terminate()
+                self.inhibit_proc.wait(timeout=1)
             except Exception:
-                pass
+                try:
+                    self.inhibit_proc.kill()
+                except Exception:
+                    pass
+            self.inhibit_proc = None
+            logger.info("Projacktor: Stopped systemd-inhibit proc")
+
+    def _watchdog_loop(self):
+        while self._watchdog_running:
+            time.sleep(15)
+            with self._lock:
+                if "video" in self._active_reasons:
+                    if time.time() - self._last_heartbeat > 100:
+                        logger.warning("Projacktor: Video sleep inhibit heartbeat timed out, auto-releasing")
+                        self._active_reasons.discard("video")
+                        if not self._active_reasons:
+                            self._stop_inhibit_proc()
+
+    def stop_inhibit(self):
+        self._watchdog_running = False
+        with self._lock:
+            self._active_reasons.clear()
+            self._stop_inhibit_proc()
 
     def get_torrserver_status(self, ts) -> dict:
         running = ts.ensure_running() if ts else False

@@ -127,7 +127,7 @@ export function setMagicBlack(active: boolean): void {
 
     // 3. Inhibit system sleep and disable idle suspension
     try {
-      rpcInhibitSleep();
+      rpcInhibitSleep("magic_black");
     } catch {}
     try {
       (window as any)?.SteamClient?.System?.SetIdleSuspensionEnabled?.(false);
@@ -144,7 +144,7 @@ export function setMagicBlack(active: boolean): void {
 
     // 2. Uninhibit sleep and re-enable idle suspension
     try {
-      rpcUninhibitSleep();
+      rpcUninhibitSleep("magic_black");
     } catch {}
     try {
       (window as any)?.SteamClient?.System?.SetIdleSuspensionEnabled?.(true);

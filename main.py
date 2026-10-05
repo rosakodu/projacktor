@@ -183,11 +183,14 @@ class Plugin:
     # ==================== RPC Methods ====================
 
     # System & Settings
-    async def inhibit_sleep(self):
-        return await self.system.inhibit_sleep()
+    async def inhibit_sleep(self, reason: str = "video"):
+        return await self.system.inhibit_sleep(reason)
 
-    async def uninhibit_sleep(self):
-        return await self.system.uninhibit_sleep()
+    async def uninhibit_sleep(self, reason: str = "video"):
+        return await self.system.uninhibit_sleep(reason)
+
+    async def ping_sleep_inhibit(self):
+        return await self.system.ping_sleep_inhibit()
 
     async def get_torrserver_status(self):
         return self.system.get_torrserver_status(self.ts)

@@ -90,8 +90,9 @@ export interface DiskSpaceInfo {
 
 export const rpcGetDiskSpace = callable<[], DiskSpaceInfo>("get_disk_space");
 export const rpcGetStorageDrives = callable<[], StorageDrive[]>("get_storage_drives");
-export const rpcInhibitSleep = callable<[], { success: boolean; error?: string }>("inhibit_sleep");
-export const rpcUninhibitSleep = callable<[], { success: boolean; error?: string }>("uninhibit_sleep");
+export const rpcInhibitSleep = callable<[string?], { success: boolean; error?: string }>("inhibit_sleep");
+export const rpcUninhibitSleep = callable<[string?], { success: boolean; error?: string }>("uninhibit_sleep");
+export const rpcPingSleepInhibit = callable<[], { success: boolean }>("ping_sleep_inhibit");
 
 // ── Catalog Fetcher ────────────────────────────────────────────
 export async function fetchCatalog(

@@ -10,11 +10,13 @@
  */
 
 import { useEffect, useRef } from "react";
+import { rpcInhibitSleep, rpcUninhibitSleep, rpcPingSleepInhibit } from "../api";
 
 let screensaverService: any = null;
 let settingsModule: any = null;
 let activeNotificationHandle: any = null;
 let wakeLockSentinel: any = null;
+let heartbeatTimer: any = null;
 let isInhibiting = false;
 let originalSettings: Record<string, number | undefined> = {};
 let settingsOverridden = false;
@@ -35,7 +37,7 @@ function getWebpackChunk(): any {
 }
 
 /**
- * Получение внутренних сервисов Steam Screensaver и настроек (прямой импорт по ID без перебора модулей)
+ * Получение внутренних сервисов Steam Screensaver и настроек (динамический поиск по сигнатурам методов)
  */
 export function getSteamModules(): { screensaverService: any; settingsModule: any } {
   if (screensaverService && settingsModule) {
@@ -45,16 +47,35 @@ export function getSteamModules(): { screensaverService: any; settingsModule: an
     const chunk = getWebpackChunk();
     if (chunk && typeof chunk.push === "function") {
       chunk.push([[Symbol()], {}, (require: any) => {
-        try {
-          if (!screensaverService) {
-            screensaverService = require("2099")?.b3;
+        // 1. Динамический поиск по кэшу модулей webpack
+        if (require && typeof require.c === "object") {
+          for (const id in require.c) {
+            const exp = require.c[id]?.exports;
+            if (!exp) continue;
+            if (!screensaverService) {
+              if (typeof exp.ForceScreensaver === "function") {
+                screensaverService = exp;
+              } else if (typeof exp.b3?.ForceScreensaver === "function") {
+                screensaverService = exp.b3;
+              }
+            }
+            if (!settingsModule) {
+              if (exp.clientSettings && typeof exp.qt === "function") {
+                settingsModule = exp;
+              } else if (exp.rV?.clientSettings && typeof exp.qt === "function") {
+                settingsModule = exp;
+              }
+            }
+            if (screensaverService && settingsModule) break;
           }
-        } catch {}
-        try {
-          if (!settingsModule) {
-            settingsModule = require("39828");
-          }
-        } catch {}
+        }
+        // 2. Fallback на известные старые ID
+        if (!screensaverService) {
+          try { screensaverService = require("2099")?.b3; } catch {}
+        }
+        if (!settingsModule) {
+          try { settingsModule = require("39828"); } catch {}
+        }
       }]);
     }
   } catch (e) {
@@ -173,6 +194,22 @@ function teardownActiveNotification() {
   }
 }
 
+function startHeartbeat() {
+  if (heartbeatTimer) clearInterval(heartbeatTimer);
+  heartbeatTimer = setInterval(() => {
+    if (isInhibiting) {
+      rpcPingSleepInhibit().catch(() => {});
+    }
+  }, 45000);
+}
+
+function stopHeartbeat() {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+}
+
 /**
  * Запуск подавления заставки и ухода экрана в сон
  */
@@ -180,19 +217,27 @@ export function startInhibiting() {
   if (isInhibiting) return;
   isInhibiting = true;
 
-  // 1. Отключаем таймеры заставки и сна в Steam
+  // 1. Системный ингибитор Linux ядра и systemd-logind через Python
+  try {
+    rpcInhibitSleep("video").catch(() => {});
+  } catch {}
+
+  // 2. Периодический сторожевой пинг активности (heartbeat каждые 45 секунд)
+  startHeartbeat();
+
+  // 3. Отключаем таймеры заставки и сна в Steam Big Picture
   overrideIdleSettings();
 
-  // 2. Сбрасываем заставку, если она уже включена
+  // 4. Сбрасываем заставку, если она уже включена
   const { screensaverService } = getSteamModules();
   if (screensaverService?.ForceScreensaver) {
     screensaverService.ForceScreensaver({ enabled: false }).catch(() => {});
   }
 
-  // 3. Подписываемся на реактивное подавление попыток активации
+  // 5. Подписываемся на реактивное подавление попыток активации
   setupActiveNotification();
 
-  // 4. Захватываем нативный Screen Wake Lock
+  // 6. Захватываем нативный Screen Wake Lock
   acquireWakeLock();
 }
 
@@ -203,22 +248,28 @@ export function stopInhibiting() {
   if (!isInhibiting) return;
   isInhibiting = false;
 
-  // 1. Восстанавливаем оригинальные таймеры Steam
+  // 1. Останавливаем heartbeat
+  stopHeartbeat();
+
+  // 2. Снимаем системный ингибитор сна
+  try {
+    rpcUninhibitSleep("video").catch(() => {});
+  } catch {}
+
+  // 3. Восстанавливаем оригинальные таймеры Steam
   restoreIdleSettings();
 
-  // 2. Отписываемся от уведомлений
+  // 4. Отписываемся от уведомлений
   teardownActiveNotification();
 
-  // 3. Освобождаем Wake Lock
+  // 5. Освобождаем Wake Lock
   releaseWakeLock();
 }
 
 // Защита от потери настроек при закрытии окна
 if (typeof window !== "undefined") {
   window.addEventListener("beforeunload", () => {
-    restoreIdleSettings();
-    releaseWakeLock();
-    teardownActiveNotification();
+    stopInhibiting();
   });
 }
 
