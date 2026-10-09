@@ -12,6 +12,7 @@ export interface MediaItem {
   overview?: string;
   media_type?: "movie" | "tv";
   genre_ids?: number[];
+  age_rating?: string;
 }
 
 export interface TorrentItem {
@@ -158,9 +159,10 @@ export interface PlaylistItem {
   mediaInfo?: PlayerMediaInfo;
 }
 
-export type CatalogCategory = "movie" | "tv" | "cartoon" | "anime";
+export type CatalogCategory = "home" | "movie" | "tv" | "cartoon" | "anime";
 
 export type TabId =
+  | "home"
   | "movies"
   | "tv"
   | "cartoons"

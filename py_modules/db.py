@@ -97,7 +97,9 @@ DEFAULT_SETTINGS = {
     "aria2_port": DEFAULT_ARIA2_PORT,
     "torrserver_port": DEFAULT_TORRSERVER_PORT,
     "http_server_port": DEFAULT_HTTP_PORT,
-    "transcode_max_res": "auto"
+    "transcode_max_res": "auto",
+    "haptic_and_sound_enabled": True,
+    "kids_mode": False
 }
 
 # Мьютекс для предотвращения состояния гонки (Race condition) между параллельными потоками

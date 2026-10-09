@@ -131,10 +131,53 @@ export const CARDS_STYLES = `
   display: block !important;
 }
 
-.projacktor-card-rating {
+.projacktor-card-badges {
   position: absolute !important;
   top: 6px !important;
   right: 6px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  z-index: 2 !important;
+}
+
+.projacktor-card-age-badge {
+  background: rgba(0, 0, 0, 0.78) !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  padding: 2px 5px !important;
+  border-radius: 2px !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0.2px !important;
+  color: #e2e8f0 !important;
+}
+
+.projacktor-card-age-badge.age-18 {
+  color: #f87171 !important;
+  border-color: rgba(239, 68, 68, 0.4) !important;
+  background: rgba(20, 0, 0, 0.82) !important;
+}
+
+.projacktor-card-age-badge.age-16 {
+  color: #fb923c !important;
+  border-color: rgba(249, 115, 22, 0.4) !important;
+  background: rgba(25, 10, 0, 0.82) !important;
+}
+
+.projacktor-card-age-badge.age-12 {
+  color: #facc15 !important;
+  border-color: rgba(234, 179, 8, 0.4) !important;
+  background: rgba(20, 18, 0, 0.82) !important;
+}
+
+.projacktor-card-age-badge.age-kids {
+  color: #4ade80 !important;
+  border-color: rgba(34, 197, 94, 0.4) !important;
+  background: rgba(0, 20, 5, 0.82) !important;
+}
+
+.projacktor-card-rating {
   background: rgba(0, 0, 0, 0.78) !important;
   color: #fbbf24 !important;
   font-size: 11px !important;
@@ -144,7 +187,6 @@ export const CARDS_STYLES = `
   border: 1px solid rgba(255, 255, 255, 0.14) !important;
   line-height: 1.2 !important;
   letter-spacing: 0.3px !important;
-  z-index: 2 !important;
 }
 
 .projacktor-card-info {

@@ -3,73 +3,154 @@
  * Plays native Steam tab transition sound / navigation sound
  */
 
+import { getUserSettings } from "./userSettings";
+
 let navAudio: HTMLAudioElement | null = null;
 let lastPlayAt = 0;
 const COOLDOWN_MS = 120;
 
+function isInsideProjacktor(): boolean {
+  try {
+    const doc = (window as any).document;
+    if (
+      doc?.querySelector?.(
+        ".projacktor-app-root, .projacktor-nav-bar, .projacktor-card, .projacktor-content, .projacktor-settings-card, .projacktor-toggle-row"
+      )
+    ) {
+      return true;
+    }
+    const wins = (window as any).SteamUIStore?.WindowStore?.SteamUIWindows;
+    if (Array.isArray(wins)) {
+      for (const w of wins) {
+        if (
+          w?.BrowserWindow?.document?.querySelector?.(
+            ".projacktor-app-root, .projacktor-nav-bar, .projacktor-card, .projacktor-content, .projacktor-settings-card, .projacktor-toggle-row"
+          )
+        ) {
+          return true;
+        }
+      }
+    }
+  } catch {}
+  return false;
+}
+
 function installSteamAudioGuard() {
   try {
-    const store =
-      (window as any).SteamUIStore?.m_GamepadUIAudioStore ||
-      (window as any).opener?.SteamUIStore?.m_GamepadUIAudioStore;
-    if (store && !store.__projacktorGuardInstalled) {
-      store.__projacktorGuardInstalled = true;
+    const stores: any[] = [];
+    const pushStore = (s: any) => {
+      if (s && !stores.includes(s)) stores.push(s);
+    };
 
-      const origPlayNavSound = store.PlayNavSound;
-      store.PlayNavSound = function (type: any, ...args: any[]) {
-        // Type 25 is FailedNav (deck_ui_bumper_end_02.wav) - never play in Projacktor
-        if (type === 25 || type === "FailedNav") return;
-        // Suppress Steam's native tab sounds or immediate focus tick right around our tab transition
-        const now = Date.now();
-        if (now - lastPlayAt < 180) {
-          if (
-            type === 20 ||
-            type === 15 ||
-            type === "ChangeTabs" ||
-            type === "BasicNav"
-          ) {
-            return;
-          }
-        }
-        return origPlayNavSound.apply(this, [type, ...args]);
-      };
+    pushStore((window as any).SteamUIStore?.m_GamepadUIAudioStore);
+    pushStore((window as any).opener?.SteamUIStore?.m_GamepadUIAudioStore);
+    pushStore((window as any).top?.SteamUIStore?.m_GamepadUIAudioStore);
 
-      const origPlayNavSoundInternal = store.PlayNavSoundInternal;
-      store.PlayNavSoundInternal = function (type: any, ...args: any[]) {
-        if (type === 25 || type === "FailedNav") return;
-        const now = Date.now();
-        if (now - lastPlayAt < 180) {
-          if (
-            type === 20 ||
-            type === 15 ||
-            type === "ChangeTabs" ||
-            type === "BasicNav"
-          ) {
-            return;
-          }
-        }
-        return origPlayNavSoundInternal.apply(this, [type, ...args]);
-      };
+    const wins = (window as any).SteamUIStore?.WindowStore?.SteamUIWindows;
+    if (Array.isArray(wins)) {
+      for (const w of wins) {
+        pushStore(w?.BrowserWindow?.SteamUIStore?.m_GamepadUIAudioStore);
+      }
+    }
 
+    for (const store of stores) {
+      if (!store) continue;
+
+      // 1. Guard AudioPlaybackManager on prototype & instance
       const apm = store.m_AudioPlaybackManager;
-      if (apm && !apm.__projacktorGuardInstalled) {
-        apm.__projacktorGuardInstalled = true;
-        const origPlayAudioURL = apm.PlayAudioURL;
-        apm.PlayAudioURL = function (url: string, ...args: any[]) {
-          if (typeof url === "string" && url.includes("deck_ui_bumper_end")) {
+      if (apm) {
+        const apmProto = Object.getPrototypeOf(apm);
+        const patchApm = (targetObj: any) => {
+          if (!targetObj || targetObj.__projacktorGuardInstalled) return;
+          targetObj.__projacktorGuardInstalled = true;
+          const origPlay = targetObj.PlayAudioURL;
+          targetObj.PlayAudioURL = function (url: string, ...args: any[]) {
+            if (!getUserSettings().hapticAndSoundEnabled && isInsideProjacktor()) {
+              return Promise.resolve();
+            }
+            if (typeof url === "string" && url.includes("deck_ui_bumper_end")) {
+              return Promise.resolve();
+            }
+            const now = Date.now();
+            if (now - lastPlayAt < 180) {
+              if (
+                typeof url === "string" &&
+                (url.includes("deck_ui_tab_transition") || url.includes("deck_ui_navigation"))
+              ) {
+                return Promise.resolve();
+              }
+            }
+            return origPlay ? origPlay.apply(this, [url, ...args]) : Promise.resolve();
+          };
+        };
+
+        patchApm(apm);
+        if (apmProto) patchApm(apmProto);
+      }
+
+      // 2. Guard Store prototype getter & instance for PlayNavSound
+      if (!store.__projacktorGuardInstalled) {
+        store.__projacktorGuardInstalled = true;
+
+        const storeProto = Object.getPrototypeOf(store);
+        if (storeProto) {
+          const protoDesc = Object.getOwnPropertyDescriptor(storeProto, "PlayNavSound");
+          if (protoDesc && protoDesc.configurable) {
+            const origGetter = protoDesc.get;
+            Object.defineProperty(storeProto, "PlayNavSound", {
+              get() {
+                const boundOrig = origGetter ? origGetter.call(this) : null;
+                return function (this: any, type: any, ...args: any[]) {
+                  if (!getUserSettings().hapticAndSoundEnabled && isInsideProjacktor()) {
+                    return;
+                  }
+                  if (type === 25 || type === "FailedNav") return;
+                  return boundOrig ? boundOrig.apply(this, [type, ...args]) : undefined;
+                };
+              },
+              configurable: true,
+            });
+          }
+        }
+
+        const origPlayNavSound = store.PlayNavSound;
+        store.PlayNavSound = function (type: any, ...args: any[]) {
+          if (!getUserSettings().hapticAndSoundEnabled && isInsideProjacktor()) {
             return;
           }
+          if (type === 25 || type === "FailedNav") return;
           const now = Date.now();
           if (now - lastPlayAt < 180) {
             if (
-              typeof url === "string" &&
-              (url.includes("deck_ui_tab_transition") ||
-                url.includes("deck_ui_navigation"))
+              type === 20 ||
+              type === 15 ||
+              type === "ChangeTabs" ||
+              type === "BasicNav"
             ) {
               return;
             }
           }
-          return origPlayAudioURL.apply(this, [url, ...args]);
+          return origPlayNavSound ? origPlayNavSound.apply(this, [type, ...args]) : undefined;
+        };
+
+        const origPlayNavSoundInternal = store.PlayNavSoundInternal;
+        store.PlayNavSoundInternal = function (type: any, ...args: any[]) {
+          if (!getUserSettings().hapticAndSoundEnabled && isInsideProjacktor()) {
+            return;
+          }
+          if (type === 25 || type === "FailedNav") return;
+          const now = Date.now();
+          if (now - lastPlayAt < 180) {
+            if (
+              type === 20 ||
+              type === 15 ||
+              type === "ChangeTabs" ||
+              type === "BasicNav"
+            ) {
+              return;
+            }
+          }
+          return origPlayNavSoundInternal ? origPlayNavSoundInternal.apply(this, [type, ...args]) : undefined;
         };
       }
     }
@@ -104,6 +185,9 @@ export function suppressSteamNavSounds() {
 }
 
 export function playNavSound() {
+  if (!getUserSettings().hapticAndSoundEnabled) {
+    return;
+  }
   const now = Date.now();
   if (now - lastPlayAt < COOLDOWN_MS) {
     return;
@@ -137,6 +221,9 @@ let lastCardPlayAt = 0;
 const CARD_SOUND_COOLDOWN_MS = 60;
 
 export function playCardNavSound() {
+  if (!getUserSettings().hapticAndSoundEnabled) {
+    return;
+  }
   const now = Date.now();
   if (now - lastCardPlayAt < CARD_SOUND_COOLDOWN_MS) {
     return;

@@ -4,6 +4,8 @@
  * to provide tactile rumble on Steam Deck trackpads and external controllers.
  */
 
+import { getUserSettings } from "./userSettings";
+
 export type HapticStrength = "light" | "medium" | "heavy" | "click";
 export type HapticPad = "both" | "left" | "right";
 
@@ -119,6 +121,9 @@ export function triggerHaptic(
   pad: HapticPad = "both",
   force: boolean = false
 ): void {
+  if (!getUserSettings().hapticAndSoundEnabled) {
+    return;
+  }
   const now = performance.now();
   if (!force && now - lastHapticAt < MIN_HAPTIC_INTERVAL_MS) {
     return;
@@ -246,6 +251,9 @@ function getAllGamepads(): Gamepad[] {
  * @param phase 'primary' for the main heartbeat peak (stereo wave + micro-thump), 'secondary' for the soft diastolic echo.
  */
 export function triggerHeartbeatHaptic(phase: "primary" | "secondary" = "primary"): void {
+  if (!getUserSettings().hapticAndSoundEnabled) {
+    return;
+  }
   const isPrimary = phase === "primary";
 
   // 1. SteamOS Input API (Steam Deck trackpads: 0=Left, 1=Right, 2=Stereo pair)

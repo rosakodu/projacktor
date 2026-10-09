@@ -28,6 +28,7 @@ import {
   isTvRelease,
   fetchMovieLogo,
   getLogoUrl,
+  fetchAgeRating,
   API_BASE,
 } from "../api";
 import { useI18n } from "../i18n";
@@ -554,6 +555,22 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
   const [inWatchlist, setInWatchlist] = useState<boolean>(false);
   const [watchlistLoading, setWatchlistLoading] = useState<boolean>(false);
   const [movieLogoPath, setMovieLogoPath] = useState<string | null>(null);
+  const [ageRating, setAgeRating] = useState<string | null>(movie.age_rating || null);
+
+  useEffect(() => {
+    if (movie.age_rating) {
+      setAgeRating(movie.age_rating);
+    } else if (movie.id) {
+      fetchAgeRating(movie.id, movie.media_type)
+        .then((res) => {
+          if (res) {
+            setAgeRating(res);
+            movie.age_rating = res;
+          }
+        })
+        .catch(() => {});
+    }
+  }, [movie.id, movie.media_type, movie.age_rating]);
 
   useEffect(() => {
     if (movie.id) {
@@ -1022,6 +1039,41 @@ export const MovieModal: FC<MovieModalProps> = ({ movie, closeModal, onWatchOnli
               }}
             >
               {year && <span>{year}</span>}
+              {ageRating && (
+                <span
+                  style={{
+                    fontSize: 9.5,
+                    padding: "1px 5px",
+                    borderRadius: 3,
+                    fontWeight: 700,
+                    background: ageRating.includes("18")
+                      ? "rgba(239, 68, 68, 0.25)"
+                      : ageRating.includes("16")
+                      ? "rgba(249, 115, 22, 0.25)"
+                      : ageRating.includes("12")
+                      ? "rgba(234, 179, 8, 0.25)"
+                      : "rgba(34, 197, 94, 0.25)",
+                    color: ageRating.includes("18")
+                      ? "#f87171"
+                      : ageRating.includes("16")
+                      ? "#fb923c"
+                      : ageRating.includes("12")
+                      ? "#facc15"
+                      : "#4ade80",
+                    border: `1px solid ${
+                      ageRating.includes("18")
+                        ? "rgba(239, 68, 68, 0.5)"
+                        : ageRating.includes("16")
+                        ? "rgba(249, 115, 22, 0.5)"
+                        : ageRating.includes("12")
+                        ? "rgba(234, 179, 8, 0.5)"
+                        : "rgba(34, 197, 94, 0.5)"
+                    }`,
+                  }}
+                >
+                  {ageRating}
+                </span>
+              )}
               {rating && <span style={{ color: "#fbbf24", fontWeight: 700 }}>★ {rating}</span>}
               <span
                 style={{

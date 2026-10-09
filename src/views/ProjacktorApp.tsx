@@ -17,8 +17,10 @@ import { playNavSound } from "../runtime/navSound";
 import { triggerHaptic } from "../runtime/haptics";
 import { getActiveDocument } from "../runtime/activeDoc";
 import { useI18n, initI18n } from "../i18n";
+import { initUserSettings } from "../runtime/userSettings";
 
 const TAB_IDS = [
+  "home",
   "movies",
   "tv",
   "cartoons",
@@ -45,7 +47,7 @@ export const ProjacktorApp: FC = () => {
   const fallbackRef = useRef<HTMLDivElement>(null);
   const lastTabSwitchAtRef = useRef<number>(0);
   const lastPlayerCloseTimeRef = useRef<number>(0);
-  const [activeTab, setActiveTab] = useState<string>("movies");
+  const [activeTab, setActiveTab] = useState<string>("home");
   const [ready, setReady] = useState(false);
   const [isPlayerOpen, setIsPlayerOpen] = useState<boolean>(false);
   const [playerConfig, setPlayerConfig] = useState<PlayerConfig | null>(null);
@@ -53,10 +55,12 @@ export const ProjacktorApp: FC = () => {
 
   useEffect(() => {
     initI18n();
+    initUserSettings();
   }, []);
 
   const tabsConfig = useMemo(
     () => [
+      { id: "home", title: t("home") },
       { id: "movies", title: t("movies") },
       { id: "tv", title: t("tv") },
       { id: "cartoons", title: t("cartoons") },
@@ -335,6 +339,7 @@ export const ProjacktorApp: FC = () => {
 
     let target: HTMLElement | null = null;
     if (
+      activeTab === "home" ||
       activeTab === "movies" ||
       activeTab === "tv" ||
       activeTab === "cartoons" ||
@@ -693,6 +698,9 @@ export const ProjacktorApp: FC = () => {
         }}
       >
 
+        {activeTab === "home" && (
+          <CatalogView key="home" category="home" onSelectMovie={handleOpenMovie} onNavigateUp={focusActiveTab} />
+        )}
         {activeTab === "movies" && (
           <CatalogView key="movies" category="movie" onSelectMovie={handleOpenMovie} onNavigateUp={focusActiveTab} />
         )}

@@ -7,7 +7,8 @@ export * from "./state";
 export const translations = {
   ru: {
     // Вкладки
-    movies: "Главная",
+    home: "Главная",
+    movies: "Фильмы",
     tv: "Сериалы",
     cartoons: "Мультфильмы",
     anime: "Аниме",
@@ -118,6 +119,10 @@ export const translations = {
     episodesPlural: "серий",
 
     // Настройки
+    vibrationAndSound: "Вибрация и звуки",
+    vibrationAndSoundDesc: "Тактильная отдача на трекпадах и геймпадах, звуки переключения вкладок",
+    kidsMode: "Детский режим",
+    kidsModeDesc: "Показывать только фильмы, сериалы и аниме с возрастным рейтингом до 12+",
     jackettParserUrl: "Ссылка на парсер Jackett",
     downloadDirectory: "Путь для загрузки",
     internalStorage: "Внутренняя память (SSD)",
@@ -153,7 +158,8 @@ export const translations = {
   },
   en: {
     // Tabs
-    movies: "Home",
+    home: "Home",
+    movies: "Movies",
     tv: "TV Shows",
     cartoons: "Cartoons",
     anime: "Anime",
@@ -264,6 +270,10 @@ export const translations = {
     episodesPlural: "episodes",
 
     // Settings
+    vibrationAndSound: "Haptics & Sounds",
+    vibrationAndSoundDesc: "Haptic feedback on trackpads and gamepads, tab switching sounds",
+    kidsMode: "Kids Mode",
+    kidsModeDesc: "Show only movies, TV shows, and anime rated up to 12+",
     jackettParserUrl: "Jackett Parser URL",
     downloadDirectory: "Download Directory",
     internalStorage: "Internal Storage (SSD)",

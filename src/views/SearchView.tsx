@@ -83,13 +83,60 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie, onNavigate
     }
   }, [searchResults]);
 
-  const focusHistoryChip = useCallback((targetIndex: number) => {
+  const lastChipStepAtRef = useRef<number>(0);
+  const CHIP_STEP_COOLDOWN_MS = 160;
+
+  const stepHistoryChip = useCallback((dir: 1 | -1) => {
+    const now = Date.now();
+    if (now - lastChipStepAtRef.current < CHIP_STEP_COOLDOWN_MS) return false;
+    lastChipStepAtRef.current = now;
+
     const root = rootRef.current;
     if (!root) return false;
     const chips = Array.from(root.querySelectorAll<HTMLElement>(".projacktor-search-chip"));
     if (chips.length === 0) return false;
-    const clampedIndex = Math.max(0, Math.min(targetIndex, chips.length - 1));
-    const chip = chips[clampedIndex];
+
+    const doc = getActiveDocument(root);
+    const active = doc?.activeElement;
+    const curIdx = chips.findIndex(
+      (c) => c === active || c.contains(active as Node)
+    );
+
+    let nextIdx: number;
+    if (curIdx === -1) {
+      nextIdx = dir > 0 ? 0 : chips.length - 1;
+    } else {
+      nextIdx = curIdx + dir;
+      if (nextIdx < 0 || nextIdx >= chips.length) {
+        return false;
+      }
+    }
+
+    const chip = chips[nextIdx];
+    if (chip) {
+      doc?.querySelectorAll(".gpfocus").forEach((el) => {
+        if (el !== chip) el.classList.remove("gpfocus");
+      });
+      chip.focus();
+      chip.classList.add("gpfocus", "gpfocuswithin");
+      try {
+        (chip as any).TakeFocus?.(0);
+      } catch {}
+      try {
+        chip.scrollIntoView({ block: "nearest", inline: "nearest" });
+      } catch {}
+      triggerHaptic("light", "both");
+      playCardNavSound();
+      return true;
+    }
+    return false;
+  }, []);
+
+  const focusFirstHistoryChip = useCallback(() => {
+    lastChipStepAtRef.current = 0;
+    const root = rootRef.current;
+    if (!root) return false;
+    const chip = root.querySelector<HTMLElement>(".projacktor-search-chip");
     if (chip) {
       const doc = getActiveDocument(chip);
       doc?.querySelectorAll(".gpfocus").forEach((el) => {
@@ -110,9 +157,49 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie, onNavigate
     return false;
   }, []);
 
-  const focusFirstHistoryChip = useCallback(() => {
-    return focusHistoryChip(0);
-  }, [focusHistoryChip]);
+  const chipsRowRef = useRef<HTMLDivElement>(null);
+
+  const handleChipGamepadDirection = useCallback(
+    (evt: any) => {
+      const btn = evt?.detail?.button;
+      if (btn === 11 || btn === GamepadButton.DIR_LEFT) {
+        try {
+          evt?.preventDefault?.();
+          evt?.stopPropagation?.();
+        } catch {}
+        stepHistoryChip(-1);
+        return false;
+      }
+      if (btn === 12 || btn === GamepadButton.DIR_RIGHT) {
+        try {
+          evt?.preventDefault?.();
+          evt?.stopPropagation?.();
+        } catch {}
+        stepHistoryChip(1);
+        return false;
+      }
+      if (btn === 9 || btn === GamepadButton.DIR_UP) {
+        try {
+          evt?.preventDefault?.();
+          evt?.stopPropagation?.();
+        } catch {}
+        focusSearchInput();
+        return false;
+      }
+      if (btn === 10 || btn === GamepadButton.DIR_DOWN) {
+        if (searchResults.length > 0) {
+          try {
+            evt?.preventDefault?.();
+            evt?.stopPropagation?.();
+          } catch {}
+          focusFirstCard();
+          return false;
+        }
+      }
+      return undefined;
+    },
+    [stepHistoryChip, focusSearchInput, searchResults.length, focusFirstCard]
+  );
 
   // Сброс фона на чистый темный при монтировании вкладки поиска
   useEffect(() => {
@@ -261,18 +348,12 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie, onNavigate
 
       const chipEl = (active && (active.classList?.contains("projacktor-search-chip") ? active : (active as HTMLElement)?.closest?.(".projacktor-search-chip"))) as HTMLElement | null;
       if (chipEl) {
-        const chips = Array.from(root.querySelectorAll<HTMLElement>(".projacktor-search-chip"));
-        const curIdx = chips.indexOf(chipEl);
         if (isLeft) {
-          if (curIdx > 0) {
-            focusHistoryChip(curIdx - 1);
-          }
+          stepHistoryChip(-1);
           return;
         }
         if (isRight) {
-          if (curIdx < chips.length - 1) {
-            focusHistoryChip(curIdx + 1);
-          }
+          stepHistoryChip(1);
           return;
         }
         if (isUp) {
@@ -331,7 +412,7 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie, onNavigate
     });
 
     return un;
-  }, [searchResults.length, searchHistory.length, searchQuery, handleSearch, focusSearchInput, focusFirstCard, focusFirstHistoryChip, focusHistoryChip, onNavigateUp]);
+  }, [searchResults.length, searchHistory.length, searchQuery, handleSearch, focusSearchInput, focusFirstCard, focusFirstHistoryChip, stepHistoryChip, onNavigateUp]);
 
   return (
     <Focusable
@@ -609,11 +690,13 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie, onNavigate
           </div>
 
           <Focusable
-            flow-children="row"
+            ref={chipsRowRef}
+            flow-children="horizontal"
             noFocusRing
             className="projacktor-search-history-chips"
+            onGamepadDirection={handleChipGamepadDirection}
           >
-            {searchHistory.map((q, idx) => (
+            {searchHistory.map((q) => (
               <Focusable
                 key={q}
                 className="projacktor-search-chip"
@@ -627,53 +710,20 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie, onNavigate
                   triggerHaptic("click", "both");
                   handleSelectHistory(q);
                 }}
-                onGamepadDirection={(evt: any) => {
-                  const btn = evt?.detail?.button;
-                  if (btn === 9 || btn === GamepadButton.DIR_UP) {
-                    try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
-                    focusSearchInput();
-                    return false;
-                  }
-                  if (btn === 11 || btn === GamepadButton.DIR_LEFT) {
-                    if (idx > 0) {
-                      try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
-                      focusHistoryChip(idx - 1);
-                      return false;
-                    }
-                  }
-                  if (btn === 12 || btn === GamepadButton.DIR_RIGHT) {
-                    if (idx < searchHistory.length - 1) {
-                      try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
-                      focusHistoryChip(idx + 1);
-                      return false;
-                    }
-                  }
-                  if (btn === 10 || btn === GamepadButton.DIR_DOWN) {
-                    if (searchResults.length > 0) {
-                      try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
-                      focusFirstCard();
-                      return false;
-                    }
-                  }
-                  return undefined;
-                }}
+                onGamepadDirection={handleChipGamepadDirection}
                 onKeyDown={(e: any) => {
                   if (e.key === "ArrowUp") {
                     e.preventDefault();
                     e.stopPropagation();
                     focusSearchInput();
                   } else if (e.key === "ArrowLeft") {
-                    if (idx > 0) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      focusHistoryChip(idx - 1);
-                    }
+                    e.preventDefault();
+                    e.stopPropagation();
+                    stepHistoryChip(-1);
                   } else if (e.key === "ArrowRight") {
-                    if (idx < searchHistory.length - 1) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      focusHistoryChip(idx + 1);
-                    }
+                    e.preventDefault();
+                    e.stopPropagation();
+                    stepHistoryChip(1);
                   } else if (e.key === "ArrowDown") {
                     if (searchResults.length > 0) {
                       e.preventDefault();

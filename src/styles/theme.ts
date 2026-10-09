@@ -188,28 +188,36 @@ body:has(.projacktor-app-playing) #Footer,
   flex: 1 1 auto !important;
   display: flex !important;
   align-items: center !important;
-  justify-content: space-between !important;
-  gap: 4px !important;
+  justify-content: flex-start !important;
+  gap: 16px !important;
   height: 34px !important;
   min-width: 0 !important;
   outline: none !important;
   border-bottom: none !important;
   position: relative !important;
   box-sizing: border-box !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+.projacktor-tabs-track::-webkit-scrollbar {
+  display: none !important;
 }
 
 .projacktor-tab-item {
-  flex: 1 1 auto !important;
+  flex: 0 0 auto !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
   text-align: center !important;
   height: 34px !important;
   line-height: 30px !important;
-  padding: 0 4px !important;
-  font-size: 11.5px !important;
+  padding: 0 8px !important;
+  font-size: 13px !important;
   font-weight: 600 !important;
-  letter-spacing: -0.1px !important;
+  letter-spacing: 0.1px !important;
   color: #8b929a !important;
   background: transparent !important;
   border: none !important;
@@ -223,7 +231,6 @@ body:has(.projacktor-app-playing) #Footer,
   white-space: nowrap !important;
   user-select: none !important;
   box-sizing: border-box !important;
-  min-width: 0 !important;
 }
 
 .projacktor-tab-item:hover {
@@ -1006,5 +1013,96 @@ body.projacktor-magicblack-active [class*="_3FIjYetykQsFYR08l1v7Ls"] {
   border-color: #ffffff !important;
   color: #ffffff !important;
   box-shadow: inset 0 0 0 1.5px #ffffff !important;
+}
+
+/* ───── Projacktor Settings Switch / Toggle ───── */
+.projacktor-toggle-row {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  width: 100% !important;
+  padding: 10px 12px !important;
+  margin: 0 -12px !important;
+  border-radius: 6px !important;
+  user-select: none !important;
+  outline: none !important;
+  transition: background 0.15s ease, box-shadow 0.15s ease !important;
+  box-sizing: border-box !important;
+}
+
+.projacktor-toggle-row:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+}
+
+.projacktor-toggle-row:focus,
+.projacktor-toggle-row.gpfocus,
+.projacktor-toggle-row.gpfocuswithin {
+  background: rgba(26, 159, 255, 0.15) !important;
+  outline: 2px solid #1a9fff !important;
+  outline-offset: -1px !important;
+  box-shadow: 0 0 10px rgba(26, 159, 255, 0.25) !important;
+}
+
+.projacktor-toggle-label-wrap {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+  flex: 1 !important;
+  padding-right: 16px !important;
+}
+
+.projacktor-toggle-title {
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  color: #ffffff !important;
+}
+
+.projacktor-toggle-desc {
+  font-size: 11px !important;
+  color: rgba(255, 255, 255, 0.5) !important;
+  line-height: 1.4 !important;
+}
+
+.projacktor-toggle-btn {
+  position: relative !important;
+  width: 46px !important;
+  height: 26px !important;
+  border-radius: 13px !important;
+  background: rgba(255, 255, 255, 0.16) !important;
+  cursor: pointer !important;
+  outline: none !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease !important;
+  flex-shrink: 0 !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.projacktor-toggle-btn.active {
+  background: #1a9fff !important;
+  border-color: #38bdf8 !important;
+}
+
+.projacktor-toggle-row:focus .projacktor-toggle-btn,
+.projacktor-toggle-row.gpfocus .projacktor-toggle-btn,
+.projacktor-toggle-btn.gpfocus,
+.projacktor-toggle-btn:focus {
+  box-shadow: 0 0 0 2px #ffffff !important;
+}
+
+.projacktor-toggle-knob {
+  position: absolute !important;
+  top: 2px !important;
+  left: 2px !important;
+  width: 20px !important;
+  height: 20px !important;
+  border-radius: 50% !important;
+  background: #ffffff !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4) !important;
+  transition: transform 0.2s cubic-bezier(0.2, 0.85, 0.32, 1.2) !important;
+}
+
+.projacktor-toggle-btn.active .projacktor-toggle-knob {
+  transform: translateX(20px) !important;
 }
 `;

@@ -1,6 +1,6 @@
-import { FC, memo } from "react";
+import { FC, memo, useState, useEffect } from "react";
 import { Focusable } from "@decky/ui";
-import { MediaItem, getImageUrl } from "../api";
+import { MediaItem, getImageUrl, fetchAgeRating } from "../api";
 import { setBackdropMovie } from "../runtime/backdropBus";
 import { useI18n } from "../i18n";
 
@@ -17,6 +17,24 @@ export const MovieCard: FC<MovieCardProps> = memo(({ movie, onActivate, onGamepa
   const year = date ? String(date).split("-")[0] : "";
   const rating = movie.vote_average ? movie.vote_average.toFixed(1) : null;
   const posterUrl = getImageUrl(movie.poster_path);
+  const [ageRating, setAgeRating] = useState<string | null>(movie.age_rating || null);
+
+  useEffect(() => {
+    if (movie.age_rating) {
+      setAgeRating(movie.age_rating);
+      return;
+    }
+    let cancelled = false;
+    fetchAgeRating(movie.id, movie.media_type).then((res) => {
+      if (!cancelled && res) {
+        setAgeRating(res);
+        movie.age_rating = res;
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [movie.id, movie.media_type, movie.age_rating]);
 
   return (
     <Focusable
@@ -29,7 +47,24 @@ export const MovieCard: FC<MovieCardProps> = memo(({ movie, onActivate, onGamepa
       onFocus={() => setBackdropMovie(movie)}
       onMouseEnter={() => setBackdropMovie(movie)}
     >
-      {rating && <div className="projacktor-card-rating">★ {rating}</div>}
+      <div className="projacktor-card-badges">
+        {ageRating && (
+          <div
+            className={`projacktor-card-age-badge ${
+              ageRating.includes("18")
+                ? "age-18"
+                : ageRating.includes("16")
+                ? "age-16"
+                : ageRating.includes("12")
+                ? "age-12"
+                : "age-kids"
+            }`}
+          >
+            {ageRating}
+          </div>
+        )}
+        {rating && <div className="projacktor-card-rating">★ {rating}</div>}
+      </div>
       <img
         src={posterUrl}
         alt={title}

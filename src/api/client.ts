@@ -12,6 +12,7 @@ import {
 import { API_BASE, formatBytes, isGhostCatalogItem } from "./utils";
 import { getCachedCatalog, setCachedCatalog } from "./cache";
 import { getLocale } from "../i18n/state";
+import { getUserSettings } from "../runtime/userSettings";
 
 // ── RPC Functions ──────────────────────────────────────────────
 export const rpcGetSteamLanguage = callable<[], string>("get_steam_language");
@@ -94,6 +95,106 @@ export const rpcInhibitSleep = callable<[string?], { success: boolean; error?: s
 export const rpcUninhibitSleep = callable<[string?], { success: boolean; error?: string }>("uninhibit_sleep");
 export const rpcPingSleepInhibit = callable<[], { success: boolean }>("ping_sleep_inhibit");
 
+// ── Age Rating Cache & Resolver ────────────────────────────────
+const ageRatingCache = new Map<string, string>();
+const ageRatingPending = new Map<string, Promise<string | null>>();
+
+export async function fetchAgeRating(id: number, mediaType?: "movie" | "tv"): Promise<string | null> {
+  const isTv = mediaType === "tv";
+  const cacheKey = `${isTv ? "tv" : "movie"}_${id}`;
+  if (ageRatingCache.has(cacheKey)) {
+    return ageRatingCache.get(cacheKey) || null;
+  }
+  if (ageRatingPending.has(cacheKey)) {
+    return ageRatingPending.get(cacheKey)!;
+  }
+
+  const p = (async () => {
+    try {
+      const endpoint = isTv ? `tv/${id}/content_ratings` : `movie/${id}/release_dates`;
+      const res = await fetch(`${API_BASE}/tmdb/${endpoint}`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      const results: any[] = data.results || [];
+
+      let found: string | null = null;
+      if (isTv) {
+        const ru = results.find((r) => r.iso_3166_1 === "RU" && r.rating)?.rating;
+        if (ru) {
+          found = ru;
+        } else {
+          const us = results.find((r) => r.iso_3166_1 === "US" && r.rating)?.rating;
+          if (us) {
+            const map: Record<string, string> = {
+              "TV-MA": "18+",
+              "TV-14": "16+",
+              "TV-PG": "12+",
+              "TV-G": "6+",
+              "TV-Y7": "6+",
+              "TV-Y": "0+",
+            };
+            found = map[us] || us;
+          } else {
+            const gb = results.find((r) => r.iso_3166_1 === "GB" && r.rating)?.rating;
+            if (gb) {
+              const map: Record<string, string> = { "18": "18+", "15": "16+", "12": "12+", "PG": "6+", "U": "0+" };
+              found = map[gb] || gb;
+            }
+          }
+        }
+      } else {
+        const ruItem = results.find((r) => r.iso_3166_1 === "RU");
+        const ruCert = ruItem?.release_dates?.find((d: any) => d.certification)?.certification;
+        if (ruCert) {
+          found = ruCert;
+        } else {
+          const usItem = results.find((r) => r.iso_3166_1 === "US");
+          const usCert = usItem?.release_dates?.find((d: any) => d.certification)?.certification;
+          if (usCert) {
+            const map: Record<string, string> = {
+              "NC-17": "18+",
+              "R": "18+",
+              "PG-13": "16+",
+              "PG": "6+",
+              "G": "0+",
+            };
+            found = map[usCert] || usCert;
+          } else {
+            const gbItem = results.find((r) => r.iso_3166_1 === "GB");
+            const gbCert = gbItem?.release_dates?.find((d: any) => d.certification)?.certification;
+            if (gbCert) {
+              const map: Record<string, string> = {
+                "18": "18+",
+                "15": "16+",
+                "12A": "12+",
+                "12": "12+",
+                "PG": "6+",
+                "U": "0+",
+              };
+              found = map[gbCert] || gbCert;
+            }
+          }
+        }
+      }
+
+      if (found) {
+        // Очищаем формат (например "16+" или "12+")
+        if (/^\d+$/.test(found)) found = `${found}+`;
+        ageRatingCache.set(cacheKey, found);
+        return found;
+      }
+      return null;
+    } catch {
+      return null;
+    } finally {
+      ageRatingPending.delete(cacheKey);
+    }
+  })();
+
+  ageRatingPending.set(cacheKey, p);
+  return p;
+}
+
 // ── Catalog Fetcher ────────────────────────────────────────────
 export async function fetchCatalog(
   endpoint: string,
@@ -101,52 +202,95 @@ export async function fetchCatalog(
   page: number = 1
 ): Promise<MediaItem[]> {
   try {
+    const isKidsMode = getUserSettings().kidsMode;
     let url = "";
     const today = new Date().toISOString().split("T")[0];
-    if (mediaType === "cartoon") {
-      if (endpoint === "watching_today" || endpoint === "trending_today") {
-        url = `${API_BASE}/tmdb/discover/movie?with_genres=16&primary_release_date.lte=${today}&vote_count.gte=10&sort_by=popularity.desc&page=${page}`;
-      } else if (endpoint === "trending_week" || endpoint === "trending") {
-        url = `${API_BASE}/tmdb/discover/movie?with_genres=16&primary_release_date.lte=${today}&vote_count.gte=50&sort_by=vote_count.desc&page=${page}`;
+    if (mediaType === "home") {
+      if (isKidsMode) {
+        if (endpoint === "watching_today") {
+          url = `${API_BASE}/tmdb/discover/movie?certification_country=US&certification.lte=PG&without_genres=27,10752&sort_by=popularity.desc&page=${page}`;
+        } else if (endpoint === "trending_today" || endpoint === "trending_week" || endpoint === "trending") {
+          url = `${API_BASE}/tmdb/discover/movie?certification_country=US&certification.lte=PG&without_genres=27,10752&vote_count.gte=100&sort_by=vote_count.desc&page=${page}`;
+        } else if (endpoint === "top_rated") {
+          url = `${API_BASE}/tmdb/discover/movie?certification_country=US&certification.lte=PG&without_genres=27,10752&vote_count.gte=2000&sort_by=vote_average.desc&page=${page}`;
+        } else {
+          url = `${API_BASE}/tmdb/discover/movie?certification_country=US&certification.lte=PG&without_genres=27,10752&sort_by=popularity.desc&page=${page}`;
+        }
+      } else if (endpoint === "watching_today") {
+        url = `${API_BASE}/tmdb/trending/all/day?page=${page}`;
+      } else if (endpoint === "trending_today") {
+        url = `${API_BASE}/tmdb/trending/all/week?page=${page}`;
       } else if (endpoint === "top_rated") {
-        url = `${API_BASE}/tmdb/discover/movie?with_genres=16&vote_count.gte=200&sort_by=vote_average.desc&page=${page}`;
+        url = `${API_BASE}/tmdb/movie/top_rated?page=${page}`;
       } else {
-        url = `${API_BASE}/tmdb/discover/movie?with_genres=16&primary_release_date.lte=${today}&vote_count.gte=10&sort_by=popularity.desc&page=${page}`;
+        url = `${API_BASE}/tmdb/trending/all/day?page=${page}`;
+      }
+    } else if (mediaType === "cartoon") {
+      const kidsCert = isKidsMode ? "&certification_country=US&certification.lte=PG" : "";
+      if (endpoint === "watching_today" || endpoint === "trending_today") {
+        url = `${API_BASE}/tmdb/discover/movie?with_genres=16${kidsCert}&primary_release_date.lte=${today}&vote_count.gte=10&sort_by=popularity.desc&page=${page}`;
+      } else if (endpoint === "trending_week" || endpoint === "trending") {
+        url = `${API_BASE}/tmdb/discover/movie?with_genres=16${kidsCert}&primary_release_date.lte=${today}&vote_count.gte=50&sort_by=vote_count.desc&page=${page}`;
+      } else if (endpoint === "top_rated") {
+        url = `${API_BASE}/tmdb/discover/movie?with_genres=16${kidsCert}&vote_count.gte=200&sort_by=vote_average.desc&page=${page}`;
+      } else {
+        url = `${API_BASE}/tmdb/discover/movie?with_genres=16${kidsCert}&primary_release_date.lte=${today}&vote_count.gte=10&sort_by=popularity.desc&page=${page}`;
       }
     } else if (mediaType === "anime") {
+      const kidsCert = isKidsMode ? "&certification_country=US&certification.lte=TV-PG" : "";
       if (endpoint === "watching_today" || endpoint === "trending_today") {
-        url = `${API_BASE}/tmdb/discover/tv?with_genres=16&with_original_language=ja&first_air_date.lte=${today}&vote_count.gte=10&sort_by=popularity.desc&page=${page}`;
+        url = `${API_BASE}/tmdb/discover/tv?with_genres=16${kidsCert}&with_original_language=ja&first_air_date.lte=${today}&vote_count.gte=10&sort_by=popularity.desc&page=${page}`;
       } else if (endpoint === "trending_week" || endpoint === "trending") {
-        url = `${API_BASE}/tmdb/discover/tv?with_genres=16&with_original_language=ja&first_air_date.lte=${today}&vote_count.gte=50&sort_by=vote_count.desc&page=${page}`;
+        url = `${API_BASE}/tmdb/discover/tv?with_genres=16${kidsCert}&with_original_language=ja&first_air_date.lte=${today}&vote_count.gte=50&sort_by=vote_count.desc&page=${page}`;
       } else if (endpoint === "top_rated") {
-        url = `${API_BASE}/tmdb/discover/tv?with_genres=16&with_original_language=ja&vote_count.gte=100&sort_by=vote_average.desc&page=${page}`;
+        url = `${API_BASE}/tmdb/discover/tv?with_genres=16${kidsCert}&with_original_language=ja&vote_count.gte=100&sort_by=vote_average.desc&page=${page}`;
       } else {
-        url = `${API_BASE}/tmdb/discover/tv?with_genres=16&with_original_language=ja&first_air_date.lte=${today}&vote_count.gte=10&sort_by=popularity.desc&page=${page}`;
+        url = `${API_BASE}/tmdb/discover/tv?with_genres=16${kidsCert}&with_original_language=ja&first_air_date.lte=${today}&vote_count.gte=10&sort_by=popularity.desc&page=${page}`;
       }
     } else if (mediaType === "tv") {
-      if (endpoint === "watching_today") {
-        url = `${API_BASE}/tmdb/tv/airing_today?page=${page}`;
-      } else if (endpoint === "trending_today") {
-        url = `${API_BASE}/tmdb/trending/tv/day?page=${page}`;
-      } else if (endpoint === "trending_week" || endpoint === "trending") {
-        url = `${API_BASE}/tmdb/trending/tv/week?page=${page}`;
-      } else if (endpoint === "top_rated") {
-        url = `${API_BASE}/tmdb/tv/top_rated?page=${page}`;
-      } else if (endpoint === "popular") {
-        url = `${API_BASE}/tmdb/tv/popular?page=${page}`;
+      if (isKidsMode) {
+        if (endpoint === "top_rated") {
+          url = `${API_BASE}/tmdb/discover/tv?certification_country=US&certification.lte=TV-PG&without_genres=27,10752,10767,10763&vote_count.gte=1000&sort_by=vote_average.desc&page=${page}`;
+        } else if (endpoint === "trending_today" || endpoint === "trending_week" || endpoint === "trending") {
+          url = `${API_BASE}/tmdb/discover/tv?certification_country=US&certification.lte=TV-PG&without_genres=27,10752,10767,10763&vote_count.gte=100&sort_by=vote_count.desc&page=${page}`;
+        } else {
+          url = `${API_BASE}/tmdb/discover/tv?certification_country=US&certification.lte=TV-PG&without_genres=27,10752,10767,10763&sort_by=popularity.desc&page=${page}`;
+        }
+      } else {
+        if (endpoint === "watching_today") {
+          url = `${API_BASE}/tmdb/tv/airing_today?page=${page}`;
+        } else if (endpoint === "trending_today") {
+          url = `${API_BASE}/tmdb/trending/tv/day?page=${page}`;
+        } else if (endpoint === "trending_week" || endpoint === "trending") {
+          url = `${API_BASE}/tmdb/trending/tv/week?page=${page}`;
+        } else if (endpoint === "top_rated") {
+          url = `${API_BASE}/tmdb/tv/top_rated?page=${page}`;
+        } else if (endpoint === "popular") {
+          url = `${API_BASE}/tmdb/tv/popular?page=${page}`;
+        }
       }
     } else {
       // movie
-      if (endpoint === "watching_today") {
-        url = `${API_BASE}/tmdb/movie/now_playing?page=${page}`;
-      } else if (endpoint === "trending_today") {
-        url = `${API_BASE}/tmdb/trending/movie/day?page=${page}`;
-      } else if (endpoint === "trending_week" || endpoint === "trending") {
-        url = `${API_BASE}/tmdb/trending/movie/week?page=${page}`;
-      } else if (endpoint === "top_rated") {
-        url = `${API_BASE}/tmdb/movie/top_rated?page=${page}`;
-      } else if (endpoint === "popular") {
-        url = `${API_BASE}/tmdb/movie/popular?page=${page}`;
+      if (isKidsMode) {
+        if (endpoint === "top_rated") {
+          url = `${API_BASE}/tmdb/discover/movie?certification_country=US&certification.lte=PG&without_genres=27,10752&vote_count.gte=2000&sort_by=vote_average.desc&page=${page}`;
+        } else if (endpoint === "trending_today" || endpoint === "trending_week" || endpoint === "trending") {
+          url = `${API_BASE}/tmdb/discover/movie?certification_country=US&certification.lte=PG&without_genres=27,10752&vote_count.gte=100&sort_by=vote_count.desc&page=${page}`;
+        } else {
+          url = `${API_BASE}/tmdb/discover/movie?certification_country=US&certification.lte=PG&without_genres=27,10752&sort_by=popularity.desc&page=${page}`;
+        }
+      } else {
+        if (endpoint === "watching_today") {
+          url = `${API_BASE}/tmdb/movie/now_playing?page=${page}`;
+        } else if (endpoint === "trending_today") {
+          url = `${API_BASE}/tmdb/trending/movie/day?page=${page}`;
+        } else if (endpoint === "trending_week" || endpoint === "trending") {
+          url = `${API_BASE}/tmdb/trending/movie/week?page=${page}`;
+        } else if (endpoint === "top_rated") {
+          url = `${API_BASE}/tmdb/movie/top_rated?page=${page}`;
+        } else if (endpoint === "popular") {
+          url = `${API_BASE}/tmdb/movie/popular?page=${page}`;
+        }
       }
     }
 
@@ -167,6 +311,18 @@ export async function fetchCatalog(
     // Строгий фильтр релизов-призраков (невышедшие, < 10 голосов, нелокализованные без перевода)
     let validResults = rawResults.filter((item: any) => !isGhostCatalogItem(item, today, isEn));
 
+    // Если включен Детский режим (до 16+) - отсекаем 18+, adult, ужасы (Horror 27) и жесткие военные драмы (War 10752)
+    if (isKidsMode) {
+      const restrictedGenres = [27, 10752]; // 27 = Horror, 10752 = War
+      validResults = validResults.filter((item: any) => {
+        if (item.adult) return false;
+        if (Array.isArray(item.genre_ids) && item.genre_ids.some((g: number) => restrictedGenres.includes(g))) {
+          return false;
+        }
+        return true;
+      });
+    }
+
     // Если после фильтрации карточек осталось мало (< 15) и мы на 1-й странице, догружаем 2-ю страницу
     if (validResults.length < 15 && page === 1 && !fetchUrl.includes("page=2")) {
       try {
@@ -175,20 +331,55 @@ export async function fetchCatalog(
           const res2 = await fetch(page2Url);
           if (res2.ok) {
             const data2 = await res2.json();
-            const page2Valid = (data2.results || []).filter((item: any) => !isGhostCatalogItem(item, today, isEn));
+            let page2Valid = (data2.results || []).filter((item: any) => !isGhostCatalogItem(item, today, isEn));
+            if (isKidsMode) {
+              const restrictedGenres = [27, 10752];
+              page2Valid = page2Valid.filter((item: any) => {
+                if (item.adult) return false;
+                if (Array.isArray(item.genre_ids) && item.genre_ids.some((g: number) => restrictedGenres.includes(g))) {
+                  return false;
+                }
+                return true;
+              });
+            }
             validResults.push(...page2Valid);
           }
         }
       } catch {}
     }
 
-    const inferredType = mediaType === "cartoon" ? "movie" : mediaType === "anime" ? "tv" : mediaType;
-    const items = validResults.map((item: any) => ({
+    const inferredType = mediaType === "cartoon" ? "movie" : mediaType === "anime" ? "tv" : mediaType === "home" ? undefined : mediaType;
+    let items = validResults.map((item: any) => ({
       ...item,
       title: item.title || item.name || (isEn ? "Untitled" : "Без названия"),
       release_date: item.release_date || item.first_air_date || "",
-      media_type: item.media_type || inferredType,
+      media_type: item.media_type || inferredType || (item.first_air_date ? "tv" : "movie"),
     }));
+
+    // В детском режиме (до 12+ включительно) дополнительно проверяем фактические возрастные рейтинги и отсекаем 16+ и 18+
+    if (isKidsMode && items.length > 0) {
+      const ratings = await Promise.all(
+        items.map(async (item: any) => {
+          try {
+            const rating = await fetchAgeRating(item.id, item.media_type);
+            return { id: item.id, rating };
+          } catch {
+            return { id: item.id, rating: null };
+          }
+        })
+      );
+      const ratingMap = new Map<number, string | null>();
+      ratings.forEach((r) => ratingMap.set(r.id, r.rating));
+
+      items = items.filter((item: any) => {
+        const r = ratingMap.get(item.id);
+        if (r && (r.includes("18") || r.includes("16"))) {
+          return false;
+        }
+        return true;
+      });
+    }
+
     if (items.length > 0) {
       setCachedCatalog(endpoint, mediaType, items);
     }
@@ -209,13 +400,52 @@ export async function searchCatalog(query: string): Promise<MediaItem[]> {
     );
     if (!res.ok) return [];
     const data = await res.json();
-    return (data.results || [])
-      .filter((i: any) => i.media_type === "movie" || i.media_type === "tv")
-      .map((item: any) => ({
-        ...item,
-        title: item.title || item.name || (isEn ? "Untitled" : "Без названия"),
-        release_date: item.release_date || item.first_air_date || "",
-      }));
+    const isKidsMode = getUserSettings().kidsMode;
+    const restrictedGenres = [27, 10752];
+
+    const rawCandidates = (data.results || []).filter((i: any) => {
+      if (i.media_type !== "movie" && i.media_type !== "tv") return false;
+      if (isKidsMode) {
+        if (i.adult) return false;
+        if (Array.isArray(i.genre_ids) && i.genre_ids.some((g: number) => restrictedGenres.includes(g))) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    let filteredCandidates = rawCandidates;
+    if (isKidsMode && rawCandidates.length > 0) {
+      // Параллельно получаем возрастные рейтинги для результатов поиска и отсекаем 18+
+      const ratings = await Promise.all(
+        rawCandidates.map(async (item: any) => {
+          try {
+            const rating = await fetchAgeRating(item.id, item.media_type);
+            return { id: item.id, rating };
+          } catch {
+            return { id: item.id, rating: null };
+          }
+        })
+      );
+
+      const ratingMap = new Map<number, string | null>();
+      ratings.forEach((r) => ratingMap.set(r.id, r.rating));
+
+      filteredCandidates = rawCandidates.filter((item: any) => {
+        const r = ratingMap.get(item.id);
+        if (r && (r.includes("18") || r.includes("16"))) {
+          return false;
+        }
+        return true;
+      });
+    }
+
+    return filteredCandidates.map((item: any) => ({
+      ...item,
+      title: item.title || item.name || (isEn ? "Untitled" : "Без названия"),
+      release_date: item.release_date || item.first_air_date || "",
+      age_rating: ageRatingCache.get(`${item.media_type || "movie"}_${item.id}`) || item.age_rating,
+    }));
   } catch {
     return [];
   }

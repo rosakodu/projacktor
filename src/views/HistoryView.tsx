@@ -7,11 +7,13 @@ import {
   rpcDeleteWatchHistoryItem,
   rpcClearWatchHistory,
   getImageUrl,
+  fetchAgeRating,
 } from "../api";
 import { getActiveDocument } from "../runtime/activeDoc";
 import { playNavSound } from "../runtime/navSound";
 import { setBackdropMovie } from "../runtime/backdropBus";
 import { isModalOpen, isUserInTabs, isPlayerActive } from "../runtime/homeInputBus";
+import { getUserSettings, subscribeUserSettings } from "../runtime/userSettings";
 import { useGridNavigation, scrollCardHorizontal } from "../hooks/useGridNavigation";
 import { useEnsureFocus } from "../hooks/useEnsureFocus";
 import { useI18n } from "../i18n";
@@ -108,7 +110,34 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onSelectMo
     try {
       const data = await rpcGetWatchHistory();
       if (mountedRef.current && Array.isArray(data)) {
-        setItems(data);
+        const isKidsMode = getUserSettings().kidsMode;
+        if (isKidsMode && data.length > 0) {
+          const ratings = await Promise.all(
+            data.map(async (item) => {
+              const tmdbId = item.tmdb_id || item.media_id;
+              if (!tmdbId) return { id: item.id, rating: null };
+              try {
+                const rating = await fetchAgeRating(tmdbId, item.media_type);
+                return { id: item.id, rating };
+              } catch {
+                return { id: item.id, rating: null };
+              }
+            })
+          );
+          const ratingMap = new Map<number, string | null>();
+          ratings.forEach((r) => ratingMap.set(r.id, r.rating));
+
+          const filtered = data.filter((item) => {
+            const r = ratingMap.get(item.id);
+            if (r && (r.includes("18") || r.includes("16"))) {
+              return false;
+            }
+            return true;
+          });
+          if (mountedRef.current) setItems(filtered);
+        } else {
+          setItems(data);
+        }
       }
     } catch (e) {
       console.error("HistoryView refresh error:", e);
@@ -120,6 +149,9 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onSelectMo
   useEffect(() => {
     mountedRef.current = true;
     refreshHistory();
+    const unsub = subscribeUserSettings(() => {
+      refreshHistory();
+    });
     const interval = setInterval(() => {
       if (typeof document === "undefined" || !document.hidden) {
         refreshHistory();
@@ -127,6 +159,7 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onSelectMo
     }, 5000);
     return () => {
       mountedRef.current = false;
+      unsub();
       clearInterval(interval);
     };
   }, [refreshHistory]);

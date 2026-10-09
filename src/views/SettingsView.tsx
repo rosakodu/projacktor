@@ -18,6 +18,9 @@ import {
 } from "../api";
 import { getActiveDocument, getActiveWindow } from "../runtime/activeDoc";
 import { useI18n } from "../i18n";
+import { getUserSettings, setUserSetting, subscribeUserSettings } from "../runtime/userSettings";
+import { triggerHaptic } from "../runtime/haptics";
+import { playNavSound } from "../runtime/navSound";
 
 // Модульный кэш статуса и URL, чтобы при переключении между вкладками статус не сбрасывался и не мигал красным
 let cachedJacredUrl: string | null = null;
@@ -52,6 +55,20 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
   const [clearingCache, setClearingCache] = useState(false);
   const [cacheClearedSuccess, setCacheClearedSuccess] = useState(false);
   const [drives, setDrives] = useState<StorageDrive[]>([]);
+  const [userPrefs, setUserPrefs] = useState(() => getUserSettings());
+
+  useEffect(() => {
+    return subscribeUserSettings((updated) => setUserPrefs(updated));
+  }, []);
+
+  const handleTogglePref = useCallback((key: "hapticAndSoundEnabled" | "kidsMode") => {
+    const nextVal = !userPrefs[key];
+    if (key === "hapticAndSoundEnabled" ? nextVal : userPrefs.hapticAndSoundEnabled) {
+      triggerHaptic("medium", "both", true);
+      playNavSound();
+    }
+    setUserSetting(key, nextVal);
+  }, [userPrefs]);
 
   useEffect(() => {
     let isMounted = true;
@@ -335,16 +352,73 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
           }
         }
       }}
+      onFocusCapture={(e) => {
+        try {
+          const target = e.target as HTMLElement;
+          if (target && typeof target.scrollIntoView === "function") {
+            target.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+          }
+        } catch {}
+      }}
       style={{
         width: "100%",
         padding: "12px 36px 240px 36px",
         boxSizing: "border-box",
         overflowY: "auto",
+        scrollBehavior: "smooth",
       }}
     >
       <div style={{ maxWidth: 720, width: "100%", margin: "0 auto", display: "flex", flexDirection: "column", gap: 12 }}>
         
-        {/* Карточка 1: Сеть и TorrServer */}
+        {/* Карточка 1: Режимы и поведение (Вибрация/звуки и Детский режим) */}
+        <div className="projacktor-settings-card">
+          <PanelSection>
+            {/* Тумблер 1: Вибрация и звуки */}
+            <PanelSectionRow>
+              <Focusable
+                tabIndex={0}
+                onActivate={() => handleTogglePref("hapticAndSoundEnabled")}
+                onClick={() => handleTogglePref("hapticAndSoundEnabled")}
+                className="projacktor-toggle-row"
+                style={{ cursor: "pointer" }}
+              >
+                <div className="projacktor-toggle-label-wrap">
+                  <div className="projacktor-toggle-title">{t("vibrationAndSound")}</div>
+                  <div className="projacktor-toggle-desc">{t("vibrationAndSoundDesc")}</div>
+                </div>
+                <div className={`projacktor-toggle-btn ${userPrefs.hapticAndSoundEnabled ? "active" : ""}`}>
+                  <div className="projacktor-toggle-knob" />
+                </div>
+              </Focusable>
+            </PanelSectionRow>
+
+            {/* Тумблер 2: Детский режим (до 16+) */}
+            <PanelSectionRow>
+              <Focusable
+                tabIndex={0}
+                onActivate={() => handleTogglePref("kidsMode")}
+                onClick={() => handleTogglePref("kidsMode")}
+                className="projacktor-toggle-row"
+                style={{
+                  cursor: "pointer",
+                  borderTop: "1px solid rgba(255,255,255,0.06)",
+                  paddingTop: 10,
+                  marginTop: 2,
+                }}
+              >
+                <div className="projacktor-toggle-label-wrap">
+                  <div className="projacktor-toggle-title">{t("kidsMode")}</div>
+                  <div className="projacktor-toggle-desc">{t("kidsModeDesc")}</div>
+                </div>
+                <div className={`projacktor-toggle-btn ${userPrefs.kidsMode ? "active" : ""}`}>
+                  <div className="projacktor-toggle-knob" />
+                </div>
+              </Focusable>
+            </PanelSectionRow>
+          </PanelSection>
+        </div>
+
+        {/* Карточка 2: Сеть и TorrServer */}
         <div className="projacktor-settings-card">
           <PanelSection>
             <PanelSectionRow>
@@ -527,7 +601,9 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
 
             {/* Сброс кэша */}
             <PanelSectionRow>
-              <div
+              <Focusable
+                noFocusRing
+                flow-children="row"
                 style={{
                   borderTop: "1px solid rgba(255,255,255,0.06)",
                   paddingTop: 8,
@@ -541,8 +617,14 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
                 <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>{t("cachePostersMetadata")}</span>
                 <Focusable
                   noFocusRing
+                  tabIndex={0}
                   onActivate={handleClearCache}
                   onClick={handleClearCache}
+                  onFocus={(e: any) => {
+                    try {
+                      e?.target?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+                    } catch {}
+                  }}
                   className="ds-btn ds-btn--compact ds-btn--danger"
                   style={{
                     padding: "5px 12px",
@@ -557,7 +639,7 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
                   <FaTrash style={{ fontSize: 10 }} />
                   {clearingCache ? t("clearing") : cacheClearedSuccess ? `✓ ${t("cleared")}` : t("clearCache")}
                 </Focusable>
-              </div>
+              </Focusable>
             </PanelSectionRow>
           </PanelSection>
         </div>
