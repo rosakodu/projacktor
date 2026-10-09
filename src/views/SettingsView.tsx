@@ -21,8 +21,6 @@ import { useI18n } from "../i18n";
 import { getUserSettings, setUserSetting, subscribeUserSettings } from "../runtime/userSettings";
 import { triggerHaptic } from "../runtime/haptics";
 import { playNavSound } from "../runtime/navSound";
-import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
-import { isModalOpen, isPlayerActive } from "../runtime/homeInputBus";
 
 // Модульный кэш статуса и URL, чтобы при переключении между вкладками статус не сбрасывался и не мигал красным
 let cachedJacredUrl: string | null = null;
@@ -279,6 +277,9 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
     }
   }, [clearingCache]);
 
+  const lastNavAtRef = useRef<number>(0);
+
+  // Обработка навигации по настройкам (D-pad / стрелки)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const root = rootRef.current;
@@ -287,6 +288,14 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
       const active = doc?.activeElement as HTMLElement | null;
       if (!active || !root.contains(active)) return;
 
+      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+
+      const now = Date.now();
+      if (now - lastNavAtRef.current < 150) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
 
       const focusables = Array.from(root.querySelectorAll<HTMLElement>("input, [tabindex='0']"))
         .filter((el) => {
@@ -300,6 +309,7 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
         if (currentIndex <= 0) {
           e.preventDefault();
           e.stopPropagation();
+          lastNavAtRef.current = now;
           onNavigateUp?.();
           return;
         }
@@ -308,6 +318,7 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
         if (prevTarget) {
           e.preventDefault();
           e.stopPropagation();
+          lastNavAtRef.current = now;
           doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
           prevTarget.focus();
           prevTarget.classList.add("gpfocus");
@@ -320,6 +331,7 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
           if (nextTarget) {
             e.preventDefault();
             e.stopPropagation();
+            lastNavAtRef.current = now;
             doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
             nextTarget.focus();
             nextTarget.classList.add("gpfocus");
@@ -327,6 +339,19 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
             return;
           }
         }
+      }
+    };
+
+    const handleVgp = (e: Event) => {
+      const root = rootRef.current;
+      if (!root) return;
+      const doc = getActiveDocument(root);
+      const active = doc?.activeElement as HTMLElement | null;
+      if (active && root.contains(active)) {
+        // Предотвращаем дублирующую навигацию Steam Gamepad Navigation (vgp_*),
+        // чтобы фокус перемещался ровно по одному элементу через handleKeyDown
+        e.preventDefault();
+        e.stopPropagation();
       }
     };
 
@@ -340,89 +365,22 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
     } catch {}
 
     targets.forEach((t) => {
-      try { t.addEventListener("keydown", handleKeyDown as any, true); } catch {}
+      try {
+        t.addEventListener("keydown", handleKeyDown as any, true);
+        t.addEventListener("vgp_onbuttondown", handleVgp, true);
+        t.addEventListener("vgp_ondirection", handleVgp, true);
+      } catch {}
     });
 
     return () => {
       targets.forEach((t) => {
-        try { t.removeEventListener("keydown", handleKeyDown as any, true); } catch {}
+        try {
+          t.removeEventListener("keydown", handleKeyDown as any, true);
+          t.removeEventListener("vgp_onbuttondown", handleVgp, true);
+          t.removeEventListener("vgp_ondirection", handleVgp, true);
+        } catch {}
       });
     };
-  }, [onNavigateUp]);
-
-  // Глобальная подписка на raw-события геймпада (SteamClient.Input) для плавного и безотказного перемещения по настройкам
-  useEffect(() => {
-    let lastNavAt = 0;
-    const un = subscribeControllerInput((e) => {
-      if (!e.pressed) return;
-      if (isModalOpen() || isPlayerActive()) return;
-
-      const root = rootRef.current;
-      if (!root) return;
-      const doc = getActiveDocument(root);
-      const active = doc?.activeElement;
-      if (!active || !root.contains(active)) return;
-
-      // Если пользователь нажимает кнопки в текстовом поле, не перехватываем
-      if (active.tagName === "INPUT" || active.tagName === "TEXTAREA") {
-        if (e.button !== RawButton.DPAD_UP && e.button !== RawButton.DPAD_DOWN) {
-          return;
-        }
-      }
-
-      const isDown =
-        e.button === RawButton.DPAD_DOWN ||
-        e.button === RawButton.LEFTSTICK_DOWN ||
-        e.button === 6 ||
-        e.button === 21;
-
-      const isUp =
-        e.button === RawButton.DPAD_UP ||
-        e.button === RawButton.LEFTSTICK_UP ||
-        e.button === 4 ||
-        e.button === 20;
-
-      const now = Date.now();
-      if ((isDown || isUp) && now - lastNavAt < 160) return;
-
-      const focusables = Array.from(root.querySelectorAll<HTMLElement>("input, [tabindex='0']"))
-        .filter((el) => {
-          const s = window.getComputedStyle(el);
-          return s.display !== "none" && s.visibility !== "hidden";
-        });
-
-      const currentIndex = focusables.indexOf(active as HTMLElement);
-
-      if (isDown) {
-        if (currentIndex >= 0 && currentIndex < focusables.length - 1) {
-          const nextTarget = focusables[currentIndex + 1];
-          if (nextTarget) {
-            lastNavAt = now;
-            doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-            nextTarget.focus();
-            nextTarget.classList.add("gpfocus");
-            try { nextTarget.scrollIntoView({ block: "center", behavior: "smooth" }); } catch {}
-          }
-        }
-      } else if (isUp) {
-        if (currentIndex <= 0) {
-          lastNavAt = now;
-          onNavigateUp?.();
-          return;
-        }
-
-        const prevTarget = focusables[currentIndex - 1];
-        if (prevTarget) {
-          lastNavAt = now;
-          doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-          prevTarget.focus();
-          prevTarget.classList.add("gpfocus");
-          try { prevTarget.scrollIntoView({ block: "center", behavior: "smooth" }); } catch {}
-        }
-      }
-    });
-
-    return un;
   }, [onNavigateUp]);
 
   return (
