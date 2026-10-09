@@ -21,6 +21,8 @@ import { useI18n } from "../i18n";
 import { getUserSettings, setUserSetting, subscribeUserSettings } from "../runtime/userSettings";
 import { triggerHaptic } from "../runtime/haptics";
 import { playNavSound } from "../runtime/navSound";
+import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
+import { isModalOpen, isPlayerActive } from "../runtime/homeInputBus";
 
 // Модульный кэш статуса и URL, чтобы при переключении между вкладками статус не сбрасывался и не мигал красным
 let cachedJacredUrl: string | null = null;
@@ -36,6 +38,7 @@ interface SettingsViewProps {
 
 export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
   const rootRef = useRef<HTMLDivElement>(null);
+  const clearCacheBtnRef = useRef<HTMLDivElement>(null);
   const { t } = useI18n();
   const [jacredUrl, setJacredUrl] = useState<string>(() => {
     if (cachedJacredUrl) return cachedJacredUrl;
@@ -278,16 +281,51 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const root = rootRef.current;
+      if (!root) return;
+      const doc = getActiveDocument(root);
+      const active = doc?.activeElement as HTMLElement | null;
+      if (!active || !root.contains(active)) return;
+
+
+      const focusables = Array.from(root.querySelectorAll<HTMLElement>("input, [tabindex='0']"))
+        .filter((el) => {
+          const s = window.getComputedStyle(el);
+          return s.display !== "none" && s.visibility !== "hidden";
+        });
+
+      const currentIndex = focusables.indexOf(active);
+
       if (e.key === "ArrowUp") {
-        const root = rootRef.current;
-        if (!root) return;
-        const doc = getActiveDocument(root);
-        const active = doc?.activeElement;
-        const firstCard = root.querySelector(".projacktor-settings-card");
-        if (active && firstCard && (firstCard === active || firstCard.contains(active))) {
+        if (currentIndex <= 0) {
           e.preventDefault();
           e.stopPropagation();
           onNavigateUp?.();
+          return;
+        }
+
+        const prevTarget = focusables[currentIndex - 1];
+        if (prevTarget) {
+          e.preventDefault();
+          e.stopPropagation();
+          doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+          prevTarget.focus();
+          prevTarget.classList.add("gpfocus");
+          try { prevTarget.scrollIntoView({ block: "center", behavior: "smooth" }); } catch {}
+          return;
+        }
+      } else if (e.key === "ArrowDown") {
+        if (currentIndex >= 0 && currentIndex < focusables.length - 1) {
+          const nextTarget = focusables[currentIndex + 1];
+          if (nextTarget) {
+            e.preventDefault();
+            e.stopPropagation();
+            doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+            nextTarget.focus();
+            nextTarget.classList.add("gpfocus");
+            try { nextTarget.scrollIntoView({ block: "center", behavior: "smooth" }); } catch {}
+            return;
+          }
         }
       }
     };
@@ -310,6 +348,81 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
         try { t.removeEventListener("keydown", handleKeyDown as any, true); } catch {}
       });
     };
+  }, [onNavigateUp]);
+
+  // Глобальная подписка на raw-события геймпада (SteamClient.Input) для плавного и безотказного перемещения по настройкам
+  useEffect(() => {
+    let lastNavAt = 0;
+    const un = subscribeControllerInput((e) => {
+      if (!e.pressed) return;
+      if (isModalOpen() || isPlayerActive()) return;
+
+      const root = rootRef.current;
+      if (!root) return;
+      const doc = getActiveDocument(root);
+      const active = doc?.activeElement;
+      if (!active || !root.contains(active)) return;
+
+      // Если пользователь нажимает кнопки в текстовом поле, не перехватываем
+      if (active.tagName === "INPUT" || active.tagName === "TEXTAREA") {
+        if (e.button !== RawButton.DPAD_UP && e.button !== RawButton.DPAD_DOWN) {
+          return;
+        }
+      }
+
+      const isDown =
+        e.button === RawButton.DPAD_DOWN ||
+        e.button === RawButton.LEFTSTICK_DOWN ||
+        e.button === 6 ||
+        e.button === 21;
+
+      const isUp =
+        e.button === RawButton.DPAD_UP ||
+        e.button === RawButton.LEFTSTICK_UP ||
+        e.button === 4 ||
+        e.button === 20;
+
+      const now = Date.now();
+      if ((isDown || isUp) && now - lastNavAt < 160) return;
+
+      const focusables = Array.from(root.querySelectorAll<HTMLElement>("input, [tabindex='0']"))
+        .filter((el) => {
+          const s = window.getComputedStyle(el);
+          return s.display !== "none" && s.visibility !== "hidden";
+        });
+
+      const currentIndex = focusables.indexOf(active as HTMLElement);
+
+      if (isDown) {
+        if (currentIndex >= 0 && currentIndex < focusables.length - 1) {
+          const nextTarget = focusables[currentIndex + 1];
+          if (nextTarget) {
+            lastNavAt = now;
+            doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+            nextTarget.focus();
+            nextTarget.classList.add("gpfocus");
+            try { nextTarget.scrollIntoView({ block: "center", behavior: "smooth" }); } catch {}
+          }
+        }
+      } else if (isUp) {
+        if (currentIndex <= 0) {
+          lastNavAt = now;
+          onNavigateUp?.();
+          return;
+        }
+
+        const prevTarget = focusables[currentIndex - 1];
+        if (prevTarget) {
+          lastNavAt = now;
+          doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+          prevTarget.focus();
+          prevTarget.classList.add("gpfocus");
+          try { prevTarget.scrollIntoView({ block: "center", behavior: "smooth" }); } catch {}
+        }
+      }
+    });
+
+    return un;
   }, [onNavigateUp]);
 
   return (
@@ -356,7 +469,7 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
         try {
           const target = e.target as HTMLElement;
           if (target && typeof target.scrollIntoView === "function") {
-            target.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+            target.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
           }
         } catch {}
       }}
@@ -530,11 +643,82 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
                   value={downloadPath}
                   onChange={setDownloadPath}
                   placeholder="~/Videos/Projacktor"
+                  onGamepadDirection={(evt: any) => {
+                    if (evt?.detail?.button === 10) { // DPAD_DOWN
+                      const firstPreset = rootRef.current?.querySelector<HTMLElement>(
+                        ".projacktor-settings-card:nth-of-type(3) .ds-btn--compact"
+                      );
+                      const target = firstPreset || clearCacheBtnRef.current;
+                      if (target) {
+                        try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                        const doc = getActiveDocument(target);
+                        doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+                        target.focus();
+                        target.classList.add("gpfocus");
+                        try { target.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch {}
+                        return false;
+                      }
+                    }
+                    return undefined;
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowDown") {
+                      const firstPreset = rootRef.current?.querySelector<HTMLElement>(
+                        ".projacktor-settings-card:nth-of-type(3) .ds-btn--compact"
+                      );
+                      const target = firstPreset || clearCacheBtnRef.current;
+                      if (target) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const doc = getActiveDocument(target);
+                        doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+                        target.focus();
+                        target.classList.add("gpfocus");
+                        try { target.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch {}
+                      }
+                    }
+                  }}
                 />
                 <Focusable
                   noFocusRing
+                  tabIndex={0}
                   onActivate={() => handleSaveDownloadPath()}
                   onClick={() => handleSaveDownloadPath()}
+                  onGamepadDirection={(evt: any) => {
+                    if (evt?.detail?.button === 10) { // DPAD_DOWN
+                      const firstPreset = rootRef.current?.querySelector<HTMLElement>(
+                        ".projacktor-settings-card:nth-of-type(3) .ds-btn--compact"
+                      );
+                      const target = firstPreset || clearCacheBtnRef.current;
+                      if (target) {
+                        try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                        const doc = getActiveDocument(target);
+                        doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+                        target.focus();
+                        target.classList.add("gpfocus");
+                        try { target.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch {}
+                        return false;
+                      }
+                    }
+                    return undefined;
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowDown") {
+                      const firstPreset = rootRef.current?.querySelector<HTMLElement>(
+                        ".projacktor-settings-card:nth-of-type(3) .ds-btn--compact"
+                      );
+                      const target = firstPreset || clearCacheBtnRef.current;
+                      if (target) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const doc = getActiveDocument(target);
+                        doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+                        target.focus();
+                        target.classList.add("gpfocus");
+                        try { target.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch {}
+                      }
+                    }
+                  }}
                   className="ds-btn ds-btn--compact ds-btn--primary"
                   style={{
                     padding: "6px 14px",
@@ -570,6 +754,35 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
                         key={d.id}
                         onActivate={() => handleSelectDrivePreset(d)}
                         onClick={() => handleSelectDrivePreset(d)}
+                        onGamepadDirection={(evt: any) => {
+                          if (evt?.detail?.button === 10) { // DPAD_DOWN
+                            const target = clearCacheBtnRef.current;
+                            if (target) {
+                              try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                              const doc = getActiveDocument(target);
+                              doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+                              target.focus();
+                              target.classList.add("gpfocus");
+                              try { target.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch {}
+                              return false;
+                            }
+                          }
+                          return undefined;
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "ArrowDown") {
+                            const target = clearCacheBtnRef.current;
+                            if (target) {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              const doc = getActiveDocument(target);
+                              doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+                              target.focus();
+                              target.classList.add("gpfocus");
+                              try { target.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch {}
+                            }
+                          }
+                        }}
                         className="ds-btn ds-btn--compact"
                         style={{
                           display: "inline-flex",
@@ -598,24 +811,25 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
                 </Focusable>
               </PanelSectionRow>
             )}
+          </PanelSection>
+        </div>
 
-            {/* Сброс кэша */}
+        {/* Карточка 4: Отдельный блок «Хранилище и кэш» с кнопкой очистки */}
+        <div className="projacktor-settings-card">
+          <PanelSection>
             <PanelSectionRow>
-              <Focusable
-                noFocusRing
-                flow-children="row"
-                style={{
-                  borderTop: "1px solid rgba(255,255,255,0.06)",
-                  paddingTop: 8,
-                  marginTop: 2,
-                  width: "100%",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center"
-                }}
-              >
-                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>{t("cachePostersMetadata")}</span>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", width: "100%", gap: 12 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", marginBottom: 3 }}>
+                    {t("storageAndCache")}
+                  </div>
+                  <div style={{ fontSize: 11, color: "rgba(255, 255, 255, 0.55)", lineHeight: 1.4 }}>
+                    {t("cacheSectionDesc")}
+                  </div>
+                </div>
+
                 <Focusable
+                  ref={clearCacheBtnRef}
                   noFocusRing
                   tabIndex={0}
                   onActivate={handleClearCache}
@@ -625,21 +839,56 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
                       e?.target?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
                     } catch {}
                   }}
+                  onGamepadDirection={(evt: any) => {
+                    if (evt?.detail?.button === 9) { // DPAD_UP
+                      const prevTarget = rootRef.current?.querySelector<HTMLElement>(
+                        ".projacktor-settings-card:nth-of-type(3) .ds-btn, .projacktor-settings-card:nth-of-type(3) input"
+                      );
+                      if (prevTarget) {
+                        try { evt?.preventDefault?.(); evt?.stopPropagation?.(); } catch {}
+                        const doc = getActiveDocument(prevTarget);
+                        doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+                        prevTarget.focus();
+                        prevTarget.classList.add("gpfocus");
+                        try { prevTarget.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch {}
+                        return false;
+                      }
+                    }
+                    return undefined;
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowUp") {
+                      const prevTarget = rootRef.current?.querySelector<HTMLElement>(
+                        ".projacktor-settings-card:nth-of-type(3) .ds-btn, .projacktor-settings-card:nth-of-type(3) input"
+                      );
+                      if (prevTarget) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const doc = getActiveDocument(prevTarget);
+                        doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
+                        prevTarget.focus();
+                        prevTarget.classList.add("gpfocus");
+                        try { prevTarget.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch {}
+                      }
+                    }
+                  }}
                   className="ds-btn ds-btn--compact ds-btn--danger"
                   style={{
-                    padding: "5px 12px",
-                    fontSize: 11,
+                    padding: "7px 16px",
+                    fontSize: 11.5,
                     fontWeight: 600,
                     cursor: "pointer",
                     display: "inline-flex",
                     alignItems: "center",
-                    gap: 5,
+                    gap: 6,
+                    flexShrink: 0,
+                    marginTop: 2,
                   }}
                 >
                   <FaTrash style={{ fontSize: 10 }} />
                   {clearingCache ? t("clearing") : cacheClearedSuccess ? `✓ ${t("cleared")}` : t("clearCache")}
                 </Focusable>
-              </Focusable>
+              </div>
             </PanelSectionRow>
           </PanelSection>
         </div>

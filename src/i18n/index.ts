@@ -138,6 +138,8 @@ export const translations = {
     totalSpace: "Всего",
     usedSpace: "Занято",
     externalDrives: "Накопители",
+    storageAndCache: "Хранилище и кэш",
+    cacheSectionDesc: "Временные файлы постеров, фонов и кэш метаданных",
 
     // Пустые состояния и уведомления
     watchlistEmptyTitle: "В избранном пусто",
@@ -289,6 +291,8 @@ export const translations = {
     totalSpace: "Total",
     usedSpace: "Used",
     externalDrives: "Drives",
+    storageAndCache: "Storage & Cache",
+    cacheSectionDesc: "Temporary poster cache, backdrops, and catalog metadata",
 
     // Empty states and notifications
     watchlistEmptyTitle: "Favorites is empty",
