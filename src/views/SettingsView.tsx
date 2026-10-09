@@ -21,6 +21,8 @@ import { useI18n } from "../i18n";
 import { getUserSettings, setUserSetting, subscribeUserSettings } from "../runtime/userSettings";
 import { triggerHaptic } from "../runtime/haptics";
 import { playNavSound } from "../runtime/navSound";
+import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
+import { isModalOpen, isPlayerActive } from "../runtime/homeInputBus";
 
 // Модульный кэш статуса и URL, чтобы при переключении между вкладками статус не сбрасывался и не мигал красным
 let cachedJacredUrl: string | null = null;
@@ -279,23 +281,17 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
 
   const lastNavAtRef = useRef<number>(0);
 
-  // Обработка навигации по настройкам (D-pad / стрелки)
+  // Обработка навигации по настройкам (D-pad / стики / клавиатура)
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const navigateSettings = (direction: "up" | "down") => {
       const root = rootRef.current;
       if (!root) return;
       const doc = getActiveDocument(root);
       const active = doc?.activeElement as HTMLElement | null;
       if (!active || !root.contains(active)) return;
 
-      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-
       const now = Date.now();
-      if (now - lastNavAtRef.current < 150) {
-        e.preventDefault();
-        e.stopPropagation();
-        return;
-      }
+      if (now - lastNavAtRef.current < 160) return;
 
       const focusables = Array.from(root.querySelectorAll<HTMLElement>("input, [tabindex='0']"))
         .filter((el) => {
@@ -305,10 +301,8 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
 
       const currentIndex = focusables.indexOf(active);
 
-      if (e.key === "ArrowUp") {
+      if (direction === "up") {
         if (currentIndex <= 0) {
-          e.preventDefault();
-          e.stopPropagation();
           lastNavAtRef.current = now;
           onNavigateUp?.();
           return;
@@ -316,44 +310,70 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
 
         const prevTarget = focusables[currentIndex - 1];
         if (prevTarget) {
-          e.preventDefault();
-          e.stopPropagation();
           lastNavAtRef.current = now;
           doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
           prevTarget.focus();
           prevTarget.classList.add("gpfocus");
           try { prevTarget.scrollIntoView({ block: "center", behavior: "smooth" }); } catch {}
-          return;
         }
-      } else if (e.key === "ArrowDown") {
+      } else if (direction === "down") {
         if (currentIndex >= 0 && currentIndex < focusables.length - 1) {
           const nextTarget = focusables[currentIndex + 1];
           if (nextTarget) {
-            e.preventDefault();
-            e.stopPropagation();
             lastNavAtRef.current = now;
             doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
             nextTarget.focus();
             nextTarget.classList.add("gpfocus");
             try { nextTarget.scrollIntoView({ block: "center", behavior: "smooth" }); } catch {}
-            return;
           }
         }
       }
     };
 
-    const handleVgp = (e: Event) => {
+    // 1. Клавиатурные события (стрелки вверх/вниз)
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
       const root = rootRef.current;
       if (!root) return;
       const doc = getActiveDocument(root);
-      const active = doc?.activeElement as HTMLElement | null;
-      if (active && root.contains(active)) {
-        // Предотвращаем дублирующую навигацию Steam Gamepad Navigation (vgp_*),
-        // чтобы фокус перемещался ровно по одному элементу через handleKeyDown
-        e.preventDefault();
-        e.stopPropagation();
-      }
+      const active = doc?.activeElement;
+      if (!active || !root.contains(active)) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+      navigateSettings(e.key === "ArrowUp" ? "up" : "down");
     };
+
+    // 2. Прямые события геймпада (D-pad и левый стик через SteamClient.Input)
+    const unController = subscribeControllerInput((e) => {
+      if (!e.pressed) return;
+      if (isModalOpen() || isPlayerActive()) return;
+
+      const root = rootRef.current;
+      if (!root) return;
+      const doc = getActiveDocument(root);
+      const active = doc?.activeElement;
+      if (!active || !root.contains(active)) return;
+
+      // В текстовых полях не перехватываем другие кнопки, кроме D-pad / левого стика вверх-вниз
+      const isDown =
+        e.button === RawButton.DPAD_DOWN ||
+        e.button === RawButton.LEFTSTICK_DOWN ||
+        e.button === 6 ||
+        e.button === 21;
+
+      const isUp =
+        e.button === RawButton.DPAD_UP ||
+        e.button === RawButton.LEFTSTICK_UP ||
+        e.button === 4 ||
+        e.button === 20;
+
+      if (isDown) {
+        navigateSettings("down");
+      } else if (isUp) {
+        navigateSettings("up");
+      }
+    });
 
     const targets: EventTarget[] = [];
     if (typeof window !== "undefined") targets.push(window);
@@ -367,17 +387,14 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
     targets.forEach((t) => {
       try {
         t.addEventListener("keydown", handleKeyDown as any, true);
-        t.addEventListener("vgp_onbuttondown", handleVgp, true);
-        t.addEventListener("vgp_ondirection", handleVgp, true);
       } catch {}
     });
 
     return () => {
+      unController();
       targets.forEach((t) => {
         try {
           t.removeEventListener("keydown", handleKeyDown as any, true);
-          t.removeEventListener("vgp_onbuttondown", handleVgp, true);
-          t.removeEventListener("vgp_ondirection", handleVgp, true);
         } catch {}
       });
     };
