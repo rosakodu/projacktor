@@ -509,6 +509,7 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
             {/* Тумблер 1: Вибрация и звуки */}
             <PanelSectionRow>
               <Focusable
+                noFocusRing
                 tabIndex={0}
                 onActivate={() => handleTogglePref("hapticAndSoundEnabled")}
                 onClick={() => handleTogglePref("hapticAndSoundEnabled")}
@@ -528,6 +529,7 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
             {/* Тумблер 2: Детский режим (до 16+) */}
             <PanelSectionRow>
               <Focusable
+                noFocusRing
                 tabIndex={0}
                 onActivate={() => handleTogglePref("kidsMode")}
                 onClick={() => handleTogglePref("kidsMode")}

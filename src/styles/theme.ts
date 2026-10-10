@@ -1035,8 +1035,7 @@ body.projacktor-magicblack-active [class*="_3FIjYetykQsFYR08l1v7Ls"] {
 }
 
 .projacktor-toggle-row:focus,
-.projacktor-toggle-row.gpfocus,
-.projacktor-toggle-row.gpfocuswithin {
+.projacktor-toggle-row.gpfocus {
   background: rgba(26, 159, 255, 0.15) !important;
   outline: 2px solid #1a9fff !important;
   outline-offset: -1px !important;
