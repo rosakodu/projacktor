@@ -344,7 +344,26 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
       navigateSettings(e.key === "ArrowUp" ? "up" : "down");
     };
 
-    // 2. Прямые события геймпада (D-pad и левый стик через SteamClient.Input)
+    // 2. Нативные события геймпада SteamOS (vgp_ondirection)
+    // Перехватываем вертикальные направления (9=UP, 10=DOWN), чтобы Steam GamepadUI не сдвигал фокус повторно параллельно с нашим обработчиком
+    const handleVgpDirection = (e: any) => {
+      const btn = e?.detail?.button;
+      if (btn === 9 || btn === 10) {
+        const root = rootRef.current;
+        if (!root) return;
+        const doc = getActiveDocument(root);
+        const active = doc?.activeElement;
+        if (!active || !root.contains(active)) return;
+
+        try {
+          e.preventDefault?.();
+          e.stopPropagation?.();
+          e.stopImmediatePropagation?.();
+        } catch {}
+      }
+    };
+
+    // 3. Прямые события геймпада (D-pad и левый стик через SteamClient.Input)
     const unController = subscribeControllerInput((e) => {
       if (!e.pressed) return;
       if (isModalOpen() || isPlayerActive()) return;
@@ -387,6 +406,7 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
     targets.forEach((t) => {
       try {
         t.addEventListener("keydown", handleKeyDown as any, true);
+        t.addEventListener("vgp_ondirection", handleVgpDirection as any, true);
       } catch {}
     });
 
@@ -395,6 +415,7 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
       targets.forEach((t) => {
         try {
           t.removeEventListener("keydown", handleKeyDown as any, true);
+          t.removeEventListener("vgp_ondirection", handleVgpDirection as any, true);
         } catch {}
       });
     };
@@ -409,11 +430,18 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
       onGamepadDirection={(evt: any) => {
         const btn = evt?.detail?.button;
         if (btn === 9) {
-          // DPAD_UP: переходим в TabBar, если фокус в первом блоке настроек
-          const doc = getActiveDocument(rootRef.current);
-          const active = doc?.activeElement;
-          const firstCard = rootRef.current?.querySelector(".projacktor-settings-card");
-          if (active && firstCard && (firstCard === active || firstCard.contains(active))) {
+          // DPAD_UP: на самом верхнем элементе переходим в TabBar, иначе навигируем вверх
+          const root = rootRef.current;
+          if (!root) return undefined;
+          const doc = getActiveDocument(root);
+          const active = doc?.activeElement as HTMLElement | null;
+          const focusables = Array.from(root.querySelectorAll<HTMLElement>("input, [tabindex='0']"))
+            .filter((el) => {
+              const s = window.getComputedStyle(el);
+              return s.display !== "none" && s.visibility !== "hidden";
+            });
+          const currentIndex = active ? focusables.indexOf(active) : -1;
+          if (currentIndex <= 0) {
             if (onNavigateUp) {
               try {
                 evt?.preventDefault?.();
@@ -423,20 +451,37 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
               return false;
             }
           }
+          try {
+            evt?.preventDefault?.();
+            evt?.stopPropagation?.();
+          } catch {}
+          return false;
+        } else if (btn === 10) {
+          // DPAD_DOWN: перехватываем нативное перемещение, чтобы оно не срабатывало дважды вместе с subscribeControllerInput / handleKeyDown
+          try {
+            evt?.preventDefault?.();
+            evt?.stopPropagation?.();
+          } catch {}
+          return false;
         }
         return undefined;
       }}
       onKeyDown={(e) => {
         if (e.key === "ArrowUp") {
-          const doc = getActiveDocument(rootRef.current);
-          const active = doc?.activeElement;
-          const firstCard = rootRef.current?.querySelector(".projacktor-settings-card");
-          if (active && firstCard && (firstCard === active || firstCard.contains(active))) {
-            if (onNavigateUp) {
-              e.preventDefault();
-              e.stopPropagation();
-              onNavigateUp();
-            }
+          const root = rootRef.current;
+          if (!root) return;
+          const doc = getActiveDocument(root);
+          const active = doc?.activeElement as HTMLElement | null;
+          const focusables = Array.from(root.querySelectorAll<HTMLElement>("input, [tabindex='0']"))
+            .filter((el) => {
+              const s = window.getComputedStyle(el);
+              return s.display !== "none" && s.visibility !== "hidden";
+            });
+          const currentIndex = active ? focusables.indexOf(active) : -1;
+          if (currentIndex <= 0 && onNavigateUp) {
+            e.preventDefault();
+            e.stopPropagation();
+            onNavigateUp();
           }
         }
       }}
