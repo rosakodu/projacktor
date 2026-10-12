@@ -96,6 +96,7 @@ export const HeroBackdrop: FC = memo(() => {
         <img
           src={prevUrl}
           alt=""
+          decoding="async"
           style={{
             position: "absolute",
             top: 0,
@@ -117,6 +118,7 @@ export const HeroBackdrop: FC = memo(() => {
         <img
           src={activeUrl}
           alt=""
+          decoding="async"
           style={{
             position: "absolute",
             top: 0,

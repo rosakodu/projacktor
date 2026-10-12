@@ -18,6 +18,8 @@ import { triggerHaptic } from "../runtime/haptics";
 import { getActiveDocument } from "../runtime/activeDoc";
 import { useI18n, initI18n } from "../i18n";
 import { initUserSettings } from "../runtime/userSettings";
+import { useIdlePause, useInputMode } from "../hooks";
+import { beginFocusGuard } from "../runtime/focusGuard";
 
 const TAB_IDS = [
   "home",
@@ -57,6 +59,13 @@ export const ProjacktorApp: FC = () => {
     initI18n();
     initUserSettings();
   }, []);
+
+  const inputMode = useInputMode();
+
+  // Энергосбережение: режим простоя (заморозка анимаций и разгрузка CPU при бездействии 60 сек)
+  useIdlePause(rootRef.current, {
+    enabled: ready && !isPlayerOpen,
+  });
 
   const tabsConfig = useMemo(
     () => [
@@ -397,8 +406,18 @@ export const ProjacktorApp: FC = () => {
   useEffect(() => {
     let cancelled = false;
     let timerId: any = null;
+    let cancelGuard: (() => void) | null = null;
     const delays = [20, 60, 120, 250];
     let idx = 0;
+
+    const doc = getActiveDocument(rootRef.current);
+    const onDirection = () => {
+      cancelled = true;
+      if (cancelGuard) cancelGuard();
+    };
+    if (doc) {
+      doc.addEventListener("vgp_ondirection", onDirection, { capture: true, once: true });
+    }
 
     const scheduleNext = () => {
       if (cancelled || idx >= delays.length) return;
@@ -406,9 +425,18 @@ export const ProjacktorApp: FC = () => {
       timerId = setTimeout(() => {
         if (cancelled) return;
         const focused = ensureContentFocus(true);
-        // Если фокус успешно захвачен целевым элементом контента, прекращаем дальнейшие попытки
         if (!focused) {
           scheduleNext();
+        } else {
+          // Запускаем мягкий Focus Guard для предотвращения сброса фокуса нативным SteamUI
+          cancelGuard = beginFocusGuard(() => {
+            const root = rootRef.current;
+            if (!root) return null;
+            return (
+              root.querySelector<HTMLElement>(".projacktor-view-container .gpfocus, .projacktor-shelf-row .projacktor-card.gpfocus") ||
+              root.querySelector<HTMLElement>(".projacktor-shelf-row .projacktor-card, .projacktor-view-container [tabindex='0']")
+            );
+          }, { timeoutMs: 1500, intervalMs: 250, maxRetakes: 2 });
         }
       }, delay);
     };
@@ -416,10 +444,23 @@ export const ProjacktorApp: FC = () => {
     const initialFocus = ensureContentFocus(true);
     if (!initialFocus) {
       scheduleNext();
+    } else {
+      cancelGuard = beginFocusGuard(() => {
+        const root = rootRef.current;
+        if (!root) return null;
+        return (
+          root.querySelector<HTMLElement>(".projacktor-view-container .gpfocus, .projacktor-shelf-row .projacktor-card.gpfocus") ||
+          root.querySelector<HTMLElement>(".projacktor-shelf-row .projacktor-card, .projacktor-view-container [tabindex='0']")
+        );
+      }, { timeoutMs: 1500, intervalMs: 250, maxRetakes: 2 });
     }
 
     return () => {
       cancelled = true;
+      if (doc) {
+        doc.removeEventListener("vgp_ondirection", onDirection, true);
+      }
+      if (cancelGuard) cancelGuard();
       if (timerId) clearTimeout(timerId as any);
     };
   }, [activeTab, ready, ensureContentFocus]);
@@ -552,7 +593,7 @@ export const ProjacktorApp: FC = () => {
   return (
     <Focusable
       ref={rootRef}
-      className={`projacktor-app-root ${isPlayerOpen ? "projacktor-app-playing" : ""}`}
+      className={`projacktor-app-root pj-mode-${inputMode} ${isPlayerOpen ? "projacktor-app-playing" : ""}`}
       flow-children="vertical"
       onCancelButton={(e: any) => {
         if (isPlayerOpen || isPlayerActive() || Date.now() - lastPlayerCloseTimeRef.current < 500) {

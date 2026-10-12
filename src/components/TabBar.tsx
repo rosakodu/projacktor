@@ -2,6 +2,7 @@ import { FC, memo, useCallback, useEffect, useRef } from "react";
 import { playNavSound } from "../runtime/navSound";
 import { triggerHaptic } from "../runtime/haptics";
 import { useI18n } from "../i18n";
+import { useInputMode } from "../hooks";
 
 export interface TabConfig {
   id: string;
@@ -20,7 +21,9 @@ interface TabBarProps {
 export const TabBar: FC<TabBarProps> = memo(
   ({ tabs, activeTab, onSelectTab, onPrevTab, onNextTab }) => {
     const { t } = useI18n();
+    const inputMode = useInputMode();
     const trackRef = useRef<HTMLDivElement>(null);
+    const isGamepad = inputMode === "gamepad";
 
     useEffect(() => {
       const track = trackRef.current;
@@ -54,19 +57,21 @@ export const TabBar: FC<TabBarProps> = memo(
 
     return (
       <div className="projacktor-nav-bar">
-        {/* L1 Bumper Indicator */}
-        <div
-          className="projacktor-bumper-pill l1"
-          onClick={() => {
-            onPrevTab();
-          }}
-          role="button"
-          aria-label={t("prevTab")}
-        >
-          L1
-        </div>
+        {/* L1 Bumper Indicator (только в режиме геймпада) */}
+        {isGamepad && (
+          <div
+            className="projacktor-bumper-pill l1"
+            onClick={() => {
+              onPrevTab();
+            }}
+            role="button"
+            aria-label={t("prevTab")}
+          >
+            L1
+          </div>
+        )}
 
-        {/* Tabs Track - switched strictly via L1 / R1 */}
+        {/* Tabs Track */}
         <div ref={trackRef} className="projacktor-tabs-track">
           {tabs.map((tab) => {
             const isActive = activeTab === tab.id;
@@ -85,17 +90,19 @@ export const TabBar: FC<TabBarProps> = memo(
           })}
         </div>
 
-        {/* R1 Bumper Indicator */}
-        <div
-          className="projacktor-bumper-pill r1"
-          onClick={() => {
-            onNextTab();
-          }}
-          role="button"
-          aria-label={t("nextTab")}
-        >
-          R1
-        </div>
+        {/* R1 Bumper Indicator (только в режиме геймпада) */}
+        {isGamepad && (
+          <div
+            className="projacktor-bumper-pill r1"
+            onClick={() => {
+              onNextTab();
+            }}
+            role="button"
+            aria-label={t("nextTab")}
+          >
+            R1
+          </div>
+        )}
       </div>
     );
   }

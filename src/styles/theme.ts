@@ -1104,4 +1104,39 @@ body.projacktor-magicblack-active [class*="_3FIjYetykQsFYR08l1v7Ls"] {
 .projacktor-toggle-btn.active .projacktor-toggle-knob {
   transform: translateX(20px) !important;
 }
+
+/* ───── Idle Power-Saving Mode (.pj-idle) ───── */
+/* Pauses heavy CSS animations, backdrop scales, and skeleton shimmers when user is idle for 60s */
+.projacktor-app-root.pj-idle *,
+.pj-idle * {
+  animation-play-state: paused !important;
+}
+
+.projacktor-app-root.pj-idle .projacktor-hero-backdrop-root img {
+  transition: none !important;
+  transform: none !important;
+}
+
+.projacktor-app-root.pj-idle .projacktor-card--skeleton {
+  animation: none !important;
+  opacity: 0.3 !important;
+}
+
+/* ───── Input Mode Styles (gamepad vs pointer) ───── */
+/* В режиме pointer (мышь/трекпад) скрываем системный футер подсказок SteamOS и плашки бамперов */
+.projacktor-app-root.pj-mode-pointer .projacktor-bumper-pill {
+  display: none !important;
+}
+
+body:has(.projacktor-app-root.pj-mode-pointer) #Footer,
+#MainNavMenu-Rest:has(.projacktor-app-root.pj-mode-pointer) #Footer,
+#GamepadUI_Full_Root:has(.projacktor-app-root.pj-mode-pointer) #Footer {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: opacity 0.2s ease !important;
+}
 `;
+
+
+
+

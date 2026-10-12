@@ -157,6 +157,9 @@ export const translations = {
     loadingWatchlist: "Загрузка избранного...",
     loadingHistory: "Загрузка истории...",
     loadingLibrary: "Загрузка...",
+    parserNotConnected: "Парсер Jackett не подключен",
+    parserNotConnectedDesc: "Для поиска, просмотра каталога и торрентов укажите действующий адрес парсера Jackett в Настройках.",
+    goToSettings: "Перейти в Настройки",
   },
   en: {
     // Tabs
@@ -310,6 +313,9 @@ export const translations = {
     loadingWatchlist: "Loading favorites...",
     loadingHistory: "Loading history...",
     loadingLibrary: "Loading...",
+    parserNotConnected: "Jackett Parser Disconnected",
+    parserNotConnectedDesc: "To search, browse catalog, and stream torrents, specify a valid Jackett parser address in Settings.",
+    goToSettings: "Go to Settings",
   },
 } as const;
 

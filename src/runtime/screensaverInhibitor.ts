@@ -22,6 +22,23 @@ let originalSettings: Record<string, number | undefined> = {};
 let settingsOverridden = false;
 
 /**
+ * Проверка активности нативного скринсейвера SteamOS (ScreensaverPopup).
+ * Адаптировано из Deck-Shelves: Steam Beta добавил собственное дерево навигации ScreensaverPopup,
+ * которое открывается поверх экрана на независимом таймере простоя.
+ */
+export function isNativeScreensaverActive(): boolean {
+  try {
+    const ctrl = (globalThis as any).FocusNavController;
+    const ctx = ctrl?.m_ActiveContext ?? ctrl?.m_LastActiveContext;
+    const trees: any[] = ctx?.m_rgGamepadNavigationTrees ?? [];
+    const popup = trees.find((t) => t?.m_ID === "ScreensaverPopup");
+    return !!popup?.BIsActive?.();
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Получение webpackChunksteamui из текущего окна или родительского/opener (SharedJSContext)
  */
 function getWebpackChunk(): any {
