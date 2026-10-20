@@ -341,10 +341,13 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
     def do_HEAD(self):
         if not self._is_origin_allowed():
             self.send_response(403)
+            self.send_cors_headers()
             self.end_headers()
             return
         self.send_response(200)
         self.send_cors_headers()
+        self.send_header('Content-Type', 'video/mp4')
+        self.send_header('Accept-Ranges', 'none')
         self.end_headers()
 
     def do_GET(self):
@@ -1005,6 +1008,7 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
 
         if not source:
             self.send_response(400)
+            self.send_cors_headers()
             self.end_headers()
             return
 
@@ -1023,10 +1027,12 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             if not any(real_path.startswith(ad) for ad in allowed_dirs):
                 logger.warning(f"Path traversal attempt blocked: {filepath}")
                 self.send_response(403)
+                self.send_cors_headers()
                 self.end_headers()
                 return
             if not os.path.exists(real_path):
                 self.send_response(404)
+                self.send_cors_headers()
                 self.end_headers()
                 return
             source = real_path
@@ -1036,6 +1042,7 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             if parsed.hostname not in ['127.0.0.1', 'localhost', '::1']:
                 logger.warning(f"External stream URL rejected: {source}")
                 self.send_response(403)
+                self.send_cors_headers()
                 self.end_headers()
                 return
 
@@ -1111,13 +1118,6 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             # to immediately free GPU/VAAPI encoder contexts and release file handles
             stop_all_active_streams()
 
-            self.send_response(200)
-            self.send_cors_headers()
-            self.send_header('Content-Type', 'video/mp4')
-            self.send_header('Accept-Ranges', 'none')
-            self.send_header('Cache-Control', 'no-cache')
-            self.end_headers()
-
             f_start = 0.0
             try:
                 f_start = float(start_time)
@@ -1162,18 +1162,91 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
             stderr_thread.start()
 
+            chunk_size = 128 * 1024
+            chunk_timeout = 30.0 if is_online else 15.0
+            first_chunk = b""
+
             try:
-                chunk_size = 128 * 1024
-                # Wait for first chunk with a timeout to detect dead streams early
                 import select
-                chunk_timeout = 30.0 if is_online else 15.0
                 ready = select.select([proc.stdout], [], [], chunk_timeout)
-                if not ready[0]:
+                if ready[0]:
+                    first_chunk = proc.stdout.read(chunk_size)
+
+                # Fallback to software encoding if hardware transcode failed on startup
+                if (not first_chunk or proc.poll() is not None) and plan.get("hw_accel") != "none":
+                    last_err = '; '.join(list(stderr_lines)[-3:])
+                    logger.warning(
+                        f"[Stream] Hardware transcode ({plan.get('hw_accel')}) failed on startup (exit={proc.poll()}). "
+                        f"Stderr: {last_err}. Retrying with CPU libx264 software fallback..."
+                    )
+                    # Clean up failed hardware process
+                    with ACTIVE_STREAM_LOCK:
+                        ACTIVE_STREAM_PROCS.discard(proc)
+                    try:
+                        proc.terminate()
+                        proc.wait(timeout=0.5)
+                    except Exception:
+                        try:
+                            proc.kill()
+                        except Exception:
+                            pass
+
+                    # Build pure CPU fallback plan
+                    fallback_plan = dict(plan)
+                    fallback_plan["hw_accel"] = "none"
+                    fallback_plan["use_vaapi"] = False
+                    fallback_plan["video_needs_transcode"] = True
+                    fallback_plan["vf_filter"] = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease,format=yuv420p"
+                    fallback_cmd = build_ffmpeg_stream_command(
+                        source=source,
+                        plan=fallback_plan,
+                        start_time=f_start,
+                        audio_idx=audio_idx,
+                        is_http=is_http,
+                        is_online=is_online
+                    )
+                    logger.info(f"[Stream] Fallback FFmpeg cmd: {' '.join(fallback_cmd[:6])}...")
+                    proc = subprocess.Popen(
+                        fallback_cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        env=env,
+                        bufsize=1024*1024
+                    )
+                    with ACTIVE_STREAM_LOCK:
+                        ACTIVE_STREAM_PROCS.add(proc)
+
+                    stderr_lines.clear()
+                    stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
+                    stderr_thread.start()
+
+                    ready = select.select([proc.stdout], [], [], chunk_timeout)
+                    if ready[0]:
+                        first_chunk = proc.stdout.read(chunk_size)
+
+                if not first_chunk:
                     last_err = '; '.join(list(stderr_lines)[-5:])
                     logger.error(f"[Stream] FFmpeg produced no output in {int(chunk_timeout)}s, killing. stderr: {last_err}")
+                    self.send_response(503)
+                    self.send_cors_headers()
+                    self.send_header('Content-Type', 'text/plain; charset=utf-8')
+                    self.send_header('Retry-After', '2')
+                    self.end_headers()
+                    self.wfile.write(b"Stream not ready, buffering...")
                     proc.kill()
                     proc.wait(timeout=2)
                     return
+
+                # Send headers ONLY AFTER first chunk of valid media data is obtained
+                self.send_response(200)
+                self.send_cors_headers()
+                self.send_header('Content-Type', 'video/mp4')
+                self.send_header('Accept-Ranges', 'none')
+                self.send_header('Cache-Control', 'no-cache')
+                self.end_headers()
+
+                self.wfile.write(first_chunk)
+
                 while True:
                     data = proc.stdout.read(chunk_size)
                     if not data:

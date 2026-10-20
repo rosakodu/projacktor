@@ -102,7 +102,8 @@ def has_nvenc_support() -> bool:
 
 def has_vaapi_support() -> bool:
     """
-    Checks if AMD / Intel VA-API DRM render node is present and accessible.
+    Checks if AMD / Intel VA-API DRM render node is present and accessible,
+    and verifies that FFmpeg actually has VA-API support and h264_vaapi encoder.
     If GPU is NVIDIA, VA-API is only used if NVENC is not supported.
     """
     global _VAAPI_SUPPORT_CACHE
@@ -116,6 +117,27 @@ def has_vaapi_support() -> bool:
 
     vendor = detect_gpu_vendor()
     if vendor == "nvidia" and has_nvenc_support():
+        _VAAPI_SUPPORT_CACHE = False
+        return False
+
+    ffmpeg_bin = get_bin_path("ffmpeg")
+    try:
+        from .common import _clean_env
+        import subprocess
+        res = subprocess.run(
+            [ffmpeg_bin, "-hide_banner", "-encoders"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=3,
+            env=_clean_env()
+        )
+        if "h264_vaapi" not in res.stdout:
+            logger.info(f"[Transcoder] FFmpeg at {ffmpeg_bin} lacks h264_vaapi encoder, disabling VA-API")
+            _VAAPI_SUPPORT_CACHE = False
+            return False
+    except Exception as e:
+        logger.debug(f"[Transcoder] Error checking vaapi encoder in ffmpeg: {e}")
         _VAAPI_SUPPORT_CACHE = False
         return False
 
@@ -217,16 +239,17 @@ def resolve_transcode_plan(
     if video_needs_transcode:
         accel_tag = "VA-API" if hw_accel == "vaapi" else ("NVIDIA NVENC" if hw_accel == "nvenc" else "CPU Software")
         
-        # For 10-bit HDR content (Dolby Vision, HDR10, etc.) with VA-API:
-        # AMD GPU on Steam Deck cannot convert P010→NV12 inside scale_vaapi filter.
+        # For 10-bit HDR content (Dolby Vision, HDR10, etc.) or non-standard pixel formats (gbrp, yuv444p, rgb, etc.) with VA-API:
+        # AMD GPU on Steam Deck cannot convert P010/non-420p→NV12 inside scale_vaapi filter.
         # Use software decode → software scale → hwupload → h264_vaapi encoder instead.
-        vaapi_10bit = (hw_accel == "vaapi" and is_10bit)
-        if vaapi_10bit:
-            accel_tag = "VA-API 10bit"
+        is_standard_8bit = pix_fmt in ["yuv420p", "yuvj420p"]
+        vaapi_sw_decode = (hw_accel == "vaapi") and (is_10bit or (pix_fmt and not is_standard_8bit))
+        if vaapi_sw_decode:
+            accel_tag = "VA-API 10bit/Conv" if is_10bit else "VA-API Conv"
         
         if pref_res == "720p":
             if hw_accel == "vaapi":
-                if vaapi_10bit:
+                if vaapi_sw_decode:
                     vf_filter = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease,format=nv12,hwupload"
                 else:
                     vf_filter = "scale_vaapi=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:format=nv12"
@@ -237,7 +260,7 @@ def resolve_transcode_plan(
             profile_name = f"720p ({accel_tag})"
         elif pref_res == "1080p":
             if hw_accel == "vaapi":
-                if vaapi_10bit:
+                if vaapi_sw_decode:
                     vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease,format=nv12,hwupload"
                 else:
                     vf_filter = "scale_vaapi=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:format=nv12"
@@ -248,7 +271,7 @@ def resolve_transcode_plan(
             profile_name = f"1080p ({accel_tag})"
         elif pref_res == "4k":
             if hw_accel == "vaapi":
-                if vaapi_10bit:
+                if vaapi_sw_decode:
                     vf_filter = "format=nv12,hwupload"
                 else:
                     vf_filter = "scale_vaapi=format=nv12"
@@ -263,7 +286,7 @@ def resolve_transcode_plan(
                 if is_docked:
                     # Output native 4K to external 4K TV / Monitor
                     if hw_accel == "vaapi":
-                        if vaapi_10bit:
+                        if vaapi_sw_decode:
                             vf_filter = "format=nv12,hwupload"
                         else:
                             vf_filter = "scale_vaapi=format=nv12"
@@ -276,7 +299,7 @@ def resolve_transcode_plan(
                     # Handheld Steam Deck (800p display):
                     # Smart downscale 4K to 1080p for super-sampling sharpness, zero stutter and battery savings
                     if hw_accel == "vaapi":
-                        if vaapi_10bit:
+                        if vaapi_sw_decode:
                             vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease,format=nv12,hwupload"
                         else:
                             vf_filter = "scale_vaapi=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:format=nv12"
@@ -287,7 +310,7 @@ def resolve_transcode_plan(
                     profile_name = f"4K -> 1080p Adaptive Handheld ({accel_tag})"
             elif is_source_1080p:
                 if hw_accel == "vaapi":
-                    if vaapi_10bit:
+                    if vaapi_sw_decode:
                         vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease,format=nv12,hwupload"
                     else:
                         vf_filter = "scale_vaapi=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:format=nv12"
@@ -298,7 +321,7 @@ def resolve_transcode_plan(
                 profile_name = f"1080p Native ({accel_tag})"
             else:
                 if hw_accel == "vaapi":
-                    if vaapi_10bit:
+                    if vaapi_sw_decode:
                         vf_filter = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease,format=nv12,hwupload"
                     else:
                         vf_filter = "scale_vaapi=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:format=nv12"
@@ -310,7 +333,7 @@ def resolve_transcode_plan(
 
     if video_needs_transcode and not vf_filter:
         if hw_accel == "vaapi":
-            vf_filter = "format=nv12,hwupload" if is_10bit else "scale_vaapi=format=nv12"
+            vf_filter = "format=nv12,hwupload" if vaapi_sw_decode else "scale_vaapi=format=nv12"
         else:
             vf_filter = "format=yuv420p"
 
@@ -321,6 +344,7 @@ def resolve_transcode_plan(
         "use_vaapi": use_vaapi,
         "is_docked": is_docked,
         "is_10bit": is_10bit,
+        "vaapi_sw_decode": vaapi_sw_decode if video_needs_transcode else False,
         "profile_name": profile_name,
         "vf_filter": vf_filter,
         "target_bitrate": target_bitrate,
@@ -350,10 +374,10 @@ def build_ffmpeg_stream_command(
             "-hwaccel", "vaapi",
             "-hwaccel_device", "va"
         ]
-        # For 10-bit HDR content (Dolby Vision, HDR10), skip -hwaccel_output_format vaapi
+        # For 10-bit HDR content or non-standard pixel formats (gbrp, yuv444p, etc.), skip -hwaccel_output_format vaapi
         # so frames are decoded to system memory where software scale+format can process them.
         # The hwupload filter in the vf chain will re-upload to GPU for h264_vaapi encoding.
-        if not is_10bit:
+        if not plan.get("vaapi_sw_decode", is_10bit):
             cmd += ["-hwaccel_output_format", "vaapi"]
 
     has_start_offset = start_time > 0
@@ -424,7 +448,7 @@ def build_ffmpeg_stream_command(
         "-sn",
         "-avoid_negative_ts", "make_zero",
         "-max_muxing_queue_size", "2048",
-        "-movflags", "frag_keyframe+empty_moov+default_base_moof+delay_moov",
+        "-movflags", "frag_keyframe+empty_moov+default_base_moof",
         "-frag_duration", "1000000",
         "-f", "mp4",
         "pipe:1"

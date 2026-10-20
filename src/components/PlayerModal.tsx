@@ -631,21 +631,11 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     setErrorMsg(null);
     setIsBuffering(true);
     setStreamUrl((curUrl) => {
+      const now = Date.now();
       return curUrl.includes("t=")
-        ? curUrl.replace(/t=\d+/, `t=${Date.now()}`)
-        : `${curUrl}${curUrl.includes("?") ? "&" : "?"}t=${Date.now()}`;
+        ? curUrl.replace(/t=\d+/, `t=${now}`)
+        : `${curUrl}${curUrl.includes("?") ? "&" : "?"}t=${now}`;
     });
-    setTimeout(() => {
-      const video = videoRef.current;
-      if (video) {
-        try {
-          video.load();
-          video.play().catch(() => {});
-        } catch (e) {
-          console.warn("[PlayerModal] retryPlayback error:", e);
-        }
-      }
-    }, 50);
   }, []);
 
   const commitPendingSeek = useCallback(() => {
@@ -1143,12 +1133,13 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     console.error(`[PlayerModal] Video error: ${codeName} - ${err?.message || "no details"}`);
 
     const isTranscodeOrOnline = isOnline || filePath.includes("/api/stream") || filePath.startsWith("http") || !isDirectStream;
+    const maxRetries = hasStartedPlaybackRef.current ? 4 : 10;
 
-    // Быстрый автоповтор для сглаживания переходных ошибок демультиплексора при перемотке или рестарте
-    if (isTranscodeOrOnline && retryCountRef.current < 3) {
+    // Быстрый автоповтор для сглаживания переходных ошибок демультиплексора при перемотке, рестарте или буферизации торрента
+    if (isTranscodeOrOnline && retryCountRef.current < maxRetries) {
       retryCountRef.current += 1;
-      const delayMs = hasStartedPlaybackRef.current ? 400 : 1500;
-      console.log(`[PlayerModal] Auto-retrying stream playback (attempt ${retryCountRef.current}/3) in ${delayMs}ms...`);
+      const delayMs = hasStartedPlaybackRef.current ? 400 : Math.min(2500, 1000 + retryCountRef.current * 200);
+      console.log(`[PlayerModal] Auto-retrying stream playback (attempt ${retryCountRef.current}/${maxRetries}) in ${delayMs}ms...`);
       setIsBuffering(true);
       if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
       retryTimeoutRef.current = setTimeout(() => {
@@ -1531,7 +1522,6 @@ export const PlayerModal: FC<PlayerModalProps> = ({
                 preload="auto"
                 muted={!hasStartedPlayback}
                 onError={handleVideoError}
-                crossOrigin="anonymous"
                 style={{
                   width: "100%",
                   height: "100%",
@@ -1577,6 +1567,31 @@ export const PlayerModal: FC<PlayerModalProps> = ({
                     <div style={{ color: "var(--ds-danger, #e53e3e)", fontSize: 16, fontWeight: 600, lineHeight: 1.4 }}>
                       {errorMsg}
                     </div>
+                    <Focusable
+                      tabIndex={0}
+                      className="ds-btn ds-btn-primary gpfocus"
+                      onActivate={() => {
+                        setErrorMsg(null);
+                        retryCountRef.current = 0;
+                        setIsBuffering(true);
+                        retryPlayback();
+                      }}
+                      onClick={() => {
+                        setErrorMsg(null);
+                        retryCountRef.current = 0;
+                        setIsBuffering(true);
+                        retryPlayback();
+                      }}
+                      style={{
+                        padding: "8px 24px",
+                        fontSize: 14,
+                        fontWeight: 600,
+                        borderRadius: 8,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {t("retry") || "Повторить"}
+                    </Focusable>
                   </div>
                 </div>
               )}
