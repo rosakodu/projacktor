@@ -49,9 +49,52 @@ class TorrServerManager:
     def ensure_running(self):
         if self.is_running():
             self._running = True
+            if not getattr(self, '_settings_applied', False):
+                threading.Thread(target=self._ensure_optimal_settings, daemon=True).start()
             return True
         logger.warning("TorrServer is not running. Starting it now...")
-        return self.start()
+        res = self.start()
+        if res:
+            threading.Thread(target=self._ensure_optimal_settings, daemon=True).start()
+        return res
+
+    def _ensure_optimal_settings(self):
+        if getattr(self, '_settings_applied', False):
+            return
+        try:
+            url = f"{self.base_url}/settings"
+            payload = {
+                "action": "set",
+                "sets": {
+                    "CacheSize": 134217728,        # 128MB RAM cache
+                    "ReaderReadAHead": 95,          # Buffer ahead percentage
+                    "PreloadCache": 3,              # 3% preload buffer (~4MB) for instant 2-4s startup
+                    "UseDisk": False,               # RAM only, zero disk writes
+                    "RemoveCacheOnDrop": False,     # Keep cache across seeks
+                    "ForceEncrypt": False,
+                    "RetrackersMode": 1,
+                    "TorrentDisconnectTimeout": 120,# Keep BT client connected for 2 mins between requests
+                    "ConnectionsLimit": 80,
+                    "PeersListenPort": 0,
+                    "DisableUPNP": True,           # Disable UPnP to avoid router NAT discovery delay
+                    "EnableLPD": True,
+                    "ResponsiveMode": True,
+                    "ShowFSActiveTorr": True,
+                    "StoreSettingsInJson": True,
+                    "TrackTimecode": False
+                }
+            }
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode('utf-8'),
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                if resp.status == 200:
+                    self._settings_applied = True
+                    logger.info("[TorrServer] Successfully applied optimal streaming settings (PreloadCache=3%, CacheSize=128MB)")
+        except Exception as e:
+            logger.debug(f"[TorrServer] Error setting optimal settings: {e}")
 
     def start(self):
         with self._lock:
@@ -261,6 +304,44 @@ class TorrServerManager:
     def get_stream_url(self, torrent_hash, file_index=1, filename="video.mp4"):
         fn = urllib.parse.quote(filename or "video.mp4")
         return f"{self.base_url}/stream/{fn}?link={torrent_hash}&index={file_index}&play"
+
+    def get_torrent_status(self, torrent_hash):
+        if not self.ensure_running() or not torrent_hash:
+            return None
+        try:
+            info = self.get_torrent(torrent_hash)
+            if not info or not isinstance(info, dict):
+                return None
+            stat = info.get("stat", 0)
+            stat_string = info.get("stat_string", "")
+            connected_seeders = info.get("connected_seeders", 0) or 0
+            active_peers = info.get("active_peers", 0) or 0
+            total_peers = info.get("total_peers", 0) or 0
+            download_speed = float(info.get("download_speed", 0.0) or 0.0)
+            preloaded_bytes = int(info.get("preloaded_bytes", 0) or 0)
+            loaded_size = int(info.get("loaded_size", 0) or 0)
+            torrent_size = int(info.get("torrent_size", 0) or 0)
+
+            preload_target = 4 * 1024 * 1024
+            preloaded_pct = 0
+            if preloaded_bytes > 0:
+                preloaded_pct = min(100, int((preloaded_bytes / preload_target) * 100))
+
+            return {
+                "stat": stat,
+                "stat_string": stat_string,
+                "connected_seeders": connected_seeders,
+                "active_peers": active_peers,
+                "total_peers": total_peers,
+                "download_speed": download_speed,
+                "preloaded_bytes": preloaded_bytes,
+                "preloaded_pct": preloaded_pct,
+                "loaded_size": loaded_size,
+                "torrent_size": torrent_size
+            }
+        except Exception as e:
+            logger.debug(f"TorrServer get_torrent_status error: {e}")
+            return None
 
 
 def extract_ts_files(t_info):

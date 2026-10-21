@@ -11,7 +11,7 @@ import { PlayerMediaInfo, PlaylistItem } from "../types";
 import { getActiveDocument, isOverlayActiveOrRecent } from "../runtime/activeDoc";
 import { playNavSound } from "../runtime/navSound";
 import { AudioTrack, SubtitleTrack } from "./player/types";
-import { PlayerHUD } from "./player/PlayerHUD";
+import { PlayerHUD, TorrentStatusInfo } from "./player/PlayerHUD";
 import { PlayerControls } from "./player/PlayerControls";
 import { usePlayerGamepad } from "../hooks/usePlayerGamepad";
 import { triggerHaptic } from "../runtime/haptics";
@@ -577,6 +577,60 @@ export const PlayerModal: FC<PlayerModalProps> = ({
 
   const torrentHashRef = useRef(torrentHash);
   torrentHashRef.current = torrentHash;
+
+  const [torrentStatus, setTorrentStatus] = useState<TorrentStatusInfo | null>(null);
+  const zeroSeedersCountRef = useRef<number>(0);
+
+  // Опрос статуса раздачи TorrServer (пиры, скорость, заполнение буфера) во время ожидания запуска
+  useEffect(() => {
+    if (!isOnline || hasStartedPlayback) {
+      return;
+    }
+
+    let cancelled = false;
+    let pollTimer: any = null;
+    zeroSeedersCountRef.current = 0;
+
+    const pollStatus = () => {
+      if (cancelled || hasStartedPlaybackRef.current) return;
+      const thash = torrentHashRef.current || "";
+      const queryParam = thash ? `hash=${encodeURIComponent(thash)}` : `url=${encodeURIComponent(filePath)}`;
+      fetch(`${API_BASE}/stream/torrent_status?${queryParam}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (cancelled || hasStartedPlaybackRef.current) return;
+          if (data && data.success && data.status) {
+            setTorrentStatus(data.status);
+            const seeders = data.status.connected_seeders || 0;
+            const speed = data.status.download_speed || 0;
+            if (seeders === 0 && speed === 0) {
+              zeroSeedersCountRef.current += 1;
+              // Если в течение 35 секунд нет ни одного сидера, информируем пользователя
+              if (zeroSeedersCountRef.current >= 23 && !hasStartedPlaybackRef.current) {
+                setErrorMsg("На данной раздаче нет доступных сидеров в сети. Пожалуйста, вернитесь назад и выберите другую раздачу из списка.");
+                setIsBuffering(false);
+                return;
+              }
+            } else {
+              zeroSeedersCountRef.current = 0;
+            }
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (!cancelled && !hasStartedPlaybackRef.current) {
+            pollTimer = setTimeout(pollStatus, 1500);
+          }
+        });
+    };
+
+    pollStatus();
+
+    return () => {
+      cancelled = true;
+      if (pollTimer) clearTimeout(pollTimer);
+    };
+  }, [isOnline, hasStartedPlayback, filePath]);
 
   const lastToggleAtRef = useRef<number>(0);
   const togglePlay = useCallback(() => {
@@ -1154,10 +1208,14 @@ export const PlayerModal: FC<PlayerModalProps> = ({
       return;
     }
 
-    const detail = codeName ? ` (${codeName})` : "";
-    setErrorMsg(t("streamPlaybackError") + detail);
+    if (isOnline && zeroSeedersCountRef.current >= 5 && (!torrentStatus || (torrentStatus.connected_seeders || 0) === 0)) {
+      setErrorMsg("Раздача не отвечает: нет доступных сидеров в сети. Пожалуйста, вернитесь назад и выберите другую раздачу из списка.");
+    } else {
+      const detail = codeName ? ` (${codeName})` : "";
+      setErrorMsg(t("streamPlaybackError") + detail);
+    }
     setIsBuffering(false);
-  }, [filePath, isDirectStream, isOnline, retryPlayback, t]);
+  }, [filePath, isDirectStream, isOnline, retryPlayback, t, torrentStatus]);
 
   useEffect(() => {
     setErrorMsg(null);
@@ -1516,6 +1574,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
             logoPath={logoPath}
             title={title}
             isOnline={isOnline}
+            torrentStatus={torrentStatus}
           />
 
               <video
@@ -1570,31 +1629,50 @@ export const PlayerModal: FC<PlayerModalProps> = ({
                     <div style={{ color: "var(--ds-danger, #e53e3e)", fontSize: 16, fontWeight: 600, lineHeight: 1.4 }}>
                       {errorMsg}
                     </div>
-                    <Focusable
-                      tabIndex={0}
-                      className="ds-btn ds-btn-primary gpfocus"
-                      onActivate={() => {
-                        setErrorMsg(null);
-                        retryCountRef.current = 0;
-                        setIsBuffering(true);
-                        retryPlayback();
-                      }}
-                      onClick={() => {
-                        setErrorMsg(null);
-                        retryCountRef.current = 0;
-                        setIsBuffering(true);
-                        retryPlayback();
-                      }}
-                      style={{
-                        padding: "8px 24px",
-                        fontSize: 14,
-                        fontWeight: 600,
-                        borderRadius: 8,
-                        cursor: "pointer",
-                      }}
-                    >
-                      {t("retry") || "Повторить"}
-                    </Focusable>
+                    <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                      <Focusable
+                        tabIndex={0}
+                        className="ds-btn ds-btn-primary gpfocus"
+                        onActivate={() => {
+                          setErrorMsg(null);
+                          retryCountRef.current = 0;
+                          setIsBuffering(true);
+                          retryPlayback();
+                        }}
+                        onClick={() => {
+                          setErrorMsg(null);
+                          retryCountRef.current = 0;
+                          setIsBuffering(true);
+                          retryPlayback();
+                        }}
+                        style={{
+                          padding: "8px 24px",
+                          fontSize: 14,
+                          fontWeight: 600,
+                          borderRadius: 8,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {t("retry") || "Повторить"}
+                      </Focusable>
+                      <Focusable
+                        tabIndex={0}
+                        className="ds-btn ds-btn-secondary"
+                        onActivate={() => closeModalRef.current?.()}
+                        onClick={() => closeModalRef.current?.()}
+                        style={{
+                          padding: "8px 20px",
+                          fontSize: 14,
+                          fontWeight: 600,
+                          borderRadius: 8,
+                          cursor: "pointer",
+                          background: "rgba(255, 255, 255, 0.1)",
+                          color: "#fff",
+                        }}
+                      >
+                        {t("close") || "Закрыть"}
+                      </Focusable>
+                    </div>
                   </div>
                 </div>
               )}

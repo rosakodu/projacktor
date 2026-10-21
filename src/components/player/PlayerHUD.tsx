@@ -4,6 +4,19 @@ import { getBackdropUrl, getLogoUrl } from "../../api";
 import { PlayerMediaInfo } from "../../types";
 import { triggerHeartbeatHaptic } from "../../runtime/haptics";
 
+export interface TorrentStatusInfo {
+  stat?: number;
+  stat_string?: string;
+  connected_seeders?: number;
+  active_peers?: number;
+  total_peers?: number;
+  download_speed?: number;
+  preloaded_bytes?: number;
+  preloaded_pct?: number;
+  loaded_size?: number;
+  torrent_size?: number;
+}
+
 interface PlayerHUDProps {
   volumeHudVisible: boolean;
   volume: number;
@@ -18,6 +31,7 @@ interface PlayerHUDProps {
   logoPath: string | null;
   title: string;
   isOnline?: boolean;
+  torrentStatus?: TorrentStatusInfo | null;
 }
 
 export const PlayerHUD: FC<PlayerHUDProps> = ({
@@ -32,6 +46,8 @@ export const PlayerHUD: FC<PlayerHUDProps> = ({
   mediaInfo,
   logoPath,
   title,
+  isOnline,
+  torrentStatus,
 }) => {
   const [logoFailed, setLogoFailed] = useState(false);
   const [logoRetry, setLogoRetry] = useState(0);
@@ -258,6 +274,87 @@ export const PlayerHUD: FC<PlayerHUDProps> = ({
                   boxShadow: "0 0 20px rgba(0, 0, 0, 0.5)",
                 }}
               />
+            </div>
+          )}
+
+          {/* Индикатор буферизации торрента и статуса пиров */}
+          {isOnline && !hasStartedPlayback && !errorMsg && (
+            <div
+              style={{
+                position: "relative",
+                zIndex: 4,
+                marginTop: 22,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 8,
+                textAlign: "center",
+                maxWidth: 420,
+                padding: "0 16px",
+              }}
+            >
+              {torrentStatus ? (
+                <>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "rgba(255, 255, 255, 0.9)" }}>
+                    {(torrentStatus.connected_seeders || 0) > 0
+                      ? (torrentStatus.preloaded_pct && torrentStatus.preloaded_pct >= 100
+                          ? "Запуск воспроизведения..."
+                          : `Буферизация: ${torrentStatus.preloaded_pct || 0}%`)
+                      : "Поиск сидеров в сети..."}
+                  </div>
+
+                  <div
+                    style={{
+                      width: 200,
+                      height: 4,
+                      background: "rgba(255, 255, 255, 0.15)",
+                      borderRadius: 2,
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${Math.min(100, Math.max(5, torrentStatus.preloaded_pct || 0))}%`,
+                        height: "100%",
+                        background: "var(--ds-accent, #38bdf8)",
+                        borderRadius: 2,
+                        transition: "width 0.3s ease",
+                      }}
+                    />
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "rgba(255, 255, 255, 0.65)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                    }}
+                  >
+                    <span>
+                      Сидеры:{" "}
+                      <strong style={{ color: (torrentStatus.connected_seeders || 0) > 0 ? "#4ade80" : "#f87171" }}>
+                        {torrentStatus.connected_seeders || 0}
+                      </strong>
+                    </span>
+                    {(torrentStatus.download_speed || 0) > 0 && (
+                      <span>
+                        Скорость:{" "}
+                        <strong style={{ color: "#38bdf8" }}>
+                          {torrentStatus.download_speed! >= 1024 * 1024
+                            ? `${(torrentStatus.download_speed! / (1024 * 1024)).toFixed(1)} МБ/с`
+                            : `${Math.round(torrentStatus.download_speed! / 1024)} КБ/с`}
+                        </strong>
+                      </span>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: 12, color: "rgba(255, 255, 255, 0.6)" }}>
+                  Подключение к раздаче...
+                </div>
+              )}
             </div>
           )}
         </div>

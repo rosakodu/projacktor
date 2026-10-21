@@ -446,6 +446,8 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             self._send_json({"success": True})
         elif path == '/api/stream/probe':
             self._handle_stream_probe(query)
+        elif path == '/api/stream/torrent_status':
+            self._handle_stream_torrent_status(query)
         elif path == '/api/stream/subtitles':
             self._handle_stream_subtitles(query)
         elif path == '/api/torrserver/prewarm':
@@ -1163,7 +1165,7 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             stderr_thread.start()
 
             chunk_size = 128 * 1024
-            chunk_timeout = 75.0 if is_online else 25.0
+            chunk_timeout = 95.0 if is_online else 25.0
             first_chunk = b""
 
             try:
@@ -1402,6 +1404,21 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             
         res_info['subtitle_tracks'] = sub_tracks
         self._send_json(res_info)
+
+    def _handle_stream_torrent_status(self, query):
+        thash = (query.get('hash', [''])[0] or '').lower()
+        if not thash:
+            url = query.get('url', [''])[0]
+            if url:
+                parsed = urllib.parse.urlparse(url)
+                qs = urllib.parse.parse_qs(parsed.query)
+                thash = (qs.get('link', [''])[0] or '').lower()
+        if thash and plugin_instance and plugin_instance.ts:
+            st = plugin_instance.ts.get_torrent_status(thash)
+            if st:
+                self._send_json({"success": True, "status": st})
+                return
+        self._send_json({"success": False, "status": None})
 
     def _handle_stream_subtitles(self, query):
         url = query.get('url', [''])[0]

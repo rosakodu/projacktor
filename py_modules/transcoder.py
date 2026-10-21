@@ -210,20 +210,15 @@ def resolve_transcode_plan(
 
     # Determine hardware acceleration method
     hw_accel = "none"
-    # Hardware decoding via VA-API on Steam Deck AMD APU (VanGogh/RDNA2) supports HEVC, H.264, VP9.
-    # AV1 lacks hardware decoding on Steam Deck APU and must use CPU software transcoding.
-    # Legacy codecs (MPEG-4 / XviD / DivX, MPEG-2, VC-1, WMV) also lack hardware decoding support.
     HW_SUPPORTED_VCODECS = {"hevc", "h265", "h264", "avc1", "vp9"}
-    can_hw_accel = vcodec in HW_SUPPORTED_VCODECS
 
-    if video_needs_transcode and can_hw_accel:
+    if video_needs_transcode:
         if has_nvenc_support():
             hw_accel = "nvenc"
         elif has_vaapi_support():
             hw_accel = "vaapi"
         else:
             hw_accel = "none"
-
 
     use_vaapi = (hw_accel == "vaapi")
     is_docked = is_external_display_connected()
@@ -241,11 +236,10 @@ def resolve_transcode_plan(
     if video_needs_transcode:
         accel_tag = "VA-API" if hw_accel == "vaapi" else ("NVIDIA NVENC" if hw_accel == "nvenc" else "CPU Software")
         
-        # For 10-bit HDR content (Dolby Vision, HDR10, etc.) or non-standard pixel formats (gbrp, yuv444p, rgb, etc.) with VA-API:
-        # AMD GPU on Steam Deck cannot convert P010/non-420p→NV12 inside scale_vaapi filter.
+        # For 10-bit HDR content, non-standard pixel formats, or codecs without VA-API hardware decode:
         # Use software decode → software scale → hwupload → h264_vaapi encoder instead.
         is_standard_8bit = pix_fmt in ["yuv420p", "yuvj420p"]
-        vaapi_sw_decode = (hw_accel == "vaapi") and (is_10bit or not is_standard_8bit)
+        vaapi_sw_decode = (hw_accel == "vaapi") and (is_10bit or not is_standard_8bit or vcodec not in HW_SUPPORTED_VCODECS)
         if vaapi_sw_decode:
             accel_tag = "VA-API 10bit/Conv" if is_10bit else "VA-API Conv"
         

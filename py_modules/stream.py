@@ -203,10 +203,9 @@ def probe_media_file(filepath):
                     "-reconnect_delay_max", "2"
                 ]
             probe_url = filepath
-            if is_http and "127.0.0.1:8095" in probe_url:
-                # Do NOT include &play in probe requests to prevent stealing or dropping active playback sessions in TorrServer
-                import re
-                probe_url = re.sub(r'[?&]play(&|$)', r'\1', probe_url).rstrip('?&')
+            if is_http and ("127.0.0.1:" in probe_url or "localhost:" in probe_url) and "/stream/" in probe_url:
+                if "&play" not in probe_url and "?play" not in probe_url:
+                    probe_url += ("&play" if "?" in probe_url else "?play")
             cmd.append(probe_url)
             env = _clean_env()
             out = subprocess.check_output(cmd, env=env, timeout=timeout).decode('utf-8')
