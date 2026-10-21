@@ -182,8 +182,8 @@ def probe_media_file(filepath):
                 return {}
 
         ffprobe_bin = get_bin_path("ffprobe")
-        probesize = "1500000" if is_http else "6000000"
-        analyzeduration = "2000000" if is_http else "4000000"
+        probesize = "2500000" if is_http else "6000000"
+        analyzeduration = "2500000" if is_http else "4000000"
 
         def run_ffprobe(psize, adur, timeout):
             cmd = [
@@ -203,36 +203,19 @@ def probe_media_file(filepath):
                     "-reconnect_delay_max", "2"
                 ]
             probe_url = filepath
-            if is_http and "127.0.0.1:8095" in probe_url and "/stream" in probe_url and "&play" not in probe_url:
-                probe_url += "&play"
+            if is_http and "127.0.0.1:8095" in probe_url:
+                # Do NOT include &play in probe requests to prevent stealing or dropping active playback sessions in TorrServer
+                import re
+                probe_url = re.sub(r'[?&]play(&|$)', r'\1', probe_url).rstrip('?&')
             cmd.append(probe_url)
             env = _clean_env()
             out = subprocess.check_output(cmd, env=env, timeout=timeout).decode('utf-8')
             return json.loads(out)
 
-        probe_timeout = 20.0 if is_http else 15.0
+        probe_timeout = 25.0 if is_http else 15.0
         try:
             data = run_ffprobe(probesize, analyzeduration, probe_timeout)
             vcodec, acodec, duration, audio_tracks, subtitle_tracks, width, height, pix_fmt, color_transfer = _parse_ffprobe_data(data)
-
-            # Если для HTTP потока субтитры не обнаружены при первом быстром проходе,
-            # делаем второй проход с увеличенным размером пробы (6MB / 5s),
-            # так как субтитры часто находятся дальше в заголовках MKV/MP4 контейнеров
-            if is_http and len(subtitle_tracks) == 0:
-                try:
-                    retry_data = run_ffprobe("6000000", "5000000", 3.0)
-                    _, _, r_dur, r_audio, r_subs, r_w, r_h, r_pix, r_ct = _parse_ffprobe_data(retry_data)
-                    if r_subs:
-                        subtitle_tracks = r_subs
-                        logger.info(f"[probe_media_file] Retry found {len(r_subs)} subtitle tracks")
-                    if len(r_audio) > len(audio_tracks):
-                        audio_tracks = r_audio
-                    if r_dur > duration:
-                        duration = r_dur
-                    if r_w and r_h:
-                        width, height = r_w, r_h
-                except Exception as e:
-                    logger.debug(f"[probe_media_file] Retry probe skipped/failed: {e}")
             
             # Direct playback in Chromium HTML5 <video> is ONLY supported for non-HTTP local files in MP4/WebM with 8-bit H264/VP8/VP9 and AAC/MP3.
             # Chromium/CEF does NOT support 10-bit H.264 (Hi10P) or HEVC in HTML5 video.

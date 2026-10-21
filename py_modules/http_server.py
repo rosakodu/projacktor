@@ -1163,20 +1163,32 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             stderr_thread.start()
 
             chunk_size = 128 * 1024
-            chunk_timeout = 30.0 if is_online else 15.0
+            chunk_timeout = 75.0 if is_online else 25.0
             first_chunk = b""
 
             try:
                 import select
-                ready = select.select([proc.stdout], [], [], chunk_timeout)
-                if ready[0]:
-                    first_chunk = proc.stdout.read(chunk_size)
+                # Wait for first bytes with periodic checks for process health
+                start_wait = time.time()
+                while time.time() - start_wait < chunk_timeout:
+                    if proc.poll() is not None:
+                        break
+                    ready = select.select([proc.stdout], [], [], 0.5)
+                    if ready[0]:
+                        try:
+                            first_chunk = os.read(proc.stdout.fileno(), chunk_size)
+                        except Exception:
+                            first_chunk = b""
+                        if first_chunk:
+                            break
 
-                # Fallback to software encoding if hardware transcode failed on startup
-                if (not first_chunk or proc.poll() is not None) and plan.get("hw_accel") != "none":
+                # Fallback to software encoding ONLY if hardware transcode genuinely crashed (poll() != 0)
+                # and NOT if it's just patiently waiting for TorrServer bytes
+                hw_failed = (proc.poll() is not None and proc.poll() != 0) and plan.get("hw_accel") != "none"
+                if hw_failed:
                     last_err = '; '.join(list(stderr_lines)[-3:])
                     logger.warning(
-                        f"[Stream] Hardware transcode ({plan.get('hw_accel')}) failed on startup (exit={proc.poll()}). "
+                        f"[Stream] Hardware transcode ({plan.get('hw_accel')}) crashed on startup (exit={proc.poll()}). "
                         f"Stderr: {last_err}. Retrying with CPU libx264 software fallback..."
                     )
                     # Clean up failed hardware process
@@ -1191,12 +1203,12 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                         except Exception:
                             pass
 
-                    # Build pure CPU fallback plan
+                    # Build pure CPU fallback plan with force_divisible_by=2 to prevent macroblock dimension crashes
                     fallback_plan = dict(plan)
                     fallback_plan["hw_accel"] = "none"
                     fallback_plan["use_vaapi"] = False
                     fallback_plan["video_needs_transcode"] = True
-                    fallback_plan["vf_filter"] = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease,format=yuv420p"
+                    fallback_plan["vf_filter"] = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuv420p"
                     fallback_cmd = build_ffmpeg_stream_command(
                         source=source,
                         plan=fallback_plan,
@@ -1220,21 +1232,29 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                     stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
                     stderr_thread.start()
 
-                    ready = select.select([proc.stdout], [], [], chunk_timeout)
-                    if ready[0]:
-                        first_chunk = proc.stdout.read(chunk_size)
+                    start_wait = time.time()
+                    while time.time() - start_wait < chunk_timeout:
+                        if proc.poll() is not None:
+                            break
+                        ready = select.select([proc.stdout], [], [], 0.5)
+                        if ready[0]:
+                            try:
+                                first_chunk = os.read(proc.stdout.fileno(), chunk_size)
+                            except Exception:
+                                first_chunk = b""
+                            if first_chunk:
+                                break
 
                 if not first_chunk:
                     last_err = '; '.join(list(stderr_lines)[-5:])
-                    logger.error(f"[Stream] FFmpeg produced no output in {int(chunk_timeout)}s, killing. stderr: {last_err}")
-                    self.send_response(503)
+                    logger.error(f"[Stream] FFmpeg produced no output in {int(chunk_timeout)}s (exit={proc.poll()}), aborting stream. stderr: {last_err}")
+                    # NEVER send 503 text/plain to HTML5 <video> because it triggers MEDIA_ERR_SRC_NOT_SUPPORTED
+                    self.send_response(504)
                     self.send_cors_headers()
-                    self.send_header('Content-Type', 'text/plain; charset=utf-8')
-                    self.send_header('Retry-After', '2')
+                    self.send_header('Content-Type', 'video/mp4')
                     self.end_headers()
-                    self.wfile.write(b"Stream not ready, buffering...")
                     proc.kill()
-                    proc.wait(timeout=2)
+                    proc.wait(timeout=1)
                     return
 
                 # Send headers ONLY AFTER first chunk of valid media data is obtained

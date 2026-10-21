@@ -196,7 +196,9 @@ def resolve_transcode_plan(
     audio_needs_transcode = (target_acodec not in ["aac", "mp3"]) or (not target_acodec) or (target_acodec == "unknown")
     # 8-bit H.264/AVC1 can be direct copied into fragmented MP4.
     # VP8/VP9, AV1, and 10-bit H.264 (Hi10P) are NOT supported inside HTML5 MP4 in CEF and cause black screen with audio.
-    video_is_compatible = (vcodec in ["h264", "avc1"]) and (not is_10bit)
+    # Non-standard pixel formats (yuv444p, yuv422p, gbrp, rgb24) also cause MEDIA_ERR_SRC_NOT_SUPPORTED in CEF.
+    is_standard_420 = (pix_fmt in ["yuv420p", "yuvj420p"]) if pix_fmt else True
+    video_is_compatible = (vcodec in ["h264", "avc1"]) and (not is_10bit) and is_standard_420
     
     if transcode_mode == "1":
         video_needs_transcode = True
@@ -243,40 +245,40 @@ def resolve_transcode_plan(
         # AMD GPU on Steam Deck cannot convert P010/non-420p→NV12 inside scale_vaapi filter.
         # Use software decode → software scale → hwupload → h264_vaapi encoder instead.
         is_standard_8bit = pix_fmt in ["yuv420p", "yuvj420p"]
-        vaapi_sw_decode = (hw_accel == "vaapi") and (is_10bit or (pix_fmt and not is_standard_8bit))
+        vaapi_sw_decode = (hw_accel == "vaapi") and (is_10bit or not is_standard_8bit)
         if vaapi_sw_decode:
             accel_tag = "VA-API 10bit/Conv" if is_10bit else "VA-API Conv"
         
         if pref_res == "720p":
             if hw_accel == "vaapi":
                 if vaapi_sw_decode:
-                    vf_filter = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease,format=nv12,hwupload"
+                    vf_filter = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=nv12,hwupload"
                 else:
-                    vf_filter = "scale_vaapi=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:format=nv12"
+                    vf_filter = "scale_vaapi=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:force_divisible_by=2:format=nv12"
             else:
-                vf_filter = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease,format=yuv420p"
+                vf_filter = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuv420p"
             target_bitrate = "7M"
             max_rate = "10M"
             profile_name = f"720p ({accel_tag})"
         elif pref_res == "1080p":
             if hw_accel == "vaapi":
                 if vaapi_sw_decode:
-                    vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease,format=nv12,hwupload"
+                    vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=nv12,hwupload"
                 else:
-                    vf_filter = "scale_vaapi=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:format=nv12"
+                    vf_filter = "scale_vaapi=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2:format=nv12"
             else:
-                vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease,format=yuv420p"
+                vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuv420p"
             target_bitrate = "15M"
             max_rate = "22M"
             profile_name = f"1080p ({accel_tag})"
         elif pref_res == "4k":
             if hw_accel == "vaapi":
                 if vaapi_sw_decode:
-                    vf_filter = "format=nv12,hwupload"
+                    vf_filter = "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2',format=nv12,hwupload"
                 else:
-                    vf_filter = "scale_vaapi=format=nv12"
+                    vf_filter = "scale_vaapi=w='trunc(iw/2)*2':h='trunc(ih/2)*2':format=nv12"
             else:
-                vf_filter = "format=yuv420p"
+                vf_filter = "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2',format=yuv420p"
             target_bitrate = "28M"
             max_rate = "40M"
             profile_name = f"4K Force ({accel_tag})"
@@ -287,11 +289,11 @@ def resolve_transcode_plan(
                     # Output native 4K to external 4K TV / Monitor
                     if hw_accel == "vaapi":
                         if vaapi_sw_decode:
-                            vf_filter = "format=nv12,hwupload"
+                            vf_filter = "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2',format=nv12,hwupload"
                         else:
-                            vf_filter = "scale_vaapi=format=nv12"
+                            vf_filter = "scale_vaapi=w='trunc(iw/2)*2':h='trunc(ih/2)*2':format=nv12"
                     else:
-                        vf_filter = "format=yuv420p"
+                        vf_filter = "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2',format=yuv420p"
                     target_bitrate = "28M"
                     max_rate = "40M"
                     profile_name = f"4K Native External ({accel_tag})"
@@ -300,42 +302,42 @@ def resolve_transcode_plan(
                     # Smart downscale 4K to 1080p for super-sampling sharpness, zero stutter and battery savings
                     if hw_accel == "vaapi":
                         if vaapi_sw_decode:
-                            vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease,format=nv12,hwupload"
+                            vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=nv12,hwupload"
                         else:
-                            vf_filter = "scale_vaapi=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:format=nv12"
+                            vf_filter = "scale_vaapi=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2:format=nv12"
                     else:
-                        vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease,format=yuv420p"
+                        vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuv420p"
                     target_bitrate = "14M"
                     max_rate = "20M"
                     profile_name = f"4K -> 1080p Adaptive Handheld ({accel_tag})"
             elif is_source_1080p:
                 if hw_accel == "vaapi":
                     if vaapi_sw_decode:
-                        vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease,format=nv12,hwupload"
+                        vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=nv12,hwupload"
                     else:
-                        vf_filter = "scale_vaapi=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:format=nv12"
+                        vf_filter = "scale_vaapi=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2:format=nv12"
                 else:
-                    vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease,format=yuv420p"
+                    vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuv420p"
                 target_bitrate = "14M"
                 max_rate = "20M"
                 profile_name = f"1080p Native ({accel_tag})"
             else:
                 if hw_accel == "vaapi":
                     if vaapi_sw_decode:
-                        vf_filter = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease,format=nv12,hwupload"
+                        vf_filter = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=nv12,hwupload"
                     else:
-                        vf_filter = "scale_vaapi=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:format=nv12"
+                        vf_filter = "scale_vaapi=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:force_divisible_by=2:format=nv12"
                 else:
-                    vf_filter = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease,format=yuv420p"
+                    vf_filter = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuv420p"
                 target_bitrate = "7M"
                 max_rate = "10M"
                 profile_name = f"720p Native ({accel_tag})"
 
     if video_needs_transcode and not vf_filter:
         if hw_accel == "vaapi":
-            vf_filter = "format=nv12,hwupload" if vaapi_sw_decode else "scale_vaapi=format=nv12"
+            vf_filter = "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2',format=nv12,hwupload" if vaapi_sw_decode else "scale_vaapi=w='trunc(iw/2)*2':h='trunc(ih/2)*2':format=nv12"
         else:
-            vf_filter = "format=yuv420p"
+            vf_filter = "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2',format=yuv420p"
 
     return {
         "video_needs_transcode": video_needs_transcode,

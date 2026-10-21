@@ -636,6 +636,15 @@ export const PlayerModal: FC<PlayerModalProps> = ({
         ? curUrl.replace(/t=\d+/, `t=${now}`)
         : `${curUrl}${curUrl.includes("?") ? "&" : "?"}t=${now}`;
     });
+    setTimeout(() => {
+      const video = videoRef.current;
+      if (video) {
+        try {
+          video.load();
+          video.play().catch(() => {});
+        } catch {}
+      }
+    }, 50);
   }, []);
 
   const commitPendingSeek = useCallback(() => {
@@ -957,10 +966,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
               console.log("[PlayerModal] Probe succeeded while video was in error state; auto-recovering video playback");
               setErrorMsg(null);
               retryCountRef.current = 0;
-              try {
-                video.load();
-                video.play().catch(() => {});
-              } catch {}
+              retryPlayback();
             }
           }
 
@@ -1138,7 +1144,7 @@ export const PlayerModal: FC<PlayerModalProps> = ({
     // Быстрый автоповтор для сглаживания переходных ошибок демультиплексора при перемотке, рестарте или буферизации торрента
     if (isTranscodeOrOnline && retryCountRef.current < maxRetries) {
       retryCountRef.current += 1;
-      const delayMs = hasStartedPlaybackRef.current ? 400 : Math.min(2500, 1000 + retryCountRef.current * 200);
+      const delayMs = hasStartedPlaybackRef.current ? 400 : Math.min(3000, 1000 + retryCountRef.current * 300);
       console.log(`[PlayerModal] Auto-retrying stream playback (attempt ${retryCountRef.current}/${maxRetries}) in ${delayMs}ms...`);
       setIsBuffering(true);
       if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
@@ -1148,11 +1154,8 @@ export const PlayerModal: FC<PlayerModalProps> = ({
       return;
     }
 
-    if (err && err.code === 2) {
-      setErrorMsg(t("streamPlaybackError") + ` (${codeName})`);
-    } else {
-      setErrorMsg(t("streamPlaybackError") + (err ? ` (${codeName})` : ""));
-    }
+    const detail = codeName ? ` (${codeName})` : "";
+    setErrorMsg(t("streamPlaybackError") + detail);
     setIsBuffering(false);
   }, [filePath, isDirectStream, isOnline, retryPlayback, t]);
 
