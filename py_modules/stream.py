@@ -216,16 +216,20 @@ def probe_media_file(filepath):
             data = run_ffprobe(probesize, analyzeduration, probe_timeout)
             vcodec, acodec, duration, audio_tracks, subtitle_tracks, width, height, pix_fmt, color_transfer = _parse_ffprobe_data(data)
             
-            # Direct playback in Chromium HTML5 <video> is ONLY supported for non-HTTP local files in MP4/WebM with 8-bit H264/VP8/VP9 and AAC/MP3.
-            # Chromium/CEF does NOT support 10-bit H.264 (Hi10P) or HEVC in HTML5 video.
+            # Direct playback in Chromium HTML5 <video> in SteamOS/Bazzite is ONLY supported for native WebM (VP8/VP9 + Opus/Vorbis).
+            # H.264/AAC is only supported if proprietary codecs are present (e.g. NVENC platform).
             is_10bit_probe = any(tag in (pix_fmt or '').lower() for tag in ['10le', '10be', 'p010', 'yuv420p10'])
             ext = os.path.splitext(filepath.split('?')[0])[1].lower()
+            
+            is_webm_native = (vcodec in ['vp8', 'vp9']) and (acodec in ['opus', 'vorbis']) and (ext in ['.webm'])
+            from .transcoder import has_nvenc_support
+            can_direct_mp4 = has_nvenc_support()
+            is_mp4_native = can_direct_mp4 and (vcodec in ['h264', 'avc1']) and (acodec in ['aac', 'mp3']) and (ext in ['.mp4', '.m4v'])
+
             direct = (
                 (not is_http) and
                 (not is_10bit_probe) and
-                (vcodec in ['h264', 'avc1', 'vp8', 'vp9']) and 
-                (acodec in ['aac', 'mp3']) and 
-                (ext in ['.mp4', '.m4v', '.webm'])
+                (is_webm_native or is_mp4_native)
             )
             res = {
                 "vcodec": vcodec,

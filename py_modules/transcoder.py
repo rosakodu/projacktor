@@ -103,7 +103,7 @@ def has_nvenc_support() -> bool:
 def has_vaapi_support() -> bool:
     """
     Checks if AMD / Intel VA-API DRM render node is present and accessible,
-    and verifies that FFmpeg actually has VA-API support and h264_vaapi encoder.
+    and verifies that FFmpeg actually has VA-API hardware acceleration support.
     If GPU is NVIDIA, VA-API is only used if NVENC is not supported.
     """
     global _VAAPI_SUPPORT_CACHE
@@ -125,19 +125,19 @@ def has_vaapi_support() -> bool:
         from .common import _clean_env
         import subprocess
         res = subprocess.run(
-            [ffmpeg_bin, "-hide_banner", "-encoders"],
+            [ffmpeg_bin, "-hide_banner", "-hwaccels"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             timeout=3,
             env=_clean_env()
         )
-        if "h264_vaapi" not in res.stdout:
-            logger.info(f"[Transcoder] FFmpeg at {ffmpeg_bin} lacks h264_vaapi encoder, disabling VA-API")
+        if "vaapi" not in res.stdout:
+            logger.info(f"[Transcoder] FFmpeg at {ffmpeg_bin} lacks vaapi hwaccel, disabling VA-API")
             _VAAPI_SUPPORT_CACHE = False
             return False
     except Exception as e:
-        logger.debug(f"[Transcoder] Error checking vaapi encoder in ffmpeg: {e}")
+        logger.debug(f"[Transcoder] Error checking vaapi hwaccel in ffmpeg: {e}")
         _VAAPI_SUPPORT_CACHE = False
         return False
 
@@ -153,11 +153,11 @@ def resolve_transcode_plan(
 ) -> dict:
     """
     Intelligently determines video/audio transcoding requirements and optimal parameters:
-    1. Passthrough (-c:v copy) for native H.264 video streams.
-    2. Smart hardware transcoding for HEVC/H.265 (VA-API on AMD/Intel, NVENC on NVIDIA).
-    3. Auto-adapts 4K streams based on handheld Steam Deck screen (800p) vs external 4K TV.
-    4. Never upscales 720p/1080p sources to higher resolutions.
-    5. Graceful CPU software fallback (libx264) if no hardware encoder is present.
+    1. For Linux / SteamOS / Bazzite (VA-API / CPU): uses open WebM (VP9 + Opus).
+    2. Passthrough (-c:v copy) only for native WebM streams (VP9/VP8 + Opus/Vorbis).
+    3. Realtime VP9 transcoding (libvpx-vp9) with VA-API hardware decoding for non-WebM sources.
+    4. Auto-adapts 4K streams based on handheld Steam Deck screen (800p) vs external 4K TV.
+    5. Graceful CPU software fallback (realtime libvpx-vp9) if hardware decoding is not present.
     """
     vcodec = (media_info.get("vcodec") or "").lower()
     acodec = (media_info.get("acodec") or "").lower()
@@ -165,12 +165,9 @@ def resolve_transcode_plan(
     height = int(media_info.get("height", 0) or 0)
     pix_fmt = (media_info.get("pix_fmt") or "").lower()
     color_transfer = (media_info.get("color_transfer") or "").lower()
-
     profile = (media_info.get("profile") or "").lower()
 
-    # Detect 10-bit HDR content that causes VA-API scale_vaapi format conversion failures.
-    # AMD GPUs on Steam Deck cannot do P010→NV12 conversion inside scale_vaapi
-    # when Dolby Vision / HDR10 metadata is present.
+    # Detect 10-bit HDR content
     is_10bit = (
         any(tag in pix_fmt for tag in ["10le", "10be", "p010", "yuv420p10", "yuv422p10", "yuv444p10"]) or
         any(tag in color_transfer for tag in ["smpte2084", "arib-std-b67"]) or
@@ -190,164 +187,167 @@ def resolve_transcode_plan(
         except Exception:
             pass
 
-    # Chromium HTML5 <video> in SteamOS Gamepad UI only natively supports AAC and MP3 in MP4 containers.
-    # Proprietary codecs (AC3, EAC3, DTS, TrueHD, FLAC, Vorbis) or unknown/empty codecs
-    # must be transcoded to AAC stereo to avoid silent video playback.
-    audio_needs_transcode = (target_acodec not in ["aac", "mp3"]) or (not target_acodec) or (target_acodec == "unknown")
-    # 8-bit H.264/AVC1 can be direct copied into fragmented MP4.
-    # VP8/VP9, AV1, and 10-bit H.264 (Hi10P) are NOT supported inside HTML5 MP4 in CEF and cause black screen with audio.
-    # Non-standard pixel formats (yuv444p, yuv422p, gbrp, rgb24) also cause MEDIA_ERR_SRC_NOT_SUPPORTED in CEF.
-    is_standard_420 = (pix_fmt in ["yuv420p", "yuvj420p"]) if pix_fmt else True
-    video_is_compatible = (vcodec in ["h264", "avc1"]) and (not is_10bit) and is_standard_420
-    
-    if transcode_mode == "1":
-        video_needs_transcode = True
-    elif transcode_mode == "0":
-        video_needs_transcode = False
+    # Hardware acceleration detection & target container
+    if has_nvenc_support():
+        hw_accel = "nvenc"
+        container = "mp4"
+    elif has_vaapi_support():
+        hw_accel = "vaapi"
+        container = "webm"
     else:
-        # For auto: only transcode video if codec is not directly supported in CEF HTML5 video (e.g. HEVC/H.265, VP9, AV1)
-        video_needs_transcode = not video_is_compatible
-
-    # Determine hardware acceleration method
-    hw_accel = "none"
-    HW_SUPPORTED_VCODECS = {"hevc", "h265", "h264", "avc1", "vp9"}
-
-    if video_needs_transcode:
-        if has_nvenc_support():
-            hw_accel = "nvenc"
-        elif has_vaapi_support():
-            hw_accel = "vaapi"
-        else:
-            hw_accel = "none"
+        hw_accel = "none"
+        container = "webm"
 
     use_vaapi = (hw_accel == "vaapi")
     is_docked = is_external_display_connected()
     pref_res = (user_max_res or "auto").lower()
 
+    is_standard_420 = (pix_fmt in ["yuv420p", "yuvj420p"]) if pix_fmt else True
+
+    # Valve's CEF build in SteamOS and Bazzite lacks proprietary H.264/AAC licenses.
+    # WebM (VP8/VP9 + Opus/Vorbis) is natively supported by Chromium on all Linux distros.
+    if container == "webm":
+        video_is_compatible = (vcodec in ["vp9", "vp8"]) and (not is_10bit) and is_standard_420
+        audio_is_compatible = (target_acodec in ["opus", "vorbis"])
+    else:
+        video_is_compatible = (vcodec in ["h264", "avc1"]) and (not is_10bit) and is_standard_420
+        audio_is_compatible = (target_acodec in ["aac", "mp3"])
+
+    if transcode_mode == "1":
+        video_needs_transcode = True
+        audio_needs_transcode = True
+    elif transcode_mode == "0":
+        video_needs_transcode = False
+        audio_needs_transcode = False
+    else:
+        video_needs_transcode = not video_is_compatible
+        audio_needs_transcode = not audio_is_compatible
+
     # Video profile selection
     is_source_4k = (width >= 3800 or height >= 2000)
     is_source_1080p = (width >= 1800 or height >= 1000)
 
-    target_bitrate = "15M"
-    max_rate = "22M"
+    target_bitrate = "4M" if container == "webm" else "15M"
+    min_rate = "1M" if container == "webm" else "0M"
+    max_rate = "6M" if container == "webm" else "22M"
     profile_name = "Direct Copy"
     vf_filter = ""
 
     if video_needs_transcode:
-        accel_tag = "VA-API" if hw_accel == "vaapi" else ("NVIDIA NVENC" if hw_accel == "nvenc" else "CPU Software")
-        
-        # For 10-bit HDR content, non-standard pixel formats, or codecs without VA-API hardware decode:
-        # Use software decode → software scale → hwupload → h264_vaapi encoder instead.
-        is_standard_8bit = pix_fmt in ["yuv420p", "yuvj420p"]
-        vaapi_sw_decode = (hw_accel == "vaapi") and (is_10bit or not is_standard_8bit or vcodec not in HW_SUPPORTED_VCODECS)
-        if vaapi_sw_decode:
-            accel_tag = "VA-API 10bit/Conv" if is_10bit else "VA-API Conv"
-        
-        if pref_res == "720p":
-            if hw_accel == "vaapi":
-                if vaapi_sw_decode:
-                    vf_filter = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=nv12,hwupload"
-                else:
-                    vf_filter = "scale_vaapi=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:force_divisible_by=2:format=nv12"
+        if container == "webm":
+            accel_tag = "VA-API VP9" if hw_accel == "vaapi" else "CPU VP9"
+            if pref_res == "720p":
+                vf_filter = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:force_divisible_by=2"
+                target_bitrate = "4M"
+                min_rate = "1M"
+                max_rate = "6M"
+                profile_name = f"720p ({accel_tag})"
+            elif pref_res == "1080p":
+                vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2"
+                target_bitrate = "7M"
+                min_rate = "2M"
+                max_rate = "10M"
+                profile_name = f"1080p ({accel_tag})"
+            elif pref_res == "4k":
+                vf_filter = "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2'"
+                target_bitrate = "14M"
+                min_rate = "4M"
+                max_rate = "20M"
+                profile_name = f"4K Force ({accel_tag})"
             else:
-                vf_filter = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuv420p"
-            target_bitrate = "7M"
-            max_rate = "10M"
-            profile_name = f"720p ({accel_tag})"
-        elif pref_res == "1080p":
-            if hw_accel == "vaapi":
-                if vaapi_sw_decode:
-                    vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=nv12,hwupload"
-                else:
-                    vf_filter = "scale_vaapi=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2:format=nv12"
-            else:
-                vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuv420p"
-            target_bitrate = "15M"
-            max_rate = "22M"
-            profile_name = f"1080p ({accel_tag})"
-        elif pref_res == "4k":
-            if hw_accel == "vaapi":
-                if vaapi_sw_decode:
-                    vf_filter = "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2',format=nv12,hwupload"
-                else:
-                    vf_filter = "scale_vaapi=w='trunc(iw/2)*2':h='trunc(ih/2)*2':format=nv12"
-            else:
-                vf_filter = "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2',format=yuv420p"
-            target_bitrate = "28M"
-            max_rate = "40M"
-            profile_name = f"4K Force ({accel_tag})"
-        else:
-            # AUTO mode: intelligent detection based on source dimensions and display
-            if is_source_4k:
-                if is_docked:
-                    # Output native 4K to external 4K TV / Monitor
-                    if hw_accel == "vaapi":
-                        if vaapi_sw_decode:
-                            vf_filter = "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2',format=nv12,hwupload"
-                        else:
-                            vf_filter = "scale_vaapi=w='trunc(iw/2)*2':h='trunc(ih/2)*2':format=nv12"
+                # AUTO mode
+                if is_source_4k:
+                    if is_docked:
+                        vf_filter = "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2'"
+                        target_bitrate = "14M"
+                        min_rate = "4M"
+                        max_rate = "20M"
+                        profile_name = f"4K Native External ({accel_tag})"
                     else:
-                        vf_filter = "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2',format=yuv420p"
-                    target_bitrate = "28M"
-                    max_rate = "40M"
-                    profile_name = f"4K Native External ({accel_tag})"
+                        vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2"
+                        target_bitrate = "7M"
+                        min_rate = "2M"
+                        max_rate = "10M"
+                        profile_name = f"4K -> 1080p Adaptive Handheld ({accel_tag})"
+                elif is_source_1080p:
+                    vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2"
+                    target_bitrate = "7M"
+                    min_rate = "2M"
+                    max_rate = "10M"
+                    profile_name = f"1080p Native ({accel_tag})"
                 else:
-                    # Handheld Steam Deck (800p display):
-                    # Smart downscale 4K to 1080p for super-sampling sharpness, zero stutter and battery savings
-                    if hw_accel == "vaapi":
-                        if vaapi_sw_decode:
-                            vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=nv12,hwupload"
-                        else:
-                            vf_filter = "scale_vaapi=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2:format=nv12"
+                    vf_filter = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:force_divisible_by=2"
+                    target_bitrate = "4M"
+                    min_rate = "1M"
+                    max_rate = "6M"
+                    profile_name = f"720p Native ({accel_tag})"
+        else:
+            accel_tag = "NVIDIA NVENC"
+            if pref_res == "720p":
+                vf_filter = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuv420p"
+                target_bitrate = "7M"
+                min_rate = "1M"
+                max_rate = "10M"
+                profile_name = f"720p ({accel_tag})"
+            elif pref_res == "1080p":
+                vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuv420p"
+                target_bitrate = "15M"
+                min_rate = "2M"
+                max_rate = "22M"
+                profile_name = f"1080p ({accel_tag})"
+            elif pref_res == "4k":
+                vf_filter = "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2',format=yuv420p"
+                target_bitrate = "28M"
+                min_rate = "4M"
+                max_rate = "40M"
+                profile_name = f"4K Force ({accel_tag})"
+            else:
+                if is_source_4k:
+                    if is_docked:
+                        vf_filter = "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2',format=yuv420p"
+                        target_bitrate = "28M"
+                        min_rate = "4M"
+                        max_rate = "40M"
+                        profile_name = f"4K Native External ({accel_tag})"
                     else:
                         vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuv420p"
-                    target_bitrate = "14M"
-                    max_rate = "20M"
-                    profile_name = f"4K -> 1080p Adaptive Handheld ({accel_tag})"
-            elif is_source_1080p:
-                if hw_accel == "vaapi":
-                    if vaapi_sw_decode:
-                        vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=nv12,hwupload"
-                    else:
-                        vf_filter = "scale_vaapi=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2:format=nv12"
-                else:
+                        target_bitrate = "14M"
+                        min_rate = "2M"
+                        max_rate = "20M"
+                        profile_name = f"4K -> 1080p Adaptive Handheld ({accel_tag})"
+                elif is_source_1080p:
                     vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuv420p"
-                target_bitrate = "14M"
-                max_rate = "20M"
-                profile_name = f"1080p Native ({accel_tag})"
-            else:
-                if hw_accel == "vaapi":
-                    if vaapi_sw_decode:
-                        vf_filter = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=nv12,hwupload"
-                    else:
-                        vf_filter = "scale_vaapi=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:force_divisible_by=2:format=nv12"
+                    target_bitrate = "14M"
+                    min_rate = "2M"
+                    max_rate = "20M"
+                    profile_name = f"1080p Native ({accel_tag})"
                 else:
                     vf_filter = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuv420p"
-                target_bitrate = "7M"
-                max_rate = "10M"
-                profile_name = f"720p Native ({accel_tag})"
+                    target_bitrate = "7M"
+                    min_rate = "1M"
+                    max_rate = "10M"
+                    profile_name = f"720p Native ({accel_tag})"
 
     if video_needs_transcode and not vf_filter:
-        if hw_accel == "vaapi":
-            vf_filter = "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2',format=nv12,hwupload" if vaapi_sw_decode else "scale_vaapi=w='trunc(iw/2)*2':h='trunc(ih/2)*2':format=nv12"
-        else:
-            vf_filter = "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2',format=yuv420p"
+        vf_filter = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:force_divisible_by=2"
 
     return {
         "video_needs_transcode": video_needs_transcode,
         "audio_needs_transcode": audio_needs_transcode,
         "hw_accel": hw_accel,
         "use_vaapi": use_vaapi,
+        "container": container,
         "is_docked": is_docked,
         "is_10bit": is_10bit,
-        "vaapi_sw_decode": vaapi_sw_decode if video_needs_transcode else False,
         "profile_name": profile_name,
         "vf_filter": vf_filter,
         "target_bitrate": target_bitrate,
+        "min_rate": min_rate,
         "max_rate": max_rate,
         "vcodec": vcodec,
         "acodec": target_acodec
     }
+
 
 def build_ffmpeg_stream_command(
     source: str,
@@ -362,7 +362,8 @@ def build_ffmpeg_stream_command(
     cmd = [ffmpeg_bin, "-hide_banner", "-loglevel", "error"]
 
     hw_accel = plan.get("hw_accel", "none")
-    is_10bit = plan.get("is_10bit", False)
+    container = plan.get("container", "webm")
+
     if hw_accel == "vaapi":
         cmd += [
             "-init_hw_device", "vaapi=va:/dev/dri/renderD128",
@@ -370,15 +371,12 @@ def build_ffmpeg_stream_command(
             "-hwaccel", "vaapi",
             "-hwaccel_device", "va"
         ]
-        # For 10-bit HDR content or non-standard pixel formats (gbrp, yuv444p, etc.), skip -hwaccel_output_format vaapi
-        # so frames are decoded to system memory where software scale+format can process them.
-        # The hwupload filter in the vf chain will re-upload to GPU for h264_vaapi encoding.
-        if not plan.get("vaapi_sw_decode", is_10bit):
-            cmd += ["-hwaccel_output_format", "vaapi"]
+        # Note: We omit -hwaccel_output_format vaapi so GPU decodes directly to system memory.
+        # This allows CPU swscale and libvpx-vp9 to process frames cleanly with zero Mesa slice header bugs.
 
     has_start_offset = start_time > 0
     if has_start_offset:
-        if not plan["video_needs_transcode"]:
+        if not plan.get("video_needs_transcode", True):
             cmd += ["-noaccurate_seek"]
         cmd += ["-ss", str(start_time)]
 
@@ -400,18 +398,21 @@ def build_ffmpeg_stream_command(
     else:
         cmd += ["-map", "0:V:0?", "-map", "0:a:0?"]
 
-    if plan["video_needs_transcode"]:
-        buf_mb = int(plan["max_rate"].rstrip("M")) * 2
-        if hw_accel == "vaapi":
+    if plan.get("video_needs_transcode", True):
+        if container == "webm":
             cmd += [
                 "-vf", plan["vf_filter"],
-                "-c:v", "h264_vaapi",
-                "-g", "60",
+                "-c:v", "libvpx-vp9",
+                "-deadline", "realtime",
+                "-cpu-used", "8",
+                "-row-mt", "1",
+                "-threads", "8",
                 "-b:v", plan["target_bitrate"],
-                "-maxrate", plan["max_rate"],
-                "-bufsize", f"{buf_mb}M"
+                "-minrate", plan.get("min_rate", "1M"),
+                "-maxrate", plan["max_rate"]
             ]
         elif hw_accel == "nvenc":
+            buf_mb = int(plan["max_rate"].rstrip("M")) * 2
             cmd += [
                 "-vf", plan["vf_filter"],
                 "-c:v", "h264_nvenc",
@@ -423,7 +424,6 @@ def build_ffmpeg_stream_command(
                 "-bufsize", f"{buf_mb}M"
             ]
         else:
-            # Software fallback if hardware acceleration is not available
             cmd += [
                 "-vf", plan["vf_filter"],
                 "-c:v", "libx264",
@@ -435,19 +435,31 @@ def build_ffmpeg_stream_command(
     else:
         cmd += ["-c:v", "copy"]
 
-    if plan["audio_needs_transcode"]:
-        cmd += ["-c:a", "aac", "-b:a", "192k", "-ac", "2", "-af", "aresample=async=1000"]
+    if plan.get("audio_needs_transcode", True):
+        if container == "webm":
+            cmd += ["-c:a", "libopus", "-b:a", "128k", "-ac", "2", "-af", "aresample=async=1000"]
+        else:
+            cmd += ["-c:a", "aac", "-b:a", "192k", "-ac", "2", "-af", "aresample=async=1000"]
     else:
         cmd += ["-c:a", "copy"]
 
-    cmd += [
-        "-sn",
-        "-avoid_negative_ts", "make_zero",
-        "-max_muxing_queue_size", "2048",
-        "-movflags", "frag_keyframe+empty_moov+default_base_moof",
-        "-frag_duration", "1000000",
-        "-f", "mp4",
-        "pipe:1"
-    ]
+    if container == "webm":
+        cmd += [
+            "-sn",
+            "-avoid_negative_ts", "make_zero",
+            "-max_muxing_queue_size", "2048",
+            "-f", "webm",
+            "pipe:1"
+        ]
+    else:
+        cmd += [
+            "-sn",
+            "-avoid_negative_ts", "make_zero",
+            "-max_muxing_queue_size", "2048",
+            "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+            "-frag_duration", "1000000",
+            "-f", "mp4",
+            "pipe:1"
+        ]
 
     return cmd

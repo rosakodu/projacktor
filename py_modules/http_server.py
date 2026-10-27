@@ -346,7 +346,7 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             return
         self.send_response(200)
         self.send_cors_headers()
-        self.send_header('Content-Type', 'video/mp4')
+        self.send_header('Content-Type', 'video/webm')
         self.send_header('Accept-Ranges', 'none')
         self.end_headers()
 
@@ -1102,13 +1102,18 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
             user_max_res=user_max_res
         )
 
+        stream_container = plan.get("container", "webm" if plan.get("hw_accel") in ["vaapi", "none"] else "mp4")
+        content_type = "video/webm" if stream_container == "webm" else "video/mp4"
+
         logger.info(
             f"[Transcoder] source={clean_ext} vcodec={plan['vcodec']} acodec={plan['acodec']} "
-            f"profile='{plan['profile_name']}' docked={plan['is_docked']} hw_accel={plan['hw_accel']}"
+            f"profile='{plan['profile_name']}' docked={plan['is_docked']} hw_accel={plan['hw_accel']} "
+            f"container={stream_container}"
         )
 
-        container_needs_remux = is_http or (clean_ext not in ['.mp4', '.m4v', '.webm']) or plan["audio_needs_transcode"]
-        is_native_local = (not is_http) and (clean_ext in ['.mp4', '.m4v', '.webm']) and (not plan["audio_needs_transcode"]) and (not plan["video_needs_transcode"])
+        valid_native_exts = ['.webm'] if stream_container == 'webm' else ['.mp4', '.m4v']
+        container_needs_remux = is_http or (clean_ext not in valid_native_exts) or plan["audio_needs_transcode"]
+        is_native_local = (not is_http) and (clean_ext in valid_native_exts) and (not plan["audio_needs_transcode"]) and (not plan["video_needs_transcode"])
 
         if is_native_local and transcode_mode != '1':
             must_transcode = False
@@ -1210,7 +1215,13 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                     fallback_plan["hw_accel"] = "none"
                     fallback_plan["use_vaapi"] = False
                     fallback_plan["video_needs_transcode"] = True
-                    fallback_plan["vf_filter"] = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuv420p"
+                    if stream_container == "webm":
+                        fallback_plan["vf_filter"] = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:force_divisible_by=2"
+                        fallback_plan["target_bitrate"] = "4M"
+                        fallback_plan["min_rate"] = "1M"
+                        fallback_plan["max_rate"] = "6M"
+                    else:
+                        fallback_plan["vf_filter"] = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuv420p"
                     fallback_cmd = build_ffmpeg_stream_command(
                         source=source,
                         plan=fallback_plan,
@@ -1253,7 +1264,7 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                     # NEVER send 503 text/plain to HTML5 <video> because it triggers MEDIA_ERR_SRC_NOT_SUPPORTED
                     self.send_response(504)
                     self.send_cors_headers()
-                    self.send_header('Content-Type', 'video/mp4')
+                    self.send_header('Content-Type', content_type)
                     self.end_headers()
                     proc.kill()
                     proc.wait(timeout=1)
@@ -1262,7 +1273,7 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                 # Send headers ONLY AFTER first chunk of valid media data is obtained
                 self.send_response(200)
                 self.send_cors_headers()
-                self.send_header('Content-Type', 'video/mp4')
+                self.send_header('Content-Type', content_type)
                 self.send_header('Accept-Ranges', 'none')
                 self.send_header('Cache-Control', 'no-cache')
                 self.end_headers()
@@ -1332,9 +1343,11 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                     end = match.group(2)
                     end = int(end) if end else file_size - 1
                     
+                    local_ext = os.path.splitext(source)[1].lower()
+                    local_mime = "video/webm" if local_ext == ".webm" else "video/mp4"
                     self.send_response(206)
                     self.send_cors_headers()
-                    self.send_header('Content-Type', 'video/mp4')
+                    self.send_header('Content-Type', local_mime)
                     self.send_header('Content-Range', f'bytes {start}-{end}/{file_size}')
                     self.send_header('Accept-Ranges', 'bytes')
                     self.send_header('Content-Length', str(end - start + 1))
@@ -1354,9 +1367,11 @@ class ProjacktorRequestHandler(BaseHTTPRequestHandler):
                             to_read -= len(data)
                     return
             
+            local_ext = os.path.splitext(source)[1].lower()
+            local_mime = "video/webm" if local_ext == ".webm" else "video/mp4"
             self.send_response(200)
             self.send_cors_headers()
-            self.send_header('Content-Type', 'video/mp4')
+            self.send_header('Content-Type', local_mime)
             self.send_header('Content-Length', str(file_size))
             self.send_header('Accept-Ranges', 'bytes')
             self.end_headers()
