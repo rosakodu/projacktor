@@ -8,6 +8,7 @@ logger = logging.getLogger("projacktor.transcoder")
 _GPU_VENDOR_CACHE = None
 _NVENC_SUPPORT_CACHE = None
 _VAAPI_SUPPORT_CACHE = None
+_VAAPI_AV1_SUPPORT_CACHE = None
 
 def is_external_display_connected() -> bool:
     """
@@ -144,6 +145,49 @@ def has_vaapi_support() -> bool:
     _VAAPI_SUPPORT_CACHE = True
     return True
 
+def has_vaapi_av1_support() -> bool:
+    """
+    Checks if GPU driver and FFmpeg actually support hardware AV1 encoding via VA-API (av1_vaapi).
+    Supported on modern AMD RDNA 3/4 (RX 7000/9000 series, Phoenix APUs) and Intel Arc / Core Ultra.
+    Provides ~0% CPU usage and silent fans for WebM streaming on modern GPUs.
+    """
+    global _VAAPI_AV1_SUPPORT_CACHE
+    if _VAAPI_AV1_SUPPORT_CACHE is not None:
+        return _VAAPI_AV1_SUPPORT_CACHE
+
+    if not has_vaapi_support():
+        _VAAPI_AV1_SUPPORT_CACHE = False
+        return False
+
+    ffmpeg_bin = get_bin_path("ffmpeg")
+    try:
+        from .common import _clean_env
+        import subprocess
+        probe = subprocess.run(
+            [
+                ffmpeg_bin, "-hide_banner", "-loglevel", "error",
+                "-init_hw_device", "vaapi=va:/dev/dri/renderD128",
+                "-filter_hw_device", "va",
+                "-f", "lavfi", "-i", "nullsrc=s=128x128:d=0.04",
+                "-vf", "format=nv12,hwupload",
+                "-c:v", "av1_vaapi",
+                "-f", "null", "-"
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=3,
+            env=_clean_env()
+        )
+        _VAAPI_AV1_SUPPORT_CACHE = (probe.returncode == 0)
+        if _VAAPI_AV1_SUPPORT_CACHE:
+            logger.info("[Transcoder] Hardware AV1 encoding (av1_vaapi) is verified and supported on this GPU!")
+    except Exception as e:
+        logger.debug(f"[Transcoder] Error checking av1_vaapi: {e}")
+        _VAAPI_AV1_SUPPORT_CACHE = False
+
+    return _VAAPI_AV1_SUPPORT_CACHE
+
+
 def resolve_transcode_plan(
     media_info: dict,
     audio_idx: str = "",
@@ -191,6 +235,9 @@ def resolve_transcode_plan(
     if has_nvenc_support():
         hw_accel = "nvenc"
         container = "mp4"
+    elif has_vaapi_av1_support():
+        hw_accel = "vaapi_av1"
+        container = "webm"
     elif has_vaapi_support():
         hw_accel = "vaapi"
         container = "webm"
@@ -235,21 +282,22 @@ def resolve_transcode_plan(
 
     if video_needs_transcode:
         if container == "webm":
-            accel_tag = "VA-API VP9" if hw_accel == "vaapi" else "CPU VP9"
+            is_av1_hw = (hw_accel == "vaapi_av1")
+            accel_tag = "VA-API AV1 HW" if is_av1_hw else ("VA-API Dec + VP9" if hw_accel == "vaapi" else "CPU VP9")
             if pref_res == "720p":
-                vf_filter = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:force_divisible_by=2"
+                vf_filter = "scale_vaapi=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:force_divisible_by=2:format=nv12" if is_av1_hw else "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:force_divisible_by=2"
                 target_bitrate = "4M"
                 min_rate = "1M"
                 max_rate = "6M"
                 profile_name = f"720p ({accel_tag})"
             elif pref_res == "1080p":
-                vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2"
+                vf_filter = "scale_vaapi=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2:format=nv12" if is_av1_hw else "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2"
                 target_bitrate = "7M"
                 min_rate = "2M"
                 max_rate = "10M"
                 profile_name = f"1080p ({accel_tag})"
             elif pref_res == "4k":
-                vf_filter = "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2'"
+                vf_filter = "scale_vaapi=w='trunc(iw/2)*2':h='trunc(ih/2)*2':format=nv12" if is_av1_hw else "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2'"
                 target_bitrate = "14M"
                 min_rate = "4M"
                 max_rate = "20M"
@@ -258,25 +306,25 @@ def resolve_transcode_plan(
                 # AUTO mode
                 if is_source_4k:
                     if is_docked:
-                        vf_filter = "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2'"
+                        vf_filter = "scale_vaapi=w='trunc(iw/2)*2':h='trunc(ih/2)*2':format=nv12" if is_av1_hw else "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2'"
                         target_bitrate = "14M"
                         min_rate = "4M"
                         max_rate = "20M"
                         profile_name = f"4K Native External ({accel_tag})"
                     else:
-                        vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2"
+                        vf_filter = "scale_vaapi=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2:format=nv12" if is_av1_hw else "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2"
                         target_bitrate = "7M"
                         min_rate = "2M"
                         max_rate = "10M"
                         profile_name = f"4K -> 1080p Adaptive Handheld ({accel_tag})"
                 elif is_source_1080p:
-                    vf_filter = "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2"
+                    vf_filter = "scale_vaapi=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2:format=nv12" if is_av1_hw else "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2"
                     target_bitrate = "7M"
                     min_rate = "2M"
                     max_rate = "10M"
                     profile_name = f"1080p Native ({accel_tag})"
                 else:
-                    vf_filter = "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:force_divisible_by=2"
+                    vf_filter = "scale_vaapi=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:force_divisible_by=2:format=nv12" if is_av1_hw else "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:force_divisible_by=2"
                     target_bitrate = "4M"
                     min_rate = "1M"
                     max_rate = "6M"
@@ -364,15 +412,17 @@ def build_ffmpeg_stream_command(
     hw_accel = plan.get("hw_accel", "none")
     container = plan.get("container", "webm")
 
-    if hw_accel == "vaapi":
+    if hw_accel in ("vaapi", "vaapi_av1"):
         cmd += [
             "-init_hw_device", "vaapi=va:/dev/dri/renderD128",
             "-filter_hw_device", "va",
             "-hwaccel", "vaapi",
             "-hwaccel_device", "va"
         ]
-        # Note: We omit -hwaccel_output_format vaapi so GPU decodes directly to system memory.
-        # This allows CPU swscale and libvpx-vp9 to process frames cleanly with zero Mesa slice header bugs.
+        # For hardware encoding (av1_vaapi), keep frames on GPU in VA-API surface.
+        # For software libvpx-vp9 (Steam Deck), omit -hwaccel_output_format vaapi so GPU decodes directly to RAM.
+        if hw_accel == "vaapi_av1":
+            cmd += ["-hwaccel_output_format", "vaapi"]
 
     has_start_offset = start_time > 0
     if has_start_offset:
@@ -399,17 +449,33 @@ def build_ffmpeg_stream_command(
         cmd += ["-map", "0:V:0?", "-map", "0:a:0?"]
 
     if plan.get("video_needs_transcode", True):
-        if container == "webm":
+        buf_mb = int(plan["max_rate"].rstrip("M")) * 2
+        if hw_accel == "vaapi_av1":
+            cmd += [
+                "-vf", plan["vf_filter"],
+                "-c:v", "av1_vaapi",
+                "-g", "60",
+                "-b:v", plan["target_bitrate"],
+                "-maxrate", plan["max_rate"],
+                "-bufsize", f"{buf_mb}M"
+            ]
+        elif container == "webm":
+            cpu_threads = str(min(4, os.cpu_count() or 4))
             cmd += [
                 "-vf", plan["vf_filter"],
                 "-c:v", "libvpx-vp9",
                 "-deadline", "realtime",
                 "-cpu-used", "8",
                 "-row-mt", "1",
-                "-threads", "8",
+                "-threads", cpu_threads,
+                "-g", "60",
+                "-lag-in-frames", "0",
+                "-error-resilient", "1",
+                "-auto-alt-ref", "0",
                 "-b:v", plan["target_bitrate"],
                 "-minrate", plan.get("min_rate", "1M"),
-                "-maxrate", plan["max_rate"]
+                "-maxrate", plan["max_rate"],
+                "-bufsize", f"{buf_mb}M"
             ]
         elif hw_accel == "nvenc":
             buf_mb = int(plan["max_rate"].rstrip("M")) * 2

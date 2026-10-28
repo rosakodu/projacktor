@@ -269,6 +269,16 @@ class DownloadManager:
 
             # Если задача уже числится как 'completed', но на диске нет .aria2 — пропускаем её
             if row['status'] == 'completed' and not has_aria2:
+                # Очищаем завершенную задачу из памяти и сессии aria2c, чтобы она не стартовала заново при ребуте
+                if gid and task_map.get(gid):
+                    try:
+                        self._rpc_call("aria2.remove", [gid])
+                    except Exception:
+                        pass
+                    try:
+                        self._rpc_call("aria2.removeDownloadResult", [gid])
+                    except Exception:
+                        pass
                 continue
 
             # 1. Приоритетная проверка диска: если видеофайл готов и .aria2 файла нет, и нет активной задачи aria2c
@@ -438,6 +448,12 @@ class DownloadManager:
                 cursor.execute("UPDATE downloads SET completed_at=CURRENT_TIMESTAMP WHERE id=?", (row_id,))
                 if row['download_dir'] and row['media_id']:
                     self._scan_and_add_files(cursor, row['media_id'], row['download_dir'])
+                # Удаляем завершенную задачу из сессии aria2c
+                if gid:
+                    try:
+                        self._rpc_call("aria2.removeDownloadResult", [gid])
+                    except Exception:
+                        pass
             db.commit()
         
     def _scan_and_add_files(self, cursor, media_id, ddir):
