@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { rpcGetSteamLanguage } from "../api";
-import { Locale, getLocale, setLocale, subscribeLocale } from "./state";
+import { Locale, getLocale, setLocale, subscribeLocale, detectSteamLanguage } from "./state";
 
 export * from "./state";
 
@@ -353,14 +353,22 @@ export function initI18n(): Promise<Locale> {
   if (initPromise) return initPromise;
   initPromise = (async () => {
     try {
+      const clientLang = detectSteamLanguage();
+      if (clientLang) {
+        const isEn = clientLang.startsWith("en") || clientLang === "english";
+        const loc: Locale = isEn ? "en" : "ru";
+        setLocale(loc);
+        return loc;
+      }
       const steamLang = await rpcGetSteamLanguage();
       const isEn =
-        typeof steamLang === "string" && steamLang.toLowerCase().startsWith("en");
+        typeof steamLang === "string" &&
+        (steamLang.toLowerCase().startsWith("en") || steamLang.toLowerCase() === "english");
       const loc: Locale = isEn ? "en" : "ru";
       setLocale(loc);
       return loc;
     } catch {
-      return "ru";
+      return getLocale();
     }
   })();
   return initPromise;

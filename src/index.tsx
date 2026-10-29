@@ -1,8 +1,6 @@
 import { FC, useState, useEffect } from "react";
 import {
   ButtonItem,
-  PanelSection,
-  PanelSectionRow,
   staticClasses,
   Navigation,
 } from "@decky/ui";
@@ -11,6 +9,7 @@ import { FaVideo } from "react-icons/fa";
 import { ProjacktorApp } from "./views/ProjacktorApp";
 import { GlobalMagicBlackOverlay } from "./components/GlobalMagicBlackOverlay";
 import { cleanupControllerInput } from "./runtime/controllerInput";
+import { detectSteamLanguage } from "./i18n";
 
 // ── RPC-вызовы Python бэкенда ────────────────────────────────
 const getSteamLanguage = callable<[], string>("get_steam_language");
@@ -41,17 +40,28 @@ const T: Record<string, Record<string, string>> = {
 
 // ── Основной контент панели Decky (QAM) ──────────────────────
 const Content: FC = () => {
-  const [lang, setLang] = useState<string>("russian");
+  const [lang, setLang] = useState<string>(() => {
+    const cl = detectSteamLanguage();
+    return cl.startsWith("en") || cl === "english" ? "english" : "russian";
+  });
   const t = T[lang] ?? T.russian;
 
   useEffect(() => {
+    const cl = detectSteamLanguage();
+    if (cl) {
+      setLang(cl.startsWith("en") || cl === "english" ? "english" : "russian");
+      return;
+    }
+
     getSteamLanguage()
       .then((l: unknown) => {
         const steamLang = (typeof l === "string" ? l : "").toLowerCase();
-        if (steamLang.startsWith("en")) {
+        if (steamLang.startsWith("en") || steamLang === "english") {
           setLang("english");
         } else if (T[steamLang]) {
           setLang(steamLang);
+        } else {
+          setLang("russian");
         }
       })
       .catch(() => {});
@@ -79,21 +89,17 @@ const Content: FC = () => {
   };
 
   return (
-    <PanelSection>
+    <div style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "4px 0" }}>
       {/* Открыть каталог */}
-      <PanelSectionRow>
-        <ButtonItem layout="below" onClick={openCatalog}>
-          {t.openCatalog}
-        </ButtonItem>
-      </PanelSectionRow>
+      <ButtonItem layout="below" onClick={openCatalog}>
+        {t.openCatalog}
+      </ButtonItem>
 
       {/* Поддержка */}
-      <PanelSectionRow>
-        <ButtonItem layout="below" onClick={openSupport}>
-          {t.support}
-        </ButtonItem>
-      </PanelSectionRow>
-    </PanelSection>
+      <ButtonItem layout="below" onClick={openSupport}>
+        {t.support}
+      </ButtonItem>
+    </div>
   );
 };
 

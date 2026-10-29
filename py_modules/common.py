@@ -463,6 +463,47 @@ POPULAR_TRACKERS = [
 def get_steam_language():
     try:
         home = get_user_home()
+
+        # 1. Системные переменные окружения
+        for env_var in ["STEAM_CLIENT_LANGUAGE", "LANGUAGE", "LC_ALL", "LANG"]:
+            val = os.environ.get(env_var)
+            if val:
+                val_low = val.lower()
+                if "ru" in val_low or "russian" in val_low:
+                    return "russian"
+
+        # 2. Системные файлы локали SteamOS / Linux
+        for loc_file in [
+            "/etc/locale.conf",
+            os.path.join(home, ".config", "locale.conf"),
+            os.path.join(home, ".config", "plasma-localerc")
+        ]:
+            if os.path.exists(loc_file):
+                try:
+                    with open(loc_file, "r", encoding="utf-8", errors="ignore") as f:
+                        c = f.read().lower()
+                        if "ru_ru" in c or "lang=ru" in c or "language=ru" in c:
+                            return "russian"
+                except Exception:
+                    pass
+
+        # 3. userdata/*/config/localconfig.vdf Steam (8 = Russian в Steamworks ELanguage)
+        steam_base = os.path.join(home, ".local", "share", "Steam", "userdata")
+        if not os.path.exists(steam_base):
+            steam_base = os.path.join(home, ".steam", "steam", "userdata")
+        if os.path.exists(steam_base):
+            try:
+                for uid in os.listdir(steam_base):
+                    cfg_path = os.path.join(steam_base, uid, "config", "localconfig.vdf")
+                    if os.path.exists(cfg_path):
+                        with open(cfg_path, "r", encoding="utf-8", errors="ignore") as f:
+                            cfg_content = f.read()
+                            if re.search(r'primary_language[\\\"\s:]+8\b', cfg_content):
+                                return "russian"
+            except Exception:
+                pass
+
+        # 4. registry.vdf (только секция HKCU, пропуская дефолтный шаблон steamglobal)
         vdf_candidates = [
             os.path.join(home, ".steam", "registry.vdf"),
             os.path.join(home, ".steam", "steam", "registry.vdf"),
@@ -471,19 +512,29 @@ def get_steam_language():
         for vdf_path in vdf_candidates:
             if os.path.exists(vdf_path):
                 try:
-                    with open(vdf_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    with open(vdf_path, "r", encoding="utf-8", errors="ignore") as f:
                         content = f.read()
-                        match = re.search(r'"language"\s+"([^"]+)"', content, re.IGNORECASE)
+                        hkcu_idx = content.find('"HKCU"')
+                        target = content[hkcu_idx:] if hkcu_idx != -1 else content
+                        target = re.sub(r'"steamglobal"\s*\{[^}]*\}', '', target, flags=re.IGNORECASE)
+                        match = re.search(r'"language"\s+"([^"]+)"', target, re.IGNORECASE)
                         if match:
-                            return match.group(1).lower()
+                            lang = match.group(1).lower()
+                            if "ru" in lang:
+                                return "russian"
+                            return lang
                 except Exception:
                     pass
+
+        # 5. Проверяем системные переменные на английский, если ничего русского не нашлось
         for env_var in ["STEAM_CLIENT_LANGUAGE", "LANGUAGE", "LC_ALL", "LANG"]:
             val = os.environ.get(env_var)
             if val:
                 return val.lower()
-    except Exception:
-        pass
+
+    except Exception as e:
+        logger.debug(f"get_steam_language error: {e}")
+
     return "ru"
 
 def get_available_storage_drives():
