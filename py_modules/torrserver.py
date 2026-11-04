@@ -15,7 +15,7 @@ from .common import get_bin_path, _clean_env, write_pid_file, terminate_process,
 def extract_hash_from_magnet(magnet):
     if not magnet:
         return ""
-    m = re.search(r'xt=urn:btih:([a-fA-F0-9]{40}|[a-zA-Z2-7]{32})', magnet)
+    m = re.search(r'xt=urn:btih:([a-fA-F0-9]{40}|[a-zA-Z2-7]{32})', magnet, flags=re.IGNORECASE)
     if m:
         h = m.group(1).lower()
         if len(h) == 32:

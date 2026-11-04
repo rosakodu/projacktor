@@ -70,6 +70,7 @@ from py_modules import (
     DownloadService,
     StreamService
 )
+from py_modules.services import AppContext, get_app_context, set_app_context
 from py_modules import http_server
 
 plugin_instance = None
@@ -78,22 +79,71 @@ plugin_instance = None
 class Plugin:
     """Projacktor Decky Loader Plugin facade."""
 
-    def __init__(self):
+    def __init__(self, context=None):
         global plugin_instance
         plugin_instance = self
-        http_server.plugin_instance = self
-        self.server = None
-        self.server_thread = None
-        self.dm = None
-        self.ts = None
+        self.context = context or get_app_context()
+        set_app_context(self.context)
 
-        # Domain services
-        self.system = SystemService()
-        self.watchlist = WatchlistService()
-        self.history = HistoryService()
-        self.library = LibraryService()
-        self.downloads = DownloadService()
-        self.streaming = StreamService()
+    @property
+    def server(self):
+        return self.context.http_server if self.context else None
+
+    @server.setter
+    def server(self, val):
+        if self.context:
+            self.context.http_server = val
+
+    @property
+    def server_thread(self):
+        return self.context.server_thread if self.context else None
+
+    @server_thread.setter
+    def server_thread(self, val):
+        if self.context:
+            self.context.server_thread = val
+
+    @property
+    def dm(self):
+        return self.context.aria2_manager if self.context else None
+
+    @dm.setter
+    def dm(self, val):
+        if self.context:
+            self.context.aria2_manager = val
+
+    @property
+    def ts(self):
+        return self.context.torrserver_manager if self.context else None
+
+    @ts.setter
+    def ts(self, val):
+        if self.context:
+            self.context.torrserver_manager = val
+
+    @property
+    def system(self):
+        return self.context.system
+
+    @property
+    def watchlist(self):
+        return self.context.watchlist
+
+    @property
+    def history(self):
+        return self.context.history
+
+    @property
+    def library(self):
+        return self.context.library
+
+    @property
+    def downloads(self):
+        return self.context.downloads
+
+    @property
+    def streaming(self):
+        return self.context.streaming
 
     @property
     def inhibit_proc(self):
@@ -104,68 +154,25 @@ class Plugin:
         self.system.inhibit_proc = val
 
     def _get_http_port(self) -> int:
-        sett = load_settings()
-        return sett.get('http_server_port', DEFAULT_HTTP_PORT)
+        return self.context.get_http_port()
 
     def _get_http_base_url(self) -> str:
-        return f"http://{DEFAULT_HTTP_HOST}:{self._get_http_port()}"
+        return self.context.get_http_base_url()
 
     async def _main(self):
         logger.info("Projacktor: Starting plugin")
-        init_db()
+        if not self.context:
+            self.context = AppContext()
+            set_app_context(self.context)
         sett = load_settings()
-
-        # Восстановление скачанных файлов с актуальным путем загрузок
-        try:
-            dp = sett.get('download_path', '')
-            rescan_library_from_disk(download_path=dp)
-            threading.Thread(target=auto_enrich_library_metadata, daemon=True).start()
-        except Exception as e:
-            logger.error(f"Error rescanning library on startup: {e}")
-
-        self.dm = DownloadManager(sett.get('aria2_port', 6800))
-        self.dm.start()
-
-        ts_port = sett.get('torrserver_port', 8095)
-        self.ts = TorrServerManager(port=ts_port)
-        self.ts.start()
-
-        http_port = self._get_http_port()
-        self.server = ThreadedHTTPServer((DEFAULT_HTTP_HOST, http_port), ProjacktorRequestHandler)
-        self.server_thread = threading.Thread(target=self.server.serve_forever, daemon=True)
-        self.server_thread.start()
-        logger.info(f"Projacktor: Started HTTP server on {DEFAULT_HTTP_HOST}:{http_port}")
+        await self.context.start(sett)
+        if self.server:
+            self.server.app_context = self.context
 
     async def _unload(self):
         logger.info("Projacktor: Unloading plugin")
-        t_start = time.time()
-        self.system.stop_inhibit()
-
-        threads = []
-        if self.server:
-            def _stop_srv():
-                try:
-                    self.server.server_close()
-                except Exception:
-                    pass
-                try:
-                    self.server.shutdown()
-                except Exception:
-                    pass
-            threads.append(threading.Thread(target=_stop_srv, daemon=True, name="StopServer"))
-
-        if self.dm:
-            threads.append(threading.Thread(target=self.dm.stop, daemon=True, name="StopDM"))
-
-        if self.ts:
-            threads.append(threading.Thread(target=self.ts.stop, daemon=True, name="StopTS"))
-
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join(timeout=1.5)
-
-        logger.info(f"Projacktor: Unload finished cleanly in {time.time() - t_start:.2f}s")
+        if self.context:
+            await self.context.stop()
 
     async def _uninstall(self):
         logger.info("Projacktor: Uninstall hook called (user settings and database safely preserved)")
@@ -184,112 +191,112 @@ class Plugin:
 
     # System & Settings
     async def inhibit_sleep(self, reason: str = "video"):
-        return await self.system.inhibit_sleep(reason)
+        return await self.context.system.inhibit_sleep(reason)
 
     async def uninhibit_sleep(self, reason: str = "video"):
-        return await self.system.uninhibit_sleep(reason)
+        return await self.context.system.uninhibit_sleep(reason)
 
     async def ping_sleep_inhibit(self):
-        return await self.system.ping_sleep_inhibit()
+        return await self.context.system.ping_sleep_inhibit()
 
     async def get_torrserver_status(self):
-        return self.system.get_torrserver_status(self.ts)
+        return self.context.system.get_torrserver_status()
 
     async def drop_stream(self, torrent_hash: str):
-        return self.system.drop_stream(self.ts, torrent_hash)
+        return self.context.system.drop_stream(torrent_hash=torrent_hash)
 
     async def get_status(self):
-        return await self.system.get_status(self.dm, self.ts)
+        return await self.context.system.get_status()
 
     async def get_settings(self):
-        return self.system.get_settings()
+        return self.context.system.get_settings()
 
     async def save_settings(self, settings_json: str):
-        return self.system.save_settings(settings_json)
+        return self.context.system.save_settings(settings_json)
 
     async def get_storage_drives(self):
-        return self.system.get_storage_drives()
+        return self.context.system.get_storage_drives()
 
     async def get_disk_space(self):
-        return self.system.get_disk_space()
+        return self.context.system.get_disk_space()
 
     async def check_jacred(self, url: str):
-        return await self.system.check_jacred(url)
+        return await self.context.system.check_jacred(url)
 
     async def get_steam_language(self):
-        return self.system.get_steam_language()
+        return self.context.system.get_steam_language()
 
     async def clear_cache(self):
-        return await self.system.clear_cache(self.dm, ProjacktorRequestHandler)
+        return await self.context.system.clear_cache()
 
     # Watchlist
     async def get_watchlist(self):
-        return self.watchlist.get_watchlist()
+        return self.context.watchlist.get_watchlist()
 
     async def add_to_watchlist(self, data: str):
-        return self.watchlist.add_to_watchlist(data)
+        return self.context.watchlist.add_to_watchlist(data)
 
     async def remove_from_watchlist(self, tmdb_id: int):
-        return self.watchlist.remove_from_watchlist(tmdb_id)
+        return self.context.watchlist.remove_from_watchlist(tmdb_id)
 
     async def is_in_watchlist(self, tmdb_id: int):
-        return self.watchlist.is_in_watchlist(tmdb_id)
+        return self.context.watchlist.is_in_watchlist(tmdb_id)
 
     # History
     async def get_watch_history(self):
-        return self.history.get_watch_history()
+        return self.context.history.get_watch_history()
 
     async def save_watch_progress(self, data: str):
-        return self.history.save_watch_progress(data)
+        return self.context.history.save_watch_progress(data)
 
     async def start_history_download(self, history_id: int):
-        return await self.history.start_history_download(history_id, self.library, self.downloads, self.dm)
+        return await self.context.history.start_history_download(history_id)
 
     async def delete_watch_history_item(self, item_id: int):
-        return self.history.delete_watch_history_item(item_id)
+        return self.context.history.delete_watch_history_item(item_id)
 
     async def clear_watch_history(self):
-        return self.history.clear_watch_history()
+        return self.context.history.clear_watch_history()
 
     # Downloads
     async def get_downloads_count(self):
-        return self.downloads.get_downloads_count()
+        return self.context.downloads.get_downloads_count()
 
     async def get_downloads(self):
-        return self.downloads.get_downloads()
+        return self.context.downloads.get_downloads()
 
     def _cleanup_old_torrent_download(self, mid: int, ddir: str, old_gid: str = "", old_hash: str = ""):
-        self.downloads.cleanup_old_torrent_download(mid, ddir, old_gid, old_hash, self.dm)
+        self.context.downloads.cleanup_old_torrent_download(mid, ddir, old_gid, old_hash)
 
     async def start_download(self, mid: int, file_indices: str = ""):
-        return await self.downloads.start_download(mid, file_indices, self.dm)
+        return await self.context.downloads.start_download(mid, file_indices)
 
     async def add_download(self, data: str):
-        return await self.downloads.add_download(data, self.library, self.dm)
+        return await self.context.downloads.add_download(data)
 
     async def pause_download(self, did: int):
-        return self.downloads.pause_download(did, self.dm)
+        return self.context.downloads.pause_download(did)
 
     async def resume_download(self, did: int):
-        return await self.downloads.resume_download(did, self.dm)
+        return await self.context.downloads.resume_download(did)
 
     async def resume_all_downloads(self):
-        return self.downloads.resume_all_downloads(self.dm)
+        return self.context.downloads.resume_all_downloads()
 
     async def delete_download(self, did: int):
-        return self.downloads.delete_download(did, self.dm)
+        return self.context.downloads.delete_download(did)
 
     async def download_episode(self, mid: int, file_index: int):
-        return await self.downloads.download_episode(mid, file_index, self.dm, self.library, ts=self.ts)
+        return await self.context.downloads.download_episode(mid, file_index)
 
     async def cancel_episode_download(self, mid: int, file_index: int):
-        return await self.downloads.cancel_episode_download(mid, file_index, self.dm, self.library, ts=self.ts)
+        return await self.context.downloads.cancel_episode_download(mid, file_index)
 
     async def pause_episode_download(self, mid: int, file_index: int):
-        return await self.downloads.pause_episode_download(mid, file_index, self.dm, self.library, ts=self.ts)
+        return await self.context.downloads.pause_episode_download(mid, file_index)
 
     async def delete_episode(self, mid: int, file_index: int):
-        return await self.downloads.delete_episode(mid, file_index, self.dm, self.library, ts=self.ts)
+        return await self.context.downloads.delete_episode(mid, file_index)
 
     # Library & Episodes
     @classmethod
@@ -301,39 +308,31 @@ class Plugin:
         return LibraryService._natural_keys(text)
 
     async def get_episodes(self, mid: int):
-        return await self.library.get_episodes(mid, ts=self.ts, dm=self.dm)
+        return await self.context.library.get_episodes(mid)
 
     async def get_torrent_episodes(self, magnet: str, title: str = "", poster_path: str = ""):
-        return await self.library.get_torrent_episodes(magnet, title=title, poster_path=poster_path, ts=self.ts)
+        return await self.context.library.get_torrent_episodes(magnet, title=title, poster_path=poster_path)
 
     async def add_to_library(self, payload_json: str):
-        return await self.library.add_to_library(
-            payload_json,
-            dm=self.dm,
-            cleanup_cb=lambda mid, ddir, gid, h: self.downloads.cleanup_old_torrent_download(mid, ddir, gid, h, self.dm)
-        )
+        return await self.context.library.add_to_library(payload_json)
 
     async def get_library(self):
-        return await self.library.get_library()
+        return await self.context.library.get_library()
 
     async def delete_library_item(self, mid: int):
-        return await self.library.delete_library_item(mid, dm=self.dm)
+        return await self.context.library.delete_library_item(mid)
 
     async def rescan_library(self):
-        return await self.library.rescan_library()
+        return await self.context.library.rescan_library()
 
     # Streaming & Playback
     async def prepare_stream(self, mid: int, file_index: int = 0, force_online: bool = False, magnet: str = ""):
-        return await self.streaming.prepare_stream(
+        return await self.context.streaming.prepare_stream(
             mid=mid,
             file_index=file_index,
             force_online=force_online,
-            magnet=magnet,
-            ts=self.ts,
-            dm=self.dm,
-            library_service=self.library,
-            base_url_cb=self._get_http_base_url
+            magnet=magnet
         )
 
     async def play_media(self, file_path: str):
-        return self.streaming.play_media(file_path)
+        return self.context.streaming.play_media(file_path)

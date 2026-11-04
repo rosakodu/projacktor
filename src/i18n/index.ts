@@ -121,6 +121,10 @@ export const translations = {
     // Настройки
     vibrationAndSound: "Вибрация и звуки",
     vibrationAndSoundDesc: "Тактильная отдача на трекпадах и геймпадах, звуки переключения вкладок",
+    soundEffects: "Звуки интерфейса",
+    soundEffectsDesc: "Звуки навигации по каталогу, вкладкам и карточкам",
+    hapticFeedback: "Тактильная отдача",
+    hapticFeedbackDesc: "Виброотклик на трекпадах и стиках Steam Deck",
     kidsMode: "Детский режим",
     kidsModeDesc: "Показывать только фильмы, сериалы и аниме с возрастным рейтингом до 12+",
     jackettParserUrl: "Ссылка на парсер Jackett",
@@ -277,6 +281,10 @@ export const translations = {
     // Settings
     vibrationAndSound: "Haptics & Sounds",
     vibrationAndSoundDesc: "Haptic feedback on trackpads and gamepads, tab switching sounds",
+    soundEffects: "Interface Sounds",
+    soundEffectsDesc: "Sound effects for navigation, tabs, and media cards",
+    hapticFeedback: "Haptic Feedback",
+    hapticFeedbackDesc: "Vibration feedback on Steam Deck trackpads and sticks",
     kidsMode: "Kids Mode",
     kidsModeDesc: "Show only movies, TV shows, and anime rated up to 12+",
     jackettParserUrl: "Jackett Parser URL",

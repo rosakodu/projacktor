@@ -192,6 +192,8 @@ body:has(.projacktor-app-playing) #Footer,
   gap: 16px !important;
   height: 34px !important;
   min-width: 0 !important;
+  padding: 0 20px !important;
+  scroll-padding: 0 20px !important;
   outline: none !important;
   border-bottom: none !important;
   position: relative !important;
@@ -200,6 +202,20 @@ body:has(.projacktor-app-playing) #Footer,
   overflow-y: hidden !important;
   scrollbar-width: none !important;
   -ms-overflow-style: none !important;
+  mask-image: linear-gradient(
+    to right,
+    transparent 0px,
+    black 20px,
+    black calc(100% - 20px),
+    transparent 100%
+  ) !important;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0px,
+    black 20px,
+    black calc(100% - 20px),
+    transparent 100%
+  ) !important;
 }
 
 .projacktor-tabs-track::-webkit-scrollbar {
@@ -285,6 +301,10 @@ body:has(.projacktor-app-playing) #Footer,
   .projacktor-tabs-track {
     height: 38px !important;
     gap: 8px !important;
+    padding: 0 !important;
+    scroll-padding: 0 !important;
+    mask-image: none !important;
+    -webkit-mask-image: none !important;
   }
 
   .projacktor-tab-item {
@@ -325,6 +345,10 @@ body:has(.projacktor-app-playing) #Footer,
   .projacktor-tabs-track {
     height: 48px !important;
     gap: 12px !important;
+    padding: 0 !important;
+    scroll-padding: 0 !important;
+    mask-image: none !important;
+    -webkit-mask-image: none !important;
   }
 
   .projacktor-tab-item {

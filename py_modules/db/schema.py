@@ -1,148 +1,13 @@
 import os
 import shutil
 import sqlite3
-import threading
-import re
+import time
+from .connection import CONFIG_DIR, DB_PATH, DB_LOCK, logger, is_valid_sqlite_db
 
-from .constants import (
-    DEFAULT_HTTP_PORT,
-    DEFAULT_TORRSERVER_PORT,
-    DEFAULT_ARIA2_PORT,
-    DEFAULT_TMDB_API_KEY
-)
 
-# Decky Loader API
-try:
-    import decky
-    logger = decky.logger
-    DECKY_USER_HOME = decky.DECKY_USER_HOME
-except ImportError:
-    import logging
-    logger = logging.getLogger("Projacktor")
-    logger.setLevel(logging.DEBUG)
-    _fallback_home = "/home/deck" if os.path.isdir("/home/deck") else os.path.expanduser("~")
-    DECKY_USER_HOME = os.environ.get("DECKY_USER_HOME", _fallback_home)
-
-def get_user_home():
-    return DECKY_USER_HOME
-
-_legacy_cfg1 = os.path.join(get_user_home(), ".config", "projactor")
-_legacy_cfg2 = os.path.join(get_user_home(), ".config", "projecktor")
-_default_cfg = os.path.join(get_user_home(), ".config", "projacktor")
-if os.path.isdir(_default_cfg):
-    CONFIG_DIR = _default_cfg
-elif os.path.isdir(_legacy_cfg1):
-    CONFIG_DIR = _legacy_cfg1
-elif os.path.isdir(_legacy_cfg2):
-    CONFIG_DIR = _legacy_cfg2
-else:
-    CONFIG_DIR = _default_cfg
-
-_db_projacktor = os.path.join(CONFIG_DIR, "projacktor.db")
-_db_legacy = os.path.join(CONFIG_DIR, "projactor.db")
-
-# Multi-location restoration check: if projacktor.db missing/empty, restore from backup or legacy paths
-if not os.path.isfile(_db_projacktor) or os.path.getsize(_db_projacktor) == 0:
-    for candidate in [
-        _db_projacktor + ".bak",
-        _db_legacy,
-        os.path.join(get_user_home(), ".config", "projactor", "projacktor.db"),
-        os.path.join(get_user_home(), ".config", "projecktor", "projacktor.db"),
-        os.path.join(get_user_home(), "homebrew", "data", "Projacktor", "projacktor.db"),
-        os.path.join(get_user_home(), "homebrew", "settings", "Projacktor", "projacktor.db"),
-    ]:
-        if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
-            try:
-                os.makedirs(CONFIG_DIR, exist_ok=True)
-                shutil.copy2(candidate, _db_projacktor)
-                logger.info(f"Restored database from {candidate} -> {_db_projacktor}")
-                break
-            except Exception as e:
-                logger.warning(f"Could not restore db from {candidate}: {e}")
-
-if os.path.isfile(_db_projacktor) and os.path.getsize(_db_projacktor) > 0:
-    DB_PATH = _db_projacktor
-elif os.path.isfile(_db_legacy) and os.path.getsize(_db_legacy) > 0:
-    DB_PATH = _db_legacy
-else:
-    DB_PATH = _db_projacktor
-SETTINGS_PATH = os.path.join(CONFIG_DIR, "settings.json")
-
-DECKY_SETTINGS_DIR = os.environ.get("DECKY_PLUGIN_SETTINGS_DIR") or os.path.join(get_user_home(), "homebrew", "settings", "Projacktor")
-DECKY_SETTINGS_PATH = os.path.join(DECKY_SETTINGS_DIR, "settings.json")
-
-# Default Video path: Projacktor (fall back to legacy paths if they exist)
-_legacy_video1 = os.path.join(get_user_home(), "Video", "Projactor")
-_legacy_video2 = os.path.join(get_user_home(), "Video", "Projecktor")
-_legacy_movies = os.path.join(get_user_home(), "Movies", "Projacktor")
-_default_video = os.path.join(get_user_home(), "Videos", "Projacktor")
-if os.path.isdir(_default_video):
-    INITIAL_DOWNLOAD_PATH = _default_video
-elif os.path.isdir(_legacy_movies):
-    INITIAL_DOWNLOAD_PATH = _legacy_movies
-elif os.path.isdir(_legacy_video1):
-    INITIAL_DOWNLOAD_PATH = _legacy_video1
-elif os.path.isdir(_legacy_video2):
-    INITIAL_DOWNLOAD_PATH = _legacy_video2
-else:
-    INITIAL_DOWNLOAD_PATH = _default_video
-
-VIDEO_DIR = INITIAL_DOWNLOAD_PATH
-
-DEFAULT_SETTINGS = {
-    "jacred_url": "",
-    "tmdb_api_key": DEFAULT_TMDB_API_KEY,
-    "download_path": INITIAL_DOWNLOAD_PATH,
-    "language": "ru",
-    "aria2_port": DEFAULT_ARIA2_PORT,
-    "torrserver_port": DEFAULT_TORRSERVER_PORT,
-    "http_server_port": DEFAULT_HTTP_PORT,
-    "transcode_max_res": "auto",
-    "haptic_and_sound_enabled": True,
-    "kids_mode": False
-}
-
-# Мьютекс для предотвращения состояния гонки (Race condition) между параллельными потоками
-DB_LOCK = threading.RLock()
-
-class SafeRow(dict):
-    """
-    Универсальный класс строки SQLite, совмещающий доступ по ключам d['col'],
-    безопасный метод d.get('col', default), доступ по числовому индексу d[0],
-    а также методы keys(), values() и сериализацию.
-    """
-    def __init__(self, cursor, row):
-        super().__init__()
-        self._values = row
-        for idx, col in enumerate(cursor.description):
-            self[col[0]] = row[idx]
-
-    def __getitem__(self, key):
-        if isinstance(key, int):
-            return self._values[key]
-        return self.get(key, None)
-
-    def __getattr__(self, key):
-        return self.get(key, None)
-
-def get_db():
-    os.makedirs(CONFIG_DIR, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, timeout=20.0)
-    conn.execute("PRAGMA journal_mode = WAL")
-    conn.execute("PRAGMA busy_timeout = 5000")
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.row_factory = lambda c, r: SafeRow(c, r)
-    return conn
-
-def init_db():
-    with DB_LOCK:
-        os.makedirs(CONFIG_DIR, exist_ok=True)
-        if os.path.isfile(DB_PATH) and os.path.getsize(DB_PATH) > 0:
-            try:
-                shutil.copy2(DB_PATH, DB_PATH + ".bak")
-            except Exception:
-                pass
-        conn = sqlite3.connect(DB_PATH, timeout=20.0)
+def _execute_schema_and_migrations(db_path: str):
+    conn = sqlite3.connect(db_path, timeout=20.0)
+    try:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=5000")
         conn.execute("PRAGMA foreign_keys = ON")
@@ -298,7 +163,12 @@ def init_db():
                 """)
                 cursor.execute("PRAGMA table_info(watch_history_old)")
                 old_cols = {c[1] for c in cursor.fetchall()}
-                target_cols = ['id', 'media_id', 'file_id', 'tmdb_id', 'title', 'original_title', 'media_type', 'year', 'poster_path', 'backdrop_path', 'overview', 'file_path', 'stream_url', 'torrent_hash', 'is_online', 'is_downloaded', 'episode_name', 'season_number', 'episode_number', 'current_time', 'duration', 'progress', 'watched_at']
+                target_cols = [
+                    'id', 'media_id', 'file_id', 'tmdb_id', 'title', 'original_title', 'media_type', 'year',
+                    'poster_path', 'backdrop_path', 'overview', 'file_path', 'stream_url', 'torrent_hash',
+                    'is_online', 'is_downloaded', 'episode_name', 'season_number', 'episode_number',
+                    'current_time', 'duration', 'progress', 'watched_at'
+                ]
                 valid_cols = [c for c in target_cols if c in old_cols]
                 if valid_cols:
                     c_str = ", ".join(valid_cols)
@@ -370,7 +240,73 @@ def init_db():
             pass
 
         conn.commit()
+    finally:
         conn.close()
+
+
+def _recover_corrupt_database(db_path: str, bak_path: str) -> bool:
+    ts = int(time.time())
+    if os.path.isfile(db_path):
+        quarantine_file = f"{db_path}.corrupt.{ts}"
+        try:
+            os.rename(db_path, quarantine_file)
+            logger.warning(f"Quarantined corrupt database: {db_path} -> {quarantine_file}")
+        except Exception:
+            try:
+                shutil.copy2(db_path, quarantine_file)
+                os.remove(db_path)
+            except Exception as e:
+                logger.error(f"Failed to quarantine corrupt db: {e}")
+
+    for ext in ("-wal", "-shm"):
+        wal_file = db_path + ext
+        if os.path.exists(wal_file):
+            try:
+                os.remove(wal_file)
+            except Exception:
+                pass
+
+    if is_valid_sqlite_db(bak_path):
+        try:
+            shutil.copy2(bak_path, db_path)
+            logger.info(f"Successfully restored database from backup: {bak_path}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to restore backup: {e}")
+
+    if os.path.isfile(bak_path):
+        try:
+            os.rename(bak_path, f"{bak_path}.corrupt.{ts}")
+        except Exception:
+            pass
+
+    logger.warning(f"No valid backup available for {db_path}. Initializing clean database.")
+    return False
+
+
+def init_db():
+    with DB_LOCK:
+        os.makedirs(CONFIG_DIR, exist_ok=True)
+        bak_path = DB_PATH + ".bak"
+
+        if os.path.isfile(DB_PATH) and os.path.getsize(DB_PATH) > 0:
+            if is_valid_sqlite_db(DB_PATH):
+                try:
+                    shutil.copy2(DB_PATH, bak_path)
+                except Exception as e:
+                    logger.warning(f"Could not create DB backup: {e}")
+            else:
+                logger.warning(
+                    f"Existing DB {DB_PATH} is corrupted. Skipping backup overwrite to protect {bak_path}."
+                )
+
+        try:
+            _execute_schema_and_migrations(DB_PATH)
+        except sqlite3.DatabaseError as e:
+            logger.error(f"Database error in init_db: {e}. Starting recovery...")
+            _recover_corrupt_database(DB_PATH, bak_path)
+            _execute_schema_and_migrations(DB_PATH)
+
         try:
             os.chmod(CONFIG_DIR, 0o777)
             if os.path.isfile(DB_PATH):
@@ -378,53 +314,3 @@ def init_db():
         except Exception:
             pass
         logger.info("Database initialized with full modern schema and indexes")
-
-def db_get_setting(key: str, default: str = "") -> str:
-    try:
-        with DB_LOCK:
-            conn = sqlite3.connect(DB_PATH, timeout=5.0)
-            cursor = conn.cursor()
-            cursor.execute("CREATE TABLE IF NOT EXISTS plugin_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
-            row = cursor.execute("SELECT value FROM plugin_settings WHERE key = ?", (key,)).fetchone()
-            conn.close()
-            if row and row[0] is not None:
-                return str(row[0])
-    except Exception as e:
-        logger.debug(f"db_get_setting error for {key}: {e}")
-    return default
-
-def db_set_setting(key: str, value: str):
-    try:
-        with DB_LOCK:
-            conn = sqlite3.connect(DB_PATH, timeout=5.0)
-            cursor = conn.cursor()
-            cursor.execute("CREATE TABLE IF NOT EXISTS plugin_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
-            cursor.execute(
-                "INSERT INTO plugin_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
-                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
-                (key, str(value) if value is not None else "")
-            )
-            conn.commit()
-            conn.close()
-    except Exception as e:
-        logger.debug(f"db_set_setting error for {key}: {e}")
-
-def db_get_all_settings() -> dict:
-    res = {}
-    try:
-        with DB_LOCK:
-            conn = sqlite3.connect(DB_PATH, timeout=5.0)
-            cursor = conn.cursor()
-            cursor.execute("CREATE TABLE IF NOT EXISTS plugin_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
-            for row in cursor.execute("SELECT key, value FROM plugin_settings").fetchall():
-                if row and row[0]:
-                    res[row[0]] = row[1]
-            conn.close()
-    except Exception as e:
-        logger.debug(f"db_get_all_settings error: {e}")
-    return res
-
-def rescan_library_from_disk(download_path: str = None, conn=None) -> int:
-    """Delegates to LibraryService.rescan_library_from_disk for backward compatibility."""
-    from .services.library_service import rescan_library_from_disk as _rescan
-    return _rescan(download_path=download_path, conn=conn)

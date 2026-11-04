@@ -38,7 +38,7 @@ export const TrackSelectionMenu: FC<TrackSelectionMenuProps> = ({
   return (
     <Focusable
       ref={menuRef}
-      flow-children="vertical"
+      flow-children="column"
       className="projacktor-player-dropdown-menu"
       onCancel={() => {
         onClose?.();

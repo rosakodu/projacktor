@@ -353,7 +353,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
       }
 
       const target = root.querySelector<HTMLElement>(
-        ".projacktor-dl-poster-btn, .projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0'], .projacktor-empty-cta-btn, .projacktor-empty-lib"
+        ".projacktor-dl-poster-btn, .projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0'], .projacktor-empty-cta-btn"
       );
       if (target) {
         try {
@@ -470,7 +470,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
 
       if (!target) {
         target = root.querySelector<HTMLElement>(
-          ".projacktor-dl-poster-btn, .projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0'], .projacktor-empty-cta-btn, .projacktor-empty-lib"
+          ".projacktor-dl-poster-btn, .projacktor-dl-btn-play, .projacktor-dl-card-btns [tabindex='0'], .projacktor-empty-cta-btn"
         );
       }
 
@@ -502,7 +502,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
         </div>
       </div>
 
-      {!isInitialLoading && library.length === 0 && (
+      {library.length === 0 && (
         <div
           className="projacktor-empty-lib"
           style={{ textAlign: "center", padding: "60px 20px", color: "rgba(255,255,255,0.4)" }}
@@ -516,6 +516,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
           {onNavigateToCatalog && (
             <Focusable
               role="button"
+              autoFocus
               tabIndex={0}
               className="ds-btn ds-btn--primary projacktor-empty-cta-btn"
               onClick={onNavigateToCatalog}

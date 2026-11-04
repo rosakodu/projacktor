@@ -21,7 +21,8 @@ from ..constants import DEFAULT_HTTP_PORT
 
 
 class SystemService:
-    def __init__(self):
+    def __init__(self, context=None):
+        self.context = context
         self.inhibit_proc = None
         self._lock = threading.Lock()
         self._active_reasons = set()
@@ -126,7 +127,8 @@ class SystemService:
             self._active_reasons.clear()
             self._stop_inhibit_proc()
 
-    def get_torrserver_status(self, ts) -> dict:
+    def get_torrserver_status(self, ts=None) -> dict:
+        ts = ts or (self.context.ts if self.context else None)
         running = ts.ensure_running() if ts else False
         port = ts.port if ts else 8095
         return {
@@ -134,12 +136,18 @@ class SystemService:
             "port": port
         }
 
-    def drop_stream(self, ts, torrent_hash: str) -> bool:
+    def drop_stream(self, ts=None, torrent_hash: str = None) -> bool:
+        if isinstance(ts, str) and torrent_hash is None:
+            torrent_hash = ts
+            ts = None
+        ts = ts or (self.context.ts if self.context else None)
         if ts and torrent_hash:
             return ts.drop_torrent(torrent_hash)
         return False
 
-    async def get_status(self, dm, ts) -> dict:
+    async def get_status(self, dm=None, ts=None) -> dict:
+        dm = dm or (self.context.dm if self.context else None)
+        ts = ts or (self.context.ts if self.context else None)
         sett = load_settings()
         dp = os.path.expanduser(sett.get('download_path', '~/Videos/Projacktor'))
         try:
@@ -219,7 +227,17 @@ class SystemService:
     def get_steam_language(self) -> str:
         return common_get_steam_language()
 
-    async def clear_cache(self, dm, http_request_handler_cls=None) -> bool:
+    async def clear_cache(self, dm=None, http_request_handler_cls=None) -> bool:
+        dm = dm or (self.context.dm if self.context else None)
+        if http_request_handler_cls is None:
+            if self.context and getattr(self.context, 'http_server', None) and getattr(self.context.http_server, 'RequestHandlerClass', None):
+                http_request_handler_cls = self.context.http_server.RequestHandlerClass
+            else:
+                try:
+                    from ..http_server import ProjacktorRequestHandler
+                    http_request_handler_cls = ProjacktorRequestHandler
+                except Exception:
+                    pass
         try:
             if http_request_handler_cls and hasattr(http_request_handler_cls, 'tmdb_cache'):
                 http_request_handler_cls.tmdb_cache.clear()

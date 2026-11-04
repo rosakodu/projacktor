@@ -6,17 +6,12 @@ import json
 import shutil
 import sqlite3
 import asyncio
-import time
-import threading
+from typing import Optional
 
 from ..db import (
     get_db,
     logger,
-    VIDEO_DIR,
-    DB_PATH,
-    get_user_home,
-    db_get_setting,
-    SafeRow
+    VIDEO_DIR
 )
 from ..common import (
     load_settings,
@@ -29,75 +24,20 @@ from ..stream import is_header_ready
 from ..torrserver import extract_hash_from_magnet, extract_ts_files, TorrServerManager
 
 
-def _natural_keys(text):
-    return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', str(text))]
-
-
-def _episode_sort_key(ep):
-    if isinstance(ep, str):
-        name = ep
-    elif isinstance(ep, dict):
-        name = ep.get('name', '') or ep.get('path', '') or ep.get('file_name', '') or ''
-    else:
-        name = str(ep or '')
-
-    base, _ = os.path.splitext(os.path.basename(name))
-    # 1. Match S01E02, s1e2, s01.e02, etc.
-    m = re.search(r'[sS](\d+)[\.\s_-]*[eE](\d+)', base)
-    if m:
-        return (int(m.group(1)), int(m.group(2)), _natural_keys(name))
-    # 2. Match 1x02, 01x02
-    m = re.search(r'(\d+)[xX](\d+)', base)
-    if m:
-        return (int(m.group(1)), int(m.group(2)), _natural_keys(name))
-    # 3. Match Season/Сезон
-    s_m = re.search(r'(?:[sS]eason|[сС]езон)\s*(\d+)', base, re.I)
-    season = int(s_m.group(1)) if s_m else 1
-    # 4. Match Episode/Серия/Сер/Эпизод/Ep/E
-    e_m = re.search(r'(?:[eE]pisode|[eE]p\.?|[сС]ерия|[сС]ер\.?|[эЭ]пизод)\s*(\d+)', base, re.I)
-    if e_m:
-        return (season, int(e_m.group(1)), _natural_keys(name))
-    # 5. Match number before серия (e.g. "5 серия")
-    e_m2 = re.search(r'(\d+)\s*(?:серия|сер|выпуск|эпизод)', base, re.I)
-    if e_m2:
-        return (season, int(e_m2.group(1)), _natural_keys(name))
-    # 6. Anime / clean standalone episode number
-    cleaned = re.sub(r'(?i)\b(1080p|720p|480p|2160p|4k|x264|x265|h264|h265|hevc|bdrip|web-dl|webrip|dvdrip|aac|dts|flac|mp3|rus|eng|jap|sub|dub)\b', ' ', base)
-    cleaned = re.sub(r'\b(19\d\d|20\d\d)\b', ' ', cleaned)
-    e_m3 = re.search(r'(?:^|[\s\-_\.#])(\d{1,4})(?:v\d)?(?:[\s\-_\.#]|$)', cleaned)
-    if e_m3:
-        return (season, int(e_m3.group(1)), _natural_keys(name))
-    # 7. Fallback: natural sort
-    return (season, 999999, _natural_keys(name))
-
-
-_last_auto_scan_time = 0
-_is_auto_scanning = False
-
-
-def trigger_background_auto_scan():
-    global _last_auto_scan_time, _is_auto_scanning
-    now = time.time()
-    if (now - _last_auto_scan_time) < 25 or _is_auto_scanning:
-        return
-    _is_auto_scanning = True
-    _last_auto_scan_time = now
-
-    def _worker():
-        global _is_auto_scanning
-        try:
-            rescan_library_from_disk()
-        except Exception as e:
-            logger.error(f"[auto_scan] Error in background rescan: {e}")
-        finally:
-            _is_auto_scanning = False
-
-    t = threading.Thread(target=_worker, name="Projacktor-AutoScanWorker", daemon=True)
-    t.start()
+from ..media.episodes import (
+    natural_keys as _natural_keys,
+    episode_sort_key as _episode_sort_key
+)
+from .library_scanner import (
+    LibraryScanner,
+    rescan_library_from_disk,
+    trigger_background_auto_scan
+)
 
 
 class LibraryService:
-    def __init__(self):
+    def __init__(self, context=None):
+        self.context = context
         self._torrent_episodes_cache: dict[str, list[dict]] = {}
 
     @staticmethod
@@ -118,6 +58,7 @@ class LibraryService:
             if thash in self._torrent_episodes_cache:
                 return [dict(ep) for ep in self._torrent_episodes_cache[thash]]
 
+        ts = ts or (self.context.ts if self.context else None)
         if not ts:
             sett = load_settings()
             ts = TorrServerManager(port=sett.get('torrserver_port', 8095))
@@ -175,6 +116,8 @@ class LibraryService:
         return episodes
 
     async def get_episodes(self, mid: int, ts=None, dm=None) -> list[dict]:
+        ts = ts or (self.context.ts if self.context else None)
+        dm = dm or (self.context.dm if self.context else None)
         try:
             db = get_db()
             m = db.execute("SELECT * FROM media WHERE id=?", (mid,)).fetchone()
@@ -544,6 +487,7 @@ class LibraryService:
             db.close()
 
     async def add_to_library(self, payload_json: str, dm=None, cleanup_cb=None) -> dict:
+        dm = dm or (self.context.dm if self.context else None)
         try:
             data = json.loads(payload_json) if isinstance(payload_json, str) else (payload_json or {})
             magnet = data.get('magnet', '')
@@ -647,6 +591,8 @@ class LibraryService:
                             logger.info(f"add_to_library: Replacing torrent {old_hash} -> {new_hash} for media {mid}")
                             if cleanup_cb:
                                 cleanup_cb(mid, ddir, dl_row.get('aria2_gid') or '', old_hash)
+                            elif self.context and getattr(self.context, 'downloads', None):
+                                self.context.downloads.cleanup_old_torrent_download(mid, ddir, dl_row.get('aria2_gid') or '', old_hash, dm)
                             cursor.execute("""
                                 UPDATE downloads 
                                 SET magnet_uri=?, torrent_title=?, download_dir=?, quality=?,
@@ -670,6 +616,7 @@ class LibraryService:
             return {"success": False, "error": str(e)}
 
     async def delete_library_item(self, mid: int, dm=None) -> bool:
+        dm = dm or (self.context.dm if self.context else None)
         db = get_db()
         try:
             m = db.execute("SELECT * FROM media WHERE id=?", (mid,)).fetchone()
@@ -788,380 +735,164 @@ class LibraryService:
             return {"success": False, "error": str(e), "restored_count": 0}
 
 
-def rescan_library_from_disk(download_path: str = None, conn=None) -> int:
-    """
-    Scans download directories for existing downloaded movies/series and arbitrary video files
-    (including loose videos, phone videos, legacy directories), indexes them into media,
-    media_files and downloads, and enriches missing metadata from TMDB.
-    """
-    try:
-        from .stream import is_header_ready
-    except Exception:
-        is_header_ready = lambda fp: True
+    @staticmethod
+    def save_scanned_folder(cursor, item_dir: str, folder_name: str, media_type: str,
+                            vfiles: list, has_aria2: bool, detected_magnet: str = ''):
+        clean_parsed, p_year, _ = clean_media_title(folder_name)
+        parsed_title = clean_parsed or folder_name
+        parsed_year = p_year
 
-    try:
-        from .common import clean_media_title, auto_enrich_library_metadata
-    except Exception:
-        clean_media_title = lambda t: (t, None, False)
-        auto_enrich_library_metadata = lambda c: 0
+        row = None
+        if item_dir:
+            row = cursor.execute("""
+                SELECT id, in_library, download_dir, status FROM media 
+                WHERE download_dir = ?
+                ORDER BY id ASC LIMIT 1
+            """, (item_dir,)).fetchone()
 
-    should_close = False
-    if conn is None:
-        try:
-            conn = sqlite3.connect(DB_PATH, timeout=10.0)
-            conn.row_factory = sqlite3.Row
-            should_close = True
-        except Exception as e:
-            logger.error(f"rescan_library_from_disk failed to connect to db: {e}")
-            return 0
-
-    video_exts = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov', '.m4v', '.wmv', '.flv', '.3gp', '.m2ts', '.mpg', '.mpeg'}
-    restored_count = 0
-    indexed_files = set()
-
-    try:
-        search_roots = []
-
-        # 1. Актуальный путь загрузки из параметров или БД
-        sett_dp = download_path
-        if not sett_dp:
-            try:
-                sett_dp = db_get_setting("download_path", "")
-            except Exception:
-                pass
-
-        if sett_dp:
-            r_dp = os.path.realpath(os.path.expanduser(sett_dp))
-            if os.path.isdir(r_dp):
-                search_roots.append(r_dp)
-
-        # 2. Стандартные домашние директории (Videos, Movies, Projacktor и legacy)
-        user_home = get_user_home()
-        for alt in [
-            os.path.join(user_home, "Videos", "Projacktor"),
-            os.path.join(user_home, "Videos"),
-            os.path.join(user_home, "Movies", "Projacktor"),
-            os.path.join(user_home, "Movies"),
-            os.path.join(user_home, "Video", "Projactor"),
-            os.path.join(user_home, "Video", "Projecktor"),
-            os.path.join(user_home, "Video"),
-            os.path.join(user_home, "videos", "projacktor"),
-            os.path.join(user_home, "videos"),
-            os.path.join(user_home, "movies", "projacktor"),
-            os.path.join(user_home, "movies"),
-        ]:
-            r_alt = os.path.realpath(alt)
-            if r_alt not in search_roots and os.path.isdir(r_alt):
-                search_roots.append(r_alt)
-
-        # 3. MicroSD карты и внешние диски (/run/media/*/*)
-        media_bases = ["/run/media", os.path.join("/run/media", os.path.basename(user_home))]
-        for mb in media_bases:
-            if os.path.isdir(mb):
-                try:
-                    for entry in os.listdir(mb):
-                        entry_path = os.path.join(mb, entry)
-                        if os.path.isdir(entry_path):
-                            for sd_sub in [
-                                "Videos/Projacktor", "Movies/Projacktor", 
-                                "Videos", "Movies", "Projacktor",
-                                "videos/projacktor", "movies/projacktor", "videos", "movies"
-                            ]:
-                                candidate = os.path.realpath(os.path.join(entry_path, sd_sub))
-                                if candidate not in search_roots and os.path.isdir(candidate):
-                                    search_roots.append(candidate)
-                except Exception:
-                    pass
-
-        cursor = conn.cursor()
-
-        categories = [
-            ("Фильмы", "movie"),
-            ("Movies", "movie"),
-            ("Films", "movie"),
-            ("Сериалы", "tv"),
-            ("Series", "tv"),
-            ("TV", "tv"),
-            ("TV Shows", "tv"),
-        ]
-
-        def process_media_folder(item_dir: str, folder_name: str, media_type: str):
-            nonlocal restored_count
-            vfiles = []
-            has_aria2 = False
-            for dirpath, _, filenames in os.walk(item_dir):
-                for fn in filenames:
-                    if fn.endswith('.aria2'):
-                        has_aria2 = True
-
-            for dirpath, _, filenames in os.walk(item_dir):
-                for fn in filenames:
-                    ext = os.path.splitext(fn)[1].lower()
-                    if ext in video_exts:
-                        fp = os.path.realpath(os.path.join(dirpath, fn))
-                        if fp in indexed_files:
-                            continue
-                        try:
-                            sz = os.path.getsize(fp)
-                            if sz >= 100 * 1024 and is_header_ready(fp):
-                                if has_aria2 and os.stat(fp).st_blocks * 512 < sz * 0.95:
-                                    continue
-                                vfiles.append((fp, fn, sz))
-                                indexed_files.add(fp)
-                        except Exception:
-                            pass
-
-            if not vfiles:
-                return
-
-            clean_parsed, p_year, _ = clean_media_title(folder_name)
-            parsed_title = clean_parsed or folder_name
-            parsed_year = p_year
-
-            # Точный поиск: сначала по download_dir, затем по названию и году
-            row = None
-            if item_dir:
+        if not row:
+            if parsed_year is not None:
                 row = cursor.execute("""
                     SELECT id, in_library, download_dir, status FROM media 
-                    WHERE download_dir = ?
+                    WHERE (title = ? OR title = ?) AND year = ?
                     ORDER BY id ASC LIMIT 1
-                """, (item_dir,)).fetchone()
-
-            if not row:
-                if parsed_year is not None:
-                    row = cursor.execute("""
-                        SELECT id, in_library, download_dir, status FROM media 
-                        WHERE (title = ? OR title = ?) AND year = ?
-                        ORDER BY id ASC LIMIT 1
-                    """, (parsed_title, folder_name, parsed_year)).fetchone()
-                else:
-                    row = cursor.execute("""
-                        SELECT id, in_library, download_dir, status FROM media 
-                        WHERE (title = ? OR title = ?)
-                        ORDER BY id ASC LIMIT 1
-                    """, (parsed_title, folder_name)).fetchone()
-
-            detected_magnet = ''
-            if item_dir and os.path.isdir(item_dir):
-                try:
-                    for f in os.listdir(item_dir):
-                        if f.endswith('.torrent') and len(f) == 48:
-                            detected_magnet = f"magnet:?xt=urn:btih:{f[:-8].lower()}"
-                            break
-                except Exception:
-                    pass
-
-            media_status = 'downloading' if has_aria2 else 'downloaded'
-            if row:
-                mid = row['id'] if isinstance(row, dict) else row[0]
-                cursor.execute("""
-                    UPDATE media 
-                    SET in_library = 1, status = ?, download_dir = ?,
-                        magnet_uri = COALESCE(NULLIF(magnet_uri, ''), ?)
-                    WHERE id = ?
-                """, (media_status, item_dir, detected_magnet, mid))
+                """, (parsed_title, folder_name, parsed_year)).fetchone()
             else:
-                cursor.execute("""
-                    INSERT INTO media (title, year, media_type, in_library, status, download_dir, magnet_uri)
-                    VALUES (?, ?, ?, 1, ?, ?, ?)
-                """, (parsed_title, parsed_year, media_type, media_status, item_dir, detected_magnet))
-                mid = cursor.lastrowid
+                row = cursor.execute("""
+                    SELECT id, in_library, download_dir, status FROM media 
+                    WHERE (title = ? OR title = ?)
+                    ORDER BY id ASC LIMIT 1
+                """, (parsed_title, folder_name)).fetchone()
 
-            for fp, fn, sz in vfiles:
-                mf_row = cursor.execute("""
-                    SELECT id FROM media_files 
-                    WHERE media_id = ? AND (file_path = ? OR file_name = ?)
-                """, (mid, fp, fn)).fetchone()
-                if not mf_row:
-                    ep_num = None
-                    season_num = 1
-                    m_ep = re.search(r'(?i)(?:s\d{1,2}e|\bep?[-_\s]*)(\d{1,4})', fn)
-                    if m_ep:
-                        try:
-                            ep_num = int(m_ep.group(1))
-                        except Exception:
-                            pass
-                    cursor.execute("""
-                        INSERT INTO media_files (media_id, file_path, file_name, file_size, season_number, episode_number)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, (mid, fp, fn, sz, season_num, ep_num))
+        media_status = 'downloading' if has_aria2 else 'downloaded'
+        if row:
+            mid = row['id'] if isinstance(row, dict) else row[0]
+            cursor.execute("""
+                UPDATE media 
+                SET in_library = 1, status = ?, download_dir = ?,
+                    magnet_uri = COALESCE(NULLIF(magnet_uri, ''), ?)
+                WHERE id = ?
+            """, (media_status, item_dir, detected_magnet, mid))
+        else:
+            cursor.execute("""
+                INSERT INTO media (title, year, media_type, in_library, status, download_dir, magnet_uri)
+                VALUES (?, ?, ?, 1, ?, ?, ?)
+            """, (parsed_title, parsed_year, media_type, media_status, item_dir, detected_magnet))
+            mid = cursor.lastrowid
 
-            dl_row = cursor.execute("SELECT id, status FROM downloads WHERE media_id = ?", (mid,)).fetchone()
-            tot_sz = sum(vf[2] for vf in vfiles)
-            dl_status = 'downloading' if has_aria2 else 'completed'
-            dl_progress = 50.0 if has_aria2 else 100.0
-
-            if not dl_row:
-                cursor.execute("""
-                    INSERT INTO downloads (
-                        media_id, magnet_uri, torrent_title, status, progress, 
-                        total_size, downloaded_size, download_dir, completed_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                """, (mid, detected_magnet, folder_name, dl_status, dl_progress, tot_sz, tot_sz, item_dir))
-            else:
-                dl_id = dl_row['id'] if isinstance(dl_row, dict) else dl_row[0]
-                dl_st = dl_row['status'] if isinstance(dl_row, dict) else dl_row[1]
-                if dl_st != 'completed' and not has_aria2:
-                    cursor.execute("""
-                        UPDATE downloads 
-                        SET status = 'completed', progress = 100.0, total_size = ?, downloaded_size = ?
-                        WHERE id = ?
-                    """, (tot_sz, tot_sz, dl_id))
-
-            restored_count += 1
-
-        def process_single_video_file(fp: str, fn: str, sz: int, parent_dir: str):
-            nonlocal restored_count
-            indexed_files.add(fp)
-            has_aria2 = os.path.exists(fp + ".aria2")
-
-            clean_parsed, p_year, _ = clean_media_title(fn)
-            file_title = clean_parsed or os.path.splitext(fn)[0]
-
-            is_tv = bool(re.search(r'(?i)\b(s\d{1,2}e\d{1,2}|s\d{1,2}|season\s*\d+|сезон\s*\d+|серия\s*\d+)\b', fn))
-            media_type = "tv" if is_tv else "movie"
-
-            # Check if this exact file path is already in media_files
+        for fp, fn, sz in vfiles:
             mf_row = cursor.execute("""
-                SELECT mf.media_id, m.id FROM media_files mf
-                JOIN media m ON mf.media_id = m.id
-                WHERE mf.file_path = ? LIMIT 1
-            """, (fp,)).fetchone()
-
-            media_status = 'downloading' if has_aria2 else 'downloaded'
-            if mf_row:
-                mid = mf_row['media_id'] if isinstance(mf_row, dict) else mf_row[0]
-                cursor.execute("""
-                    UPDATE media 
-                    SET in_library = 1, status = ?, download_dir = ?
-                    WHERE id = ?
-                """, (media_status, parent_dir, mid))
-            else:
-                cursor.execute("""
-                    INSERT INTO media (title, year, media_type, in_library, status, download_dir)
-                    VALUES (?, ?, ?, 1, ?, ?)
-                """, (file_title, p_year, media_type, media_status, parent_dir))
-                mid = cursor.lastrowid
-
+                SELECT id FROM media_files 
+                WHERE media_id = ? AND (file_path = ? OR file_name = ?)
+            """, (mid, fp, fn)).fetchone()
+            if not mf_row:
                 ep_num = None
-                m_ep = re.search(r'(?i)(?:s\d{1,2}e|\bep?[-_\s]*)(\d{1,4})', fn)
+                season_num = 1
+                m_ep = re.search(r'(?i)(?:s\d{1,2}e|ep?[-_\s]*)(\d{1,4})', fn)
                 if m_ep:
                     try:
                         ep_num = int(m_ep.group(1))
                     except Exception:
                         pass
-
                 cursor.execute("""
                     INSERT INTO media_files (media_id, file_path, file_name, file_size, season_number, episode_number)
-                    VALUES (?, ?, ?, ?, 1, ?)
-                """, (mid, fp, fn, sz, ep_num))
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (mid, fp, fn, sz, season_num, ep_num))
 
-            dl_row = cursor.execute("SELECT id, status FROM downloads WHERE media_id = ?", (mid,)).fetchone()
-            dl_status = 'downloading' if has_aria2 else 'completed'
-            dl_progress = 50.0 if has_aria2 else 100.0
+        dl_row = cursor.execute("SELECT id, status FROM downloads WHERE media_id = ?", (mid,)).fetchone()
+        tot_sz = sum(vf[2] for vf in vfiles)
+        dl_status = 'downloading' if has_aria2 else 'completed'
+        dl_progress = 50.0 if has_aria2 else 100.0
 
-            if not dl_row:
-                cursor.execute("""
-                    INSERT INTO downloads (
-                        media_id, magnet_uri, torrent_title, status, progress, 
-                        total_size, downloaded_size, download_dir, completed_at
-                    ) VALUES (?, '', ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                """, (mid, fn, dl_status, dl_progress, sz, sz, parent_dir))
-            else:
-                dl_id = dl_row['id'] if isinstance(dl_row, dict) else dl_row[0]
+        if not dl_row:
+            cursor.execute("""
+                INSERT INTO downloads (
+                    media_id, magnet_uri, torrent_title, status, progress, 
+                    total_size, downloaded_size, download_dir, completed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """, (mid, detected_magnet, folder_name, dl_status, dl_progress, tot_sz, tot_sz, item_dir))
+        else:
+            dl_id = dl_row['id'] if isinstance(dl_row, dict) else dl_row[0]
+            dl_st = dl_row['status'] if isinstance(dl_row, dict) else dl_row[1]
+            if dl_st != 'completed' and not has_aria2:
                 cursor.execute("""
                     UPDATE downloads 
-                    SET status = ?, progress = ?, total_size = ?, downloaded_size = ?
+                    SET status = 'completed', progress = 100.0, total_size = ?, downloaded_size = ?
                     WHERE id = ?
-                """, (dl_status, dl_progress, sz, sz, dl_id))
+                """, (tot_sz, tot_sz, dl_id))
+        return mid
 
-            restored_count += 1
+    @staticmethod
+    def save_scanned_single_file(cursor, fp: str, fn: str, sz: int, parent_dir: str):
+        has_aria2 = os.path.exists(fp + '.aria2')
 
-        for root in search_roots:
-            if not os.path.isdir(root):
-                continue
+        clean_parsed, p_year, _ = clean_media_title(fn)
+        file_title = clean_parsed or os.path.splitext(fn)[0]
 
-            # 1. Сканируем стандартные категории внутри папки
-            for cat_name, media_type in categories:
-                cat_dir = os.path.join(root, cat_name)
-                if not os.path.isdir(cat_dir):
-                    continue
+        is_tv = bool(re.search(r'(?i)(s\d{1,2}e\d{1,2}|s\d{1,2}|season\s*\d+|сезон\s*\d+|серия\s*\d+)', fn))
+        media_type = 'tv' if is_tv else 'movie'
 
-                for folder_name in sorted(os.listdir(cat_dir)):
-                    item_dir = os.path.join(cat_dir, folder_name)
-                    if os.path.isdir(item_dir):
-                        process_media_folder(item_dir, folder_name, media_type)
+        mf_row = cursor.execute("""
+            SELECT mf.media_id, m.id FROM media_files mf
+            JOIN media m ON mf.media_id = m.id
+            WHERE mf.file_path = ? LIMIT 1
+        """, (fp,)).fetchone()
 
-            # 2. Рекурсивное сканирование всех остальных папок и видеофайлов
-            skip_dir_names = {
-                'steam', 'steamapps', 'node_modules', '__pycache__', 
-                '.thumbnails', '.cache', '.config', '.git'
-            }
-            known_cat_names = {c[0].lower() for c in categories}
+        media_status = 'downloading' if has_aria2 else 'downloaded'
+        if mf_row:
+            mid = mf_row['media_id'] if isinstance(mf_row, dict) else mf_row[0]
+            cursor.execute("""
+                UPDATE media 
+                SET in_library = 1, status = ?, download_dir = ?
+                WHERE id = ?
+            """, (media_status, parent_dir, mid))
+        else:
+            cursor.execute("""
+                INSERT INTO media (title, year, media_type, in_library, status, download_dir)
+                VALUES (?, ?, ?, 1, ?, ?)
+            """, (file_title, p_year, media_type, media_status, parent_dir))
+            mid = cursor.lastrowid
 
-            for dirpath, dirs, filenames in os.walk(root):
-                # Исключаем скрытые и системные директории
-                dirs[:] = [
-                    d for d in dirs 
-                    if not d.startswith('.') and d.lower() not in skip_dir_names and d.lower() not in known_cat_names
-                ]
+            ep_num = None
+            m_ep = re.search(r'(?i)(?:s\d{1,2}e|ep?[-_\s]*)(\d{1,4})', fn)
+            if m_ep:
+                try:
+                    ep_num = int(m_ep.group(1))
+                except Exception:
+                    pass
 
-                # Проверяем, не является ли dirpath стандартной категорией
-                if os.path.basename(dirpath).lower() in known_cat_names:
-                    continue
+            cursor.execute("""
+                INSERT INTO media_files (media_id, file_path, file_name, file_size, season_number, episode_number)
+                VALUES (?, ?, ?, ?, 1, ?)
+            """, (mid, fp, fn, sz, ep_num))
 
-                # Ищем неиндексированные видеофайлы в текущей директории
-                if any(f.endswith('.aria2') for f in filenames):
-                    continue
+        dl_row = cursor.execute("SELECT id, status FROM downloads WHERE media_id = ?", (mid,)).fetchone()
+        dl_status = 'downloading' if has_aria2 else 'completed'
+        dl_progress = 50.0 if has_aria2 else 100.0
 
-                local_vfiles = []
+        if not dl_row:
+            cursor.execute("""
+                INSERT INTO downloads (
+                    media_id, magnet_uri, torrent_title, status, progress, 
+                    total_size, downloaded_size, download_dir, completed_at
+                ) VALUES (?, '', ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """, (mid, fn, dl_status, dl_progress, sz, sz, parent_dir))
+        else:
+            dl_id = dl_row['id'] if isinstance(dl_row, dict) else dl_row[0]
+            cursor.execute("""
+                UPDATE downloads 
+                SET status = ?, progress = ?, total_size = ?, downloaded_size = ?
+                WHERE id = ?
+            """, (dl_status, dl_progress, sz, sz, dl_id))
+        return mid
 
-                for fn in filenames:
-                    ext = os.path.splitext(fn)[1].lower()
-                    if ext in video_exts and not fn.endswith('.aria2'):
-                        fp = os.path.realpath(os.path.join(dirpath, fn))
-                        if fp not in indexed_files:
-                            try:
-                                sz = os.path.getsize(fp)
-                                if sz >= 100 * 1024 and is_header_ready(fp):
-                                    local_vfiles.append((fp, fn, sz))
-                            except Exception:
-                                pass
 
-                if not local_vfiles:
-                    continue
+def rescan_library_from_disk(download_path: Optional[str] = None, conn: Optional[sqlite3.Connection] = None) -> int:
+    return LibraryScanner().scan_disk(download_path=download_path, conn=conn)
 
-                folder_name = os.path.basename(dirpath)
-                is_root_dir = (os.path.realpath(dirpath) == os.path.realpath(root))
-                
-                # Если это не корень и в папке собраны серии сериала или части релиза
-                is_season_folder = any(kw in folder_name.lower() for kw in ["season", "сезон", "s0", "s1", "серии"])
-                has_episode_files = sum(1 for _, fn, _ in local_vfiles if re.search(r'(?i)\b(s\d{1,2}e\d{1,4}|s\d{1,2}|\bep?[-_\s]*\d{1,4}|серия\s*\d+)\b', fn)) >= 2
-                is_structured_release = (not is_root_dir) and (len(local_vfiles) > 1 and (is_season_folder or has_episode_files))
 
-                if is_structured_release:
-                    mtype = "tv"
-                    process_media_folder(dirpath, folder_name, mtype)
+def trigger_background_auto_scan() -> None:
+    LibraryScanner.trigger_auto_scan()
 
-                else:
-                    # Одиночные файлы или файлы в общих папках (например, телефонные видео или отдельные фильмы)
-                    for fp, fn, sz in local_vfiles:
-                        process_single_video_file(fp, fn, sz, dirpath)
 
-        conn.commit()
-
-        # Автоматическое обогащение метаданных через TMDB (постеры, бэкдропы, описания)
-        try:
-            auto_enrich_library_metadata(conn)
-        except Exception as e_meta:
-            logger.debug(f"auto_enrich_library_metadata background check: {e_meta}")
-
-        if restored_count > 0:
-            logger.info(f"[rescan_library_from_disk] Successfully indexed {restored_count} media items into library")
-    except Exception as e:
-        logger.error(f"[rescan_library_from_disk] Error scanning disk media: {e}")
-    finally:
-        if should_close:
-            conn.close()
-
-    return restored_count
+__all__ = ['LibraryService', 'rescan_library_from_disk', 'trigger_background_auto_scan', 'LibraryScanner']

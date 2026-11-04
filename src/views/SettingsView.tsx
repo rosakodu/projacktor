@@ -64,10 +64,11 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
     return subscribeUserSettings((updated) => setUserPrefs(updated));
   }, []);
 
-  const handleTogglePref = useCallback((key: "hapticAndSoundEnabled" | "kidsMode") => {
+  const handleTogglePref = useCallback((key: "soundEffectsEnabled" | "hapticFeedbackEnabled" | "kidsMode") => {
     const nextVal = !userPrefs[key];
-    if (key === "hapticAndSoundEnabled" ? nextVal : userPrefs.hapticAndSoundEnabled) {
+    if (key === "hapticFeedbackEnabled" && nextVal) {
       triggerHaptic("medium", "both", true);
+    } else if (key === "soundEffectsEnabled" && nextVal) {
       playNavSound();
     }
     setUserSetting(key, nextVal);
@@ -424,7 +425,7 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
   return (
     <Focusable
       ref={rootRef}
-      flow-children="vertical"
+      flow-children="column"
       noFocusRing
       className="projacktor-content"
       onGamepadDirection={(evt: any) => {
@@ -506,21 +507,45 @@ export const SettingsView: FC<SettingsViewProps> = memo(({ onNavigateUp }) => {
         {/* Карточка 1: Режимы и поведение (Вибрация/звуки и Детский режим) */}
         <div className="projacktor-settings-card">
           <PanelSection>
-            {/* Тумблер 1: Вибрация и звуки */}
+            {/* Тумблер 1: Звуки интерфейса */}
             <PanelSectionRow>
               <Focusable
                 noFocusRing
                 tabIndex={0}
-                onActivate={() => handleTogglePref("hapticAndSoundEnabled")}
-                onClick={() => handleTogglePref("hapticAndSoundEnabled")}
+                onActivate={() => handleTogglePref("soundEffectsEnabled")}
+                onClick={() => handleTogglePref("soundEffectsEnabled")}
                 className="projacktor-toggle-row"
                 style={{ cursor: "pointer" }}
               >
                 <div className="projacktor-toggle-label-wrap">
-                  <div className="projacktor-toggle-title">{t("vibrationAndSound")}</div>
-                  <div className="projacktor-toggle-desc">{t("vibrationAndSoundDesc")}</div>
+                  <div className="projacktor-toggle-title">{t("soundEffects")}</div>
+                  <div className="projacktor-toggle-desc">{t("soundEffectsDesc")}</div>
                 </div>
-                <div className={`projacktor-toggle-btn ${userPrefs.hapticAndSoundEnabled ? "active" : ""}`}>
+                <div className={`projacktor-toggle-btn ${userPrefs.soundEffectsEnabled ? "active" : ""}`}>
+                  <div className="projacktor-toggle-knob" />
+                </div>
+              </Focusable>
+            </PanelSectionRow>
+
+            {/* Тумблер 2: Тактильная отдача (вибро) */}
+            <PanelSectionRow>
+              <Focusable
+                noFocusRing
+                tabIndex={0}
+                onActivate={() => handleTogglePref("hapticFeedbackEnabled")}
+                onClick={() => handleTogglePref("hapticFeedbackEnabled")}
+                className="projacktor-toggle-row"
+                style={{
+                  cursor: "pointer",
+                  borderTop: "1px solid rgba(255,255,255,0.06)",
+                  paddingTop: 10,
+                }}
+              >
+                <div className="projacktor-toggle-label-wrap">
+                  <div className="projacktor-toggle-title">{t("hapticFeedback")}</div>
+                  <div className="projacktor-toggle-desc">{t("hapticFeedbackDesc")}</div>
+                </div>
+                <div className={`projacktor-toggle-btn ${userPrefs.hapticFeedbackEnabled ? "active" : ""}`}>
                   <div className="projacktor-toggle-knob" />
                 </div>
               </Focusable>

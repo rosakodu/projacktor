@@ -417,7 +417,7 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie, onNavigate
   return (
     <Focusable
       ref={rootRef}
-      flow-children="vertical"
+      flow-children="column"
       noFocusRing
       className="projacktor-content projacktor-search-view"
       onGamepadDirection={(evt: any) => {
@@ -691,7 +691,7 @@ export const SearchView: FC<SearchViewProps> = memo(({ onSelectMovie, onNavigate
 
           <Focusable
             ref={chipsRowRef}
-            flow-children="horizontal"
+            flow-children="row"
             noFocusRing
             className="projacktor-search-history-chips"
             onGamepadDirection={handleChipGamepadDirection}

@@ -363,15 +363,15 @@ export const ProjacktorApp: FC = () => {
       );
     } else if (activeTab === "watchlist") {
       target = root.querySelector<HTMLElement>(
-        ".projacktor-dl-poster-btn, .projacktor-dl-btn-play, .projacktor-empty-cta-btn, .projacktor-empty-lib"
+        ".projacktor-dl-poster-btn, .projacktor-dl-btn-play, .projacktor-empty-cta-btn"
       );
     } else if (activeTab === "history") {
       target = root.querySelector<HTMLElement>(
-        ".projacktor-dl-poster-btn, .projacktor-dl-btn-play, .projacktor-empty-cta-btn, .projacktor-empty-lib"
+        ".projacktor-dl-poster-btn, .projacktor-dl-btn-play, .projacktor-empty-cta-btn"
       );
     } else if (activeTab === "library") {
       target = root.querySelector<HTMLElement>(
-        ".projacktor-library-content .projacktor-dl-btn-play, .projacktor-library-content .projacktor-dl-card-btns [tabindex='0'], .projacktor-empty-cta-btn, .projacktor-empty-lib"
+        ".projacktor-dl-poster-btn, .projacktor-library-content .projacktor-dl-btn-play, .projacktor-library-content .projacktor-dl-card-btns [tabindex='0'], .projacktor-empty-cta-btn"
       );
     } else if (activeTab === "settings") {
       target = root.querySelector<HTMLElement>(
@@ -594,7 +594,7 @@ export const ProjacktorApp: FC = () => {
     <Focusable
       ref={rootRef}
       className={`projacktor-app-root pj-mode-${inputMode} ${isPlayerOpen ? "projacktor-app-playing" : ""}`}
-      flow-children="vertical"
+      flow-children="column"
       onCancelButton={(e: any) => {
         if (isPlayerOpen || isPlayerActive() || Date.now() - lastPlayerCloseTimeRef.current < 500) {
           try {
@@ -724,7 +724,7 @@ export const ProjacktorApp: FC = () => {
 
       {/* Контент текущей вкладки (скрыт и инертен в режиме плеера для сохранения состояния и скролла) */}
       <Focusable
-        flow-children="vertical"
+        flow-children="column"
         noFocusRing
         className="projacktor-view-container"
         inert={isPlayerOpen ? true : undefined}

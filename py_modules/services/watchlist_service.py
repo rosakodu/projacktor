@@ -5,6 +5,9 @@ from ..db import get_db, logger
 
 
 class WatchlistService:
+    def __init__(self, context=None):
+        self.context = context
+
     def get_watchlist(self) -> list[dict]:
         db = get_db()
         try:

@@ -190,7 +190,7 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onSelectMo
     const root = rootRef.current;
     if (!root) return;
     if (!active || active === doc?.body || !root.contains(active)) {
-      const target = root.querySelector<HTMLElement>(".projacktor-empty-cta-btn, .projacktor-dl-poster-btn, .projacktor-empty-lib");
+      const target = root.querySelector<HTMLElement>(".projacktor-empty-cta-btn, .projacktor-dl-poster-btn");
       if (target) {
         try {
           doc?.querySelectorAll(".gpfocus").forEach((el) => {
@@ -352,7 +352,7 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onSelectMo
       return true;
     }
     const target = root.querySelector<HTMLElement>(
-      ".projacktor-dl-poster-btn, .projacktor-empty-lib"
+      ".projacktor-dl-poster-btn, .projacktor-empty-cta-btn"
     );
     if (target) {
       try {
@@ -441,7 +441,7 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onSelectMo
         )}
       </div>
 
-      {!loading && items.length === 0 && (
+      {items.length === 0 && (
         <div
           className="projacktor-empty-lib"
           style={{ textAlign: "center", padding: "60px 20px", color: "rgba(255,255,255,0.4)" }}
@@ -456,6 +456,7 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onSelectMo
           {onNavigateToCatalog && (
             <Focusable
               role="button"
+              autoFocus
               tabIndex={0}
               className="ds-btn ds-btn--primary projacktor-empty-cta-btn"
               onClick={onNavigateToCatalog}
@@ -581,6 +582,53 @@ export const HistoryView: FC<HistoryViewProps> = memo(({ onPlayVideo, onSelectMo
                     tabIndex={0}
                     onClick={(e: any) => handleDelete(item, e)}
                     onActivate={(e: any) => handleDelete(item, e)}
+                    onGamepadDirection={(evt: any) => {
+                      if (evt?.detail?.button === 9) {
+                        // Кнопка UP на геймпаде: направляем фокус на постер этой же карточки
+                        const card = (evt.currentTarget as HTMLElement)?.closest(".projacktor-dl-grid-card");
+                        const poster = card?.querySelector<HTMLElement>(".projacktor-dl-poster-btn");
+                        if (poster) {
+                          try {
+                            evt?.preventDefault?.();
+                            evt?.stopPropagation?.();
+                          } catch {}
+                          const doc = getActiveDocument(poster);
+                          doc?.querySelectorAll(".gpfocus, .gpfocuswithin").forEach((el) => {
+                            el.classList.remove("gpfocus");
+                            el.classList.remove("gpfocuswithin");
+                          });
+                          try {
+                            (poster as any).TakeFocus?.(0);
+                          } catch {}
+                          poster.focus();
+                          poster.classList.add("gpfocus", "gpfocuswithin");
+                          handleCardFocus(item, card as HTMLElement);
+                          return false;
+                        }
+                      }
+                      return undefined;
+                    }}
+                    onKeyDown={(e: any) => {
+                      if (e.key === "ArrowUp") {
+                        const card = (e.currentTarget as HTMLElement)?.closest(".projacktor-dl-grid-card");
+                        const poster = card?.querySelector<HTMLElement>(".projacktor-dl-poster-btn");
+                        if (poster) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const doc = getActiveDocument(poster);
+                          doc?.querySelectorAll(".gpfocus, .gpfocuswithin").forEach((el) => {
+                            el.classList.remove("gpfocus");
+                            el.classList.remove("gpfocuswithin");
+                          });
+                          try {
+                            (poster as any).TakeFocus?.(0);
+                          } catch {}
+                          poster.focus();
+                          poster.classList.add("gpfocus", "gpfocuswithin");
+                          handleCardFocus(item, card as HTMLElement);
+                        }
+                      }
+                    }}
                     title={t("delete")}
                   >
                     <FaTrash style={{ fontSize: 10, marginRight: 5 }} />

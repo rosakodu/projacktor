@@ -19,6 +19,9 @@ from ..constants import DEFAULT_HTTP_HOST, DEFAULT_HTTP_PORT
 
 
 class StreamService:
+    def __init__(self, context=None):
+        self.context = context
+
     @staticmethod
     def _default_base_url() -> str:
         sett = load_settings()
@@ -37,6 +40,12 @@ class StreamService:
         base_url_cb=None
     ) -> dict:
         try:
+            ts = ts or (self.context.ts if self.context else None)
+            dm = dm or (self.context.dm if self.context else None)
+            library_service = library_service or (self.context.library if self.context else None)
+            if not base_url_cb and self.context and hasattr(self.context, 'get_http_base_url'):
+                base_url_cb = self.context.get_http_base_url
+
             get_base_url = base_url_cb or self._default_base_url
             sort_key_fn = library_service._episode_sort_key if library_service else None
 

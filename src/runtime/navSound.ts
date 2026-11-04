@@ -65,7 +65,7 @@ function installSteamAudioGuard() {
           targetObj.__projacktorGuardInstalled = true;
           const origPlay = targetObj.PlayAudioURL;
           targetObj.PlayAudioURL = function (url: string, ...args: any[]) {
-            if (!getUserSettings().hapticAndSoundEnabled && isInsideProjacktor()) {
+            if (!getUserSettings().soundEffectsEnabled && isInsideProjacktor()) {
               return Promise.resolve();
             }
             if (typeof url === "string" && url.includes("deck_ui_bumper_end")) {
@@ -101,7 +101,7 @@ function installSteamAudioGuard() {
               get() {
                 const boundOrig = origGetter ? origGetter.call(this) : null;
                 return function (this: any, type: any, ...args: any[]) {
-                  if (!getUserSettings().hapticAndSoundEnabled && isInsideProjacktor()) {
+                  if (!getUserSettings().soundEffectsEnabled && isInsideProjacktor()) {
                     return;
                   }
                   if (type === 25 || type === "FailedNav") return;
@@ -115,7 +115,7 @@ function installSteamAudioGuard() {
 
         const origPlayNavSound = store.PlayNavSound;
         store.PlayNavSound = function (type: any, ...args: any[]) {
-          if (!getUserSettings().hapticAndSoundEnabled && isInsideProjacktor()) {
+          if (!getUserSettings().soundEffectsEnabled && isInsideProjacktor()) {
             return;
           }
           if (type === 25 || type === "FailedNav") return;
@@ -135,7 +135,7 @@ function installSteamAudioGuard() {
 
         const origPlayNavSoundInternal = store.PlayNavSoundInternal;
         store.PlayNavSoundInternal = function (type: any, ...args: any[]) {
-          if (!getUserSettings().hapticAndSoundEnabled && isInsideProjacktor()) {
+          if (!getUserSettings().soundEffectsEnabled && isInsideProjacktor()) {
             return;
           }
           if (type === 25 || type === "FailedNav") return;
@@ -185,7 +185,7 @@ export function suppressSteamNavSounds() {
 }
 
 export function playNavSound() {
-  if (!getUserSettings().hapticAndSoundEnabled) {
+  if (!getUserSettings().soundEffectsEnabled) {
     return;
   }
   const now = Date.now();
@@ -221,7 +221,7 @@ let lastCardPlayAt = 0;
 const CARD_SOUND_COOLDOWN_MS = 60;
 
 export function playCardNavSound() {
-  if (!getUserSettings().hapticAndSoundEnabled) {
+  if (!getUserSettings().soundEffectsEnabled) {
     return;
   }
   const now = Date.now();

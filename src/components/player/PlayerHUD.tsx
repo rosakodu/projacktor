@@ -1,8 +1,7 @@
-import { FC, RefObject, useState, useEffect } from "react";
+import { FC, RefObject, memo } from "react";
 import { FaVolumeUp, FaVolumeMute, FaSearchMinus, FaSearchPlus } from "react-icons/fa";
-import { getBackdropUrl, getLogoUrl } from "../../api";
 import { PlayerMediaInfo } from "../../types";
-import { triggerHeartbeatHaptic } from "../../runtime/haptics";
+import { PlayerSplash } from "./PlayerSplash";
 
 export interface TorrentStatusInfo {
   stat?: number;
@@ -17,7 +16,7 @@ export interface TorrentStatusInfo {
   torrent_size?: number;
 }
 
-interface PlayerHUDProps {
+export interface PlayerHUDProps {
   volumeHudVisible: boolean;
   volume: number;
   zoomHudVisible: boolean;
@@ -34,101 +33,16 @@ interface PlayerHUDProps {
   torrentStatus?: TorrentStatusInfo | null;
 }
 
-export const PlayerHUD: FC<PlayerHUDProps> = ({
-  volumeHudVisible,
-  volume,
-  zoomHudVisible,
-  zoom,
-  zoomHudBarRef,
-  zoomHudTextRef,
-  hasStartedPlayback,
-  errorMsg,
-  mediaInfo,
-  logoPath,
-  title,
-  isOnline,
-  torrentStatus,
+export const PlayerHUD: FC<PlayerHUDProps> = memo(({
+  volumeHudVisible, volume, zoomHudVisible, zoom,
+  zoomHudBarRef, zoomHudTextRef, hasStartedPlayback,
+  errorMsg, mediaInfo, logoPath, title, isOnline, torrentStatus,
 }) => {
-  const [logoFailed, setLogoFailed] = useState(false);
-  const [logoRetry, setLogoRetry] = useState(0);
-
-  const [splashMounted, setSplashMounted] = useState(!hasStartedPlayback);
-  const [splashOpacity, setSplashOpacity] = useState(hasStartedPlayback ? 0 : 1);
-
-  useEffect(() => {
-    if (hasStartedPlayback) {
-      setSplashOpacity(0);
-      const timer = setTimeout(() => {
-        setSplashMounted(false);
-      }, 450);
-      return () => clearTimeout(timer);
-    } else {
-      setSplashMounted(true);
-      setSplashOpacity(1);
-      return undefined;
-    }
-  }, [hasStartedPlayback]);
-
-  // Нежная тактильная вибрация в такт пульсирующему логотипу
-  useEffect(() => {
-    if (!splashMounted || splashOpacity === 0 || !!errorMsg) {
-      return undefined;
-    }
-
-    let isCancelled = false;
-    let secondaryTimer: ReturnType<typeof setTimeout> | null = null;
-    let cycleInterval: ReturnType<typeof setInterval> | null = null;
-
-    const runHeartbeat = () => {
-      if (isCancelled) return;
-      triggerHeartbeatHaptic("primary");
-      secondaryTimer = setTimeout(() => {
-        if (!isCancelled) {
-          triggerHeartbeatHaptic("secondary");
-        }
-      }, 450);
-    };
-
-    // Первый такт синхронизирован с пиком первого расширения логотипа (14% от 1.6s ≈ 224ms)
-    const initialDelay = setTimeout(() => {
-      if (isCancelled) return;
-      runHeartbeat();
-      cycleInterval = setInterval(runHeartbeat, 1600);
-    }, 220);
-
-    return () => {
-      isCancelled = true;
-      if (initialDelay) clearTimeout(initialDelay);
-      if (secondaryTimer) clearTimeout(secondaryTimer);
-      if (cycleInterval) clearInterval(cycleInterval);
-    };
-  }, [splashMounted, splashOpacity, errorMsg]);
-
-  useEffect(() => {
-    setLogoFailed(false);
-    setLogoRetry(0);
-  }, [logoPath]);
-
-  const handleLogoError = () => {
-    if (logoRetry < 3) {
-      setTimeout(() => {
-        setLogoRetry((r) => r + 1);
-      }, 1000);
-    } else {
-      setLogoFailed(true);
-    }
-  };
-
   return (
     <>
-      {/* HUD громкости (Справа) */}
       {volumeHudVisible && (
         <div className="projacktor-volume-hud">
-          {volume === 0 ? (
-            <FaVolumeMute style={{ color: "var(--ds-accent)", fontSize: 20 }} />
-          ) : (
-            <FaVolumeUp style={{ color: "var(--ds-accent)", fontSize: 20 }} />
-          )}
+          {volume === 0 ? <FaVolumeMute style={{ color: "var(--ds-accent)", fontSize: 20 }} /> : <FaVolumeUp style={{ color: "var(--ds-accent)", fontSize: 20 }} />}
           <div className="projacktor-volume-bar-track">
             <div className="projacktor-volume-bar-fill" style={{ width: `${Math.round(volume * 100)}%` }} />
           </div>
@@ -138,16 +52,9 @@ export const PlayerHUD: FC<PlayerHUDProps> = ({
         </div>
       )}
 
-      {/* HUD масштаба (Справа под громкостью) */}
       {zoomHudVisible && (
         <div className="projacktor-zoom-hud">
-          {zoom < 1.0 ? (
-            <FaSearchMinus style={{ color: "#a855f7", fontSize: 18 }} />
-          ) : zoom > 1.0 ? (
-            <FaSearchPlus style={{ color: "#38bdf8", fontSize: 18 }} />
-          ) : (
-            <FaSearchPlus style={{ color: "var(--ds-accent)", fontSize: 18 }} />
-          )}
+          {zoom < 1.0 ? <FaSearchMinus style={{ color: "#a855f7", fontSize: 18 }} /> : zoom > 1.0 ? <FaSearchPlus style={{ color: "#38bdf8", fontSize: 18 }} /> : <FaSearchPlus style={{ color: "var(--ds-accent)", fontSize: 18 }} />}
           <div className="projacktor-zoom-bar-track">
             <div
               ref={zoomHudBarRef}
@@ -158,208 +65,21 @@ export const PlayerHUD: FC<PlayerHUDProps> = ({
               }}
             />
           </div>
-          <span
-            ref={zoomHudTextRef}
-            style={{ fontSize: 12, fontWeight: 700, color: "#fff", fontFamily: "monospace", minWidth: 42 }}
-          >
+          <span ref={zoomHudTextRef} style={{ fontSize: 12, fontWeight: 700, color: "#fff", fontFamily: "monospace", minWidth: 42 }}>
             {Math.round(zoom * 100)}%
           </span>
         </div>
       )}
 
-      {/* 1. Экран начальной загрузки и буферизации с официальным логотипом фильма с TMDB */}
-      {splashMounted && !errorMsg && (
-        <div
-          className="projacktor-player-splash"
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "#0a0d14",
-            zIndex: 25,
-            overflow: "hidden",
-            pointerEvents: "none",
-            opacity: splashOpacity,
-            transition: "opacity 0.45s cubic-bezier(0.2, 0, 0, 1)",
-            willChange: "opacity",
-          }}
-        >
-          {/* Фоновый четкий бэкдроп фильма с умеренным затемнением */}
-          {mediaInfo?.backdropPath && (
-            <div
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundImage: `url(${getBackdropUrl(mediaInfo.backdropPath)})`,
-                backgroundSize: "cover",
-                backgroundPosition: "center",
-                filter: "brightness(0.55)",
-                zIndex: 1,
-              }}
-            />
-          )}
-
-          {/* Мягкий виньеточный радиальный градиент */}
-          <div
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: "radial-gradient(ellipse at center, rgba(10,13,20,0.3) 0%, rgba(10,13,20,0.85) 100%)",
-              zIndex: 2,
-            }}
-          />
-
-          {/* Контент: Только графический логотип TMDB с анимацией пульсации по центру */}
-          {logoPath && !logoFailed ? (
-            <div
-              style={{
-                position: "relative",
-                zIndex: 3,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: "0 30px",
-                maxWidth: "85%",
-              }}
-            >
-              <img
-                key={`logo-${logoPath}-${logoRetry}`}
-                className="projacktor-buffering-heartbeat"
-                src={`${getLogoUrl(logoPath)}${logoRetry > 0 ? `&retry=${logoRetry}` : ""}`}
-                alt={title}
-                onError={handleLogoError}
-                style={{
-                  maxWidth: 440,
-                  maxHeight: 170,
-                  width: "auto",
-                  height: "auto",
-                  objectFit: "contain",
-                  filter: "drop-shadow(0 0 18px rgba(255, 255, 255, 0.25)) drop-shadow(0 8px 24px rgba(0, 0, 0, 0.95)) drop-shadow(0 2px 6px rgba(0, 0, 0, 0.8))",
-                  userSelect: "none",
-                }}
-              />
-            </div>
-          ) : (
-            <div
-              style={{
-                position: "relative",
-                zIndex: 3,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <div
-                style={{
-                  width: 52,
-                  height: 52,
-                  border: "4px solid rgba(255, 255, 255, 0.15)",
-                  borderTop: "4px solid var(--ds-accent)",
-                  borderRadius: "50%",
-                  animation: "projacktor-spin 0.9s linear infinite",
-                  boxShadow: "0 0 20px rgba(0, 0, 0, 0.5)",
-                }}
-              />
-            </div>
-          )}
-
-          {/* Индикатор буферизации торрента и статуса пиров */}
-          {isOnline && !hasStartedPlayback && !errorMsg && (
-            <div
-              style={{
-                position: "relative",
-                zIndex: 4,
-                marginTop: 22,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: 8,
-                textAlign: "center",
-                maxWidth: 420,
-                padding: "0 16px",
-              }}
-            >
-              {torrentStatus ? (
-                <>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "rgba(255, 255, 255, 0.9)" }}>
-                    {(torrentStatus.connected_seeders || 0) > 0
-                      ? (torrentStatus.preloaded_pct && torrentStatus.preloaded_pct >= 100
-                          ? "Запуск воспроизведения..."
-                          : `Буферизация: ${torrentStatus.preloaded_pct || 0}%`)
-                      : "Поиск сидеров в сети..."}
-                  </div>
-
-                  <div
-                    style={{
-                      width: 200,
-                      height: 4,
-                      background: "rgba(255, 255, 255, 0.15)",
-                      borderRadius: 2,
-                      overflow: "hidden",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: `${Math.min(100, Math.max(5, torrentStatus.preloaded_pct || 0))}%`,
-                        height: "100%",
-                        background: "var(--ds-accent, #38bdf8)",
-                        borderRadius: 2,
-                        transition: "width 0.3s ease",
-                      }}
-                    />
-                  </div>
-
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: "rgba(255, 255, 255, 0.65)",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 12,
-                    }}
-                  >
-                    <span>
-                      Сидеры:{" "}
-                      <strong style={{ color: (torrentStatus.connected_seeders || 0) > 0 ? "#4ade80" : "#f87171" }}>
-                        {torrentStatus.connected_seeders || 0}
-                      </strong>
-                    </span>
-                    {(torrentStatus.download_speed || 0) > 0 && (
-                      <span>
-                        Скорость:{" "}
-                        <strong style={{ color: "#38bdf8" }}>
-                          {torrentStatus.download_speed! >= 1024 * 1024
-                            ? `${(torrentStatus.download_speed! / (1024 * 1024)).toFixed(1)} МБ/с`
-                            : `${Math.round(torrentStatus.download_speed! / 1024)} КБ/с`}
-                        </strong>
-                      </span>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <div style={{ fontSize: 12, color: "rgba(255, 255, 255, 0.6)" }}>
-                  Подключение к раздаче...
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
+      <PlayerSplash
+        hasStartedPlayback={hasStartedPlayback}
+        errorMsg={errorMsg}
+        mediaInfo={mediaInfo}
+        logoPath={logoPath}
+        title={title}
+        isOnline={isOnline}
+        torrentStatus={torrentStatus}
+      />
     </>
   );
-};
+});

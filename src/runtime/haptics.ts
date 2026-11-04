@@ -121,7 +121,7 @@ export function triggerHaptic(
   pad: HapticPad = "both",
   force: boolean = false
 ): void {
-  if (!getUserSettings().hapticAndSoundEnabled) {
+  if (!getUserSettings().hapticFeedbackEnabled) {
     return;
   }
   const now = performance.now();
@@ -251,7 +251,7 @@ function getAllGamepads(): Gamepad[] {
  * @param phase 'primary' for the main heartbeat peak (stereo wave + micro-thump), 'secondary' for the soft diastolic echo.
  */
 export function triggerHeartbeatHaptic(phase: "primary" | "secondary" = "primary"): void {
-  if (!getUserSettings().hapticAndSoundEnabled) {
+  if (!getUserSettings().hapticFeedbackEnabled) {
     return;
   }
   const isPrimary = phase === "primary";

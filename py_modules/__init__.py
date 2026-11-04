@@ -62,5 +62,9 @@ from .services import (
     DownloadService,
     StreamService
 )
-
-
+from .clients import (
+    TMDBClient,
+    JacRedClient,
+    Aria2Client,
+    TorrServerClient
+)

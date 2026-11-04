@@ -48,6 +48,8 @@ uninstall_deck.sh
 
 # Test & dev scripts
 test_artifacts/
+.agents/
+PROJECT.md
 test_*.py
 tests/
 open_projacktor.sh

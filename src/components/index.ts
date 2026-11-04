@@ -4,8 +4,10 @@ export * from "./MovieCard";
 export * from "./MovieModal";
 export * from "./PlayerModal";
 export * from "./Shelf";
+export * from "./MediaShelf";
 export * from "./TabBar";
 export * from "./GlobalMagicBlackOverlay";
 export * from "./EpisodesModal";
 export * from "./HeroBackdrop";
 export * from "./GamepadTextField";
+

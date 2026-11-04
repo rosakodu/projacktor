@@ -79,7 +79,7 @@ export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie, onNa
     const root = rootRef.current;
     if (!root) return;
     if (!active || active === doc?.body || !root.contains(active)) {
-      const target = root.querySelector<HTMLElement>(".projacktor-empty-cta-btn, .projacktor-dl-poster-btn, .projacktor-dl-btn-play, .projacktor-empty-lib");
+      const target = root.querySelector<HTMLElement>(".projacktor-empty-cta-btn, .projacktor-dl-poster-btn, .projacktor-dl-btn-play");
       if (target) {
         try {
           doc?.querySelectorAll(".gpfocus").forEach((el) => el.classList.remove("gpfocus"));
@@ -165,7 +165,7 @@ export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie, onNa
       return true;
     }
     const target = root.querySelector<HTMLElement>(
-      ".projacktor-dl-poster-btn, .projacktor-empty-lib"
+      ".projacktor-dl-poster-btn, .projacktor-empty-cta-btn"
     );
     if (target) {
       try {
@@ -213,11 +213,6 @@ export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie, onNa
           className="projacktor-empty-lib"
           style={{ textAlign: "center", padding: "60px 20px", color: "rgba(255,255,255,0.4)" }}
         >
-          {loading ? (
-            <div style={{ padding: 40, color: "rgba(255,255,255,0.5)" }}>
-              {t("loadingWatchlist")}
-            </div>
-          ) : (
             <>
               <FaBookmark size={36} style={{ marginBottom: 16, opacity: 0.3 }} />
               <div style={{ fontSize: 16, fontWeight: 600, color: "#fff", marginBottom: 6 }}>
@@ -229,6 +224,7 @@ export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie, onNa
               {onNavigateToCatalog && (
                 <Focusable
                   role="button"
+                  autoFocus
                   tabIndex={0}
                   className="ds-btn ds-btn--primary projacktor-empty-cta-btn"
                   onClick={onNavigateToCatalog}
@@ -263,7 +259,6 @@ export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie, onNa
                 </Focusable>
               )}
             </>
-          )}
         </div>
       ) : (
         <div ref={rowRef} className="projacktor-downloads-grid">

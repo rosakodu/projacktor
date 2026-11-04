@@ -11,6 +11,9 @@ from ..common import POPULAR_TRACKERS
 
 
 class HistoryService:
+    def __init__(self, context=None):
+        self.context = context
+
     def get_watch_history(self) -> list[dict]:
         db = get_db()
         try:
@@ -227,7 +230,10 @@ class HistoryService:
             logger.error(f"HistoryService save_watch_progress error: {e}")
             return False
 
-    async def start_history_download(self, history_id: int, library_service, download_service, dm) -> dict:
+    async def start_history_download(self, history_id: int, library_service=None, download_service=None, dm=None) -> dict:
+        library_service = library_service or (self.context.library if self.context else None)
+        download_service = download_service or (self.context.downloads if self.context else None)
+        dm = dm or (self.context.dm if self.context else None)
         db = get_db()
         try:
             h = db.execute("SELECT * FROM watch_history WHERE id=?", (history_id,)).fetchone()

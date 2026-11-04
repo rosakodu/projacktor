@@ -7,10 +7,74 @@ import shutil
 
 from ..db import get_db, logger
 from ..common import is_executable_release
+from ..media.episodes import (
+    find_target_episode,
+    match_aria2_file,
+    collect_candidate_paths,
+)
 
 
 
 class DownloadService:
+    def __init__(self, context=None):
+        self.context = context
+
+    def _unselect_and_restart_aria2(self, dm, gid, media_row, target_aria2_idx, af_list, db, mid) -> tuple[str | None, str]:
+        current_selected = set(str(af['index']) for af in af_list if af.get('selected') == 'true')
+        if target_aria2_idx in current_selected:
+            current_selected.remove(target_aria2_idx)
+
+        dm._rpc_call('aria2.forceRemove', [gid])
+        dm._rpc_call('aria2.removeDownloadResult', [gid])
+
+        ddir = media_row.get('download_dir') or ''
+        if len(current_selected) > 0:
+            selected_str = ','.join(sorted(current_selected, key=int))
+            target_hash = ''
+            if 'xt=urn:btih:' in (media_row.get('magnet_uri') or '').lower():
+                try:
+                    target_hash = media_row['magnet_uri'].lower().split('xt=urn:btih:')[1].split('&')[0].strip()
+                except Exception:
+                    pass
+
+            torrent_path = os.path.join(ddir, f'{target_hash}.torrent') if (target_hash and ddir) else ''
+            new_gid = None
+            if torrent_path and os.path.isfile(torrent_path):
+                try:
+                    import base64
+                    with open(torrent_path, 'rb') as tf:
+                        b64 = base64.b64encode(tf.read()).decode('utf-8')
+                    opt = {
+                        'dir': ddir,
+                        'file-allocation': 'none',
+                        'allow-overwrite': 'true',
+                        'auto-file-renaming': 'false',
+                        'bt-prioritize-piece': 'head=50M,tail=15M',
+                        'select-file': selected_str
+                    }
+                    new_gid = dm.add_torrent(b64, ddir, opt)
+                except Exception as te:
+                    logger.warning(f'_unselect_and_restart_aria2: failed to add_torrent: {te}')
+
+            if not new_gid:
+                opt = {
+                    'dir': ddir,
+                    'file-allocation': 'none',
+                    'allow-overwrite': 'true',
+                    'auto-file-renaming': 'false',
+                    'bt-prioritize-piece': 'head=50M,tail=15M',
+                    'select-file': selected_str
+                }
+                new_gid = dm.add_download(media_row['magnet_uri'], ddir, opt)
+
+            db.execute('UPDATE downloads SET aria2_gid=?, status="downloading" WHERE media_id=?', (new_gid, mid))
+            db.commit()
+            return new_gid, selected_str
+        else:
+            db.execute('UPDATE downloads SET status="paused", progress=0 WHERE media_id=?', (mid,))
+            db.execute('UPDATE media SET status="paused" WHERE id=?', (mid,))
+            db.commit()
+            return None, ''
     @staticmethod
     def cleanup_old_torrent_download(mid: int, ddir: str, old_gid: str = "", old_hash: str = "", dm=None):
         logger.info(f"Replacing torrent: cleaning old task mid={mid}, gid={old_gid}, hash={old_hash}")
@@ -112,6 +176,7 @@ class DownloadService:
             db.close()
 
     async def start_download(self, mid: int, file_indices: str = "", dm=None) -> dict:
+        dm = dm or (self.context.dm if self.context else None)
         try:
             db = get_db()
             try:
@@ -266,6 +331,9 @@ class DownloadService:
             return {"success": False, "error": str(e)}
 
     async def download_episode(self, mid: int, file_index: int, dm=None, library_service=None, ts=None) -> dict:
+        dm = dm or (self.context.dm if self.context else None)
+        ts = ts or (self.context.ts if self.context else None)
+        library_service = library_service or (self.context.library if self.context else None)
         idx = int(file_index) if file_index is not None else 0
         db = get_db()
         try:
@@ -274,21 +342,14 @@ class DownloadService:
                 return {"success": False, "error": "Медиа не найдено"}
 
             episodes = await library_service.get_episodes(mid, ts=ts, dm=dm) if library_service else []
-            target_ep = next((e for e in episodes if e.get('index') == idx), None)
-            if not target_ep and 1 <= idx <= len(episodes):
-                target_ep = episodes[idx - 1]
-
+            target_ep = find_target_episode(episodes, idx)
             target_name = target_ep.get('name', '') if target_ep else ''
-            target_season, target_ep_num, _ = library_service._episode_sort_key(target_name) if (target_name and library_service) else (1, 999999, '')
 
             # Check if this media already has an active task in aria2
             dl = db.execute("SELECT * FROM downloads WHERE media_id=?", (mid,)).fetchone()
             existing_gid = dl['aria2_gid'] if dl else None
             existing_st = dm.get_status(existing_gid) if (existing_gid and dm) else None
 
-            # Do not pass unverified initial_indices to start_download for individual episode downloads,
-            # because TorrServer episode index != aria2 torrent internal file index!
-            # Instead, let start_download fetch metadata, then we match the exact aria2 file and select it.
             start_res = await self.start_download(mid, "", dm)
             gid = start_res.get('gid')
             if not gid or not dm:
@@ -313,63 +374,16 @@ class DownloadService:
                 logger.info(f"download_episode: aria2 has no real file list yet for gid {gid}, proceeding in background")
                 return {"success": True, "gid": gid, "note": "download_started_waiting_metadata"}
 
-            matched_af = None
-            if target_name:
-                t_clean = target_name.lower().strip()
-                for af in af_list:
-                    p = af.get('path', '')
-                    if os.path.basename(p).lower().strip() == t_clean:
-                        matched_af = af
-                        break
-
-            if not matched_af and target_name:
-                norm_target = re.sub(r'[^a-z0-9а-яё]', '', target_name.lower())
-                for af in af_list:
-                    p = af.get('path', '')
-                    norm_p = re.sub(r'[^a-z0-9а-яё]', '', os.path.basename(p).lower())
-                    if norm_target and norm_target == norm_p:
-                        matched_af = af
-                        break
-
-            if not matched_af and target_ep_num != 999999 and library_service:
-                for af in af_list:
-                    p = af.get('path', '')
-                    af_s, af_e, _ = library_service._episode_sort_key(p)
-                    if af_e != 999999 and af_e == target_ep_num and af_s == target_season:
-                        matched_af = af
-                        break
-
-            target_size = int(target_ep.get('size', 0)) if target_ep else 0
-            if not matched_af and target_size > 0:
-                for af in af_list:
-                    try:
-                        af_len = int(af.get('length', 0))
-                        if abs(af_len - target_size) < 65536:
-                            matched_af = af
-                            break
-                    except Exception:
-                        pass
-
-            if not matched_af and 1 <= idx <= len(af_list):
-                video_exts = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov', '.m4v'}
-                video_afs = [af for af in af_list if os.path.splitext(af.get('path', ''))[1].lower() in video_exts]
-                if 1 <= idx <= len(video_afs):
-                    matched_af = video_afs[idx - 1]
-
+            matched_af = match_aria2_file(af_list, target_ep=target_ep, target_name=target_name, ep_index=idx)
             if matched_af:
                 target_aria2_idx = str(matched_af['index'])
                 current_selected = set(str(af['index']) for af in af_list if af.get('selected') == 'true')
-                
-                # If everything was selected (or fresh download where all files are selected by default),
-                # isolate ONLY the target episode
                 if not existing_st or len(current_selected) >= len(af_list) or len(current_selected) == 0:
                     current_selected = {target_aria2_idx}
                 else:
                     current_selected.add(target_aria2_idx)
 
                 selected_str = ",".join(sorted(current_selected, key=int))
-                
-                # Apply selection directly via aria2.changeOption if possible
                 try:
                     dm.select_files(gid, selected_str)
                     dm.resume(gid)
@@ -395,6 +409,9 @@ class DownloadService:
                 pass
 
     async def cancel_episode_download(self, mid: int, file_index: int, dm=None, library_service=None, ts=None) -> dict:
+        dm = dm or (self.context.dm if self.context else None)
+        ts = ts or (self.context.ts if self.context else None)
+        library_service = library_service or (self.context.library if self.context else None)
         idx = int(file_index) if file_index is not None else 0
         db = get_db()
         try:
@@ -403,13 +420,9 @@ class DownloadService:
                 return {"success": False, "error": "Медиа не найдено"}
 
             episodes = await library_service.get_episodes(mid, ts=ts, dm=dm) if library_service else []
-            target_ep = next((e for e in episodes if e.get('index') == idx), None)
-            if not target_ep and 1 <= idx <= len(episodes):
-                target_ep = episodes[idx - 1]
-
+            target_ep = find_target_episode(episodes, idx)
             target_name = target_ep.get('name', '') if target_ep else ''
             target_path = target_ep.get('path', '') if target_ep else ''
-            target_season, target_ep_num, _ = library_service._episode_sort_key(target_name) if (target_name and library_service) else (1, 999999, '')
 
             dl = db.execute("SELECT * FROM downloads WHERE media_id=?", (mid,)).fetchone()
             if not dl or not dl['aria2_gid'] or not dm:
@@ -426,131 +439,26 @@ class DownloadService:
                     pass
 
             af_list = dm.get_files(gid) or []
-            matched_af = None
-            if target_name:
-                t_clean = target_name.lower().strip()
-                for af in af_list:
-                    p = af.get('path', '')
-                    if os.path.basename(p).lower().strip() == t_clean:
-                        matched_af = af
-                        break
-
-            if not matched_af and target_name:
-                norm_target = re.sub(r'[^a-z0-9а-яё]', '', target_name.lower())
-                for af in af_list:
-                    p = af.get('path', '')
-                    norm_p = re.sub(r'[^a-z0-9а-яё]', '', os.path.basename(p).lower())
-                    if norm_target and norm_target == norm_p:
-                        matched_af = af
-                        break
-
-            if not matched_af and target_ep_num != 999999 and library_service:
-                for af in af_list:
-                    p = af.get('path', '')
-                    af_s, af_e, _ = library_service._episode_sort_key(p)
-                    if af_e != 999999 and af_e == target_ep_num and af_s == target_season:
-                        matched_af = af
-                        break
-
-            target_size = int(target_ep.get('size', 0)) if target_ep else 0
-            if not matched_af and target_size > 0:
-                for af in af_list:
-                    try:
-                        af_len = int(af.get('length', 0))
-                        if abs(af_len - target_size) < 65536:
-                            matched_af = af
-                            break
-                    except Exception:
-                        pass
-
-            if not matched_af and 1 <= idx <= len(af_list):
-                video_exts = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov', '.m4v'}
-                video_afs = [af for af in af_list if os.path.splitext(af.get('path', ''))[1].lower() in video_exts]
-                if 1 <= idx <= len(video_afs):
-                    matched_af = video_afs[idx - 1]
-
+            matched_af = match_aria2_file(af_list, target_ep=target_ep, target_name=target_name, ep_index=idx)
             target_file_path = matched_af.get('path', '') if matched_af else ''
 
             # Collect all candidate file paths for this episode to delete from disk
-            candidate_paths = set()
             ddir = m.get('download_dir') or dl.get('download_dir') or ''
-            if target_file_path:
-                candidate_paths.add(target_file_path)
-                if ddir and not os.path.isabs(target_file_path):
-                    candidate_paths.add(os.path.join(ddir, target_file_path))
-
-            if target_path:
-                candidate_paths.add(target_path)
-                if ddir and not os.path.isabs(target_path):
-                    candidate_paths.add(os.path.join(ddir, target_path))
-
-            # Scan ddir for any files matching target_name
-            if ddir and os.path.isdir(ddir) and target_name:
-                t_lower = target_name.lower().strip()
-                t_noext = os.path.splitext(t_lower)[0]
-                for root, _, files in os.walk(ddir):
-                    for f in files:
-                        f_clean = f[:-6] if f.endswith('.aria2') else f
-                        f_lower = f_clean.lower().strip()
-                        if f_lower == t_lower or os.path.splitext(f_lower)[0] == t_noext:
-                            candidate_paths.add(os.path.join(root, f_clean))
+            candidate_paths = collect_candidate_paths(
+                ddir,
+                target_name=target_name,
+                target_path=target_path,
+                matched_path=target_file_path
+            )
 
             if matched_af:
                 target_aria2_idx = str(matched_af['index'])
-                current_selected = set(str(af['index']) for af in af_list if af.get('selected') == 'true')
-
-                if target_aria2_idx in current_selected:
-                    current_selected.remove(target_aria2_idx)
-
-                dm._rpc_call("aria2.forceRemove", [gid])
-                dm._rpc_call("aria2.removeDownloadResult", [gid])
-
-                if len(current_selected) > 0:
-                    selected_str = ",".join(sorted(current_selected, key=int))
-                    target_hash = ""
-                    if "xt=urn:btih:" in (m.get('magnet_uri') or "").lower():
-                        try:
-                            target_hash = m['magnet_uri'].lower().split("xt=urn:btih:")[1].split("&")[0].strip()
-                        except Exception:
-                            pass
-
-                    torrent_path = os.path.join(ddir, f"{target_hash}.torrent") if (target_hash and ddir) else ""
-                    new_gid = None
-                    if torrent_path and os.path.isfile(torrent_path):
-                        try:
-                            import base64
-                            with open(torrent_path, "rb") as tf:
-                                b64 = base64.b64encode(tf.read()).decode('utf-8')
-                            opt = {
-                                "dir": ddir,
-                                "file-allocation": "none",
-                                "allow-overwrite": "true",
-                                "auto-file-renaming": "false",
-                                "bt-prioritize-piece": "head=50M,tail=15M",
-                                "select-file": selected_str
-                            }
-                            new_gid = dm.add_torrent(b64, ddir, opt)
-                        except Exception as te:
-                            logger.warning(f"cancel_episode_download: failed to add_torrent: {te}")
-
-                    if not new_gid:
-                        opt = {
-                            "dir": ddir,
-                            "file-allocation": "none",
-                            "allow-overwrite": "true",
-                            "auto-file-renaming": "false",
-                            "bt-prioritize-piece": "head=50M,tail=15M",
-                            "select-file": selected_str
-                        }
-                        new_gid = dm.add_download(m['magnet_uri'], ddir, opt)
-
-                    db.execute("UPDATE downloads SET aria2_gid=?, status='downloading' WHERE media_id=?", (new_gid, mid))
-                    db.commit()
+                new_gid, selected_str = self._unselect_and_restart_aria2(
+                    dm, gid, m, target_aria2_idx, af_list, db, mid
+                )
+                if new_gid:
                     logger.info(f"cancel_episode_download: restarted aria2 without ep {target_aria2_idx}, new files {selected_str}")
                 else:
-                    db.execute("UPDATE downloads SET status='paused', progress=0 WHERE media_id=?", (mid,))
-                    db.execute("UPDATE media SET status='paused' WHERE id=?", (mid,))
-                    db.commit()
                     logger.info(f"cancel_episode_download: no episodes left selected, marked download as paused for mid {mid}")
 
             # Clean up incomplete files on disk for cancelled episode
@@ -647,6 +555,9 @@ class DownloadService:
                 pass
 
     async def pause_episode_download(self, mid: int, file_index: int, dm=None, library_service=None, ts=None) -> dict:
+        dm = dm or (self.context.dm if self.context else None)
+        ts = ts or (self.context.ts if self.context else None)
+        library_service = library_service or (self.context.library if self.context else None)
         idx = int(file_index) if file_index is not None else 0
         db = get_db()
         try:
@@ -676,84 +587,17 @@ class DownloadService:
                 return {"success": True, "note": "paused_task"}
 
             episodes = await library_service.get_episodes(mid, ts=ts, dm=dm) if library_service else []
-            target_ep = next((e for e in episodes if e.get('index') == idx), None)
-            if not target_ep and 1 <= idx <= len(episodes):
-                target_ep = episodes[idx - 1]
+            target_ep = find_target_episode(episodes, idx)
             target_name = target_ep.get('name', '') if target_ep else ''
-            target_season, target_ep_num, _ = library_service._episode_sort_key(target_name) if (target_name and library_service) else (1, 999999, '')
 
-            matched_af = None
-            if target_name:
-                t_clean = target_name.lower().strip()
-                for af in af_list:
-                    if os.path.basename(af.get('path', '')).lower().strip() == t_clean:
-                        matched_af = af
-                        break
-
-            if not matched_af and target_ep_num != 999999 and library_service:
-                for af in af_list:
-                    af_s, af_e, _ = library_service._episode_sort_key(af.get('path', ''))
-                    if af_e != 999999 and af_e == target_ep_num and af_s == target_season:
-                        matched_af = af
-                        break
-
+            matched_af = match_aria2_file(af_list, target_ep=target_ep, target_name=target_name, ep_index=idx)
             if matched_af:
                 target_aria2_idx = str(matched_af['index'])
-                current_selected = set(str(af['index']) for af in af_list if af.get('selected') == 'true')
-                if target_aria2_idx in current_selected:
-                    current_selected.remove(target_aria2_idx)
-                if len(current_selected) > 0:
-                    selected_str = ",".join(sorted(current_selected, key=int))
-
-                    dm._rpc_call("aria2.forceRemove", [gid])
-                    dm._rpc_call("aria2.removeDownloadResult", [gid])
-
-                    target_hash = ""
-                    if "xt=urn:btih:" in (m.get('magnet_uri') or "").lower():
-                        try:
-                            target_hash = m['magnet_uri'].lower().split("xt=urn:btih:")[1].split("&")[0].strip()
-                        except Exception:
-                            pass
-
-                    torrent_path = os.path.join(m['download_dir'], f"{target_hash}.torrent") if target_hash else ""
-                    new_gid = None
-                    if torrent_path and os.path.isfile(torrent_path):
-                        try:
-                            import base64
-                            with open(torrent_path, "rb") as tf:
-                                b64 = base64.b64encode(tf.read()).decode('utf-8')
-                            opt = {
-                                "dir": m['download_dir'],
-                                "file-allocation": "none",
-                                "allow-overwrite": "true",
-                                "auto-file-renaming": "false",
-                                "bt-prioritize-piece": "head=50M,tail=15M",
-                                "select-file": selected_str
-                            }
-                            new_gid = dm.add_torrent(b64, m['download_dir'], opt)
-                        except Exception as te:
-                            logger.warning(f"pause_episode_download: failed to add_torrent: {te}")
-
-                    if not new_gid:
-                        opt = {
-                            "dir": m['download_dir'],
-                            "file-allocation": "none",
-                            "allow-overwrite": "true",
-                            "auto-file-renaming": "false",
-                            "bt-prioritize-piece": "head=50M,tail=15M",
-                            "select-file": selected_str
-                        }
-                        new_gid = dm.add_download(m['magnet_uri'], m['download_dir'], opt)
-
-                    db.execute("UPDATE downloads SET aria2_gid=?, status='downloading' WHERE media_id=?", (new_gid, mid))
-                    db.commit()
-                else:
-                    dm.pause(gid)
-                    db.execute("UPDATE downloads SET status='paused' WHERE media_id=?", (mid,))
-                    db.execute("UPDATE media SET status='paused' WHERE id=?", (mid,))
-                    db.commit()
+                new_gid, _ = self._unselect_and_restart_aria2(
+                    dm, gid, m, target_aria2_idx, af_list, db, mid
+                )
+                if not new_gid:
                     logger.info(f"pause_episode_download: no episodes left downloading, marked as paused for mid {mid}")
-
 
             if dm:
                 dm.sync_once()
@@ -768,6 +612,9 @@ class DownloadService:
                 pass
 
     async def delete_episode(self, mid: int, file_index: int, dm=None, library_service=None, ts=None) -> dict:
+        dm = dm or (self.context.dm if self.context else None)
+        ts = ts or (self.context.ts if self.context else None)
+        library_service = library_service or (self.context.library if self.context else None)
         idx = int(file_index) if file_index is not None else 0
         db = get_db()
         try:
@@ -776,31 +623,17 @@ class DownloadService:
                 return {"success": False, "error": "Медиа не найдено"}
 
             episodes = await library_service.get_episodes(mid, ts=ts, dm=dm) if library_service else []
-            target_ep = next((e for e in episodes if e.get('index') == idx), None)
-            if not target_ep and 1 <= idx <= len(episodes):
-                target_ep = episodes[idx - 1]
-
+            target_ep = find_target_episode(episodes, idx)
             target_name = target_ep.get('name', '') if target_ep else ''
             target_path = target_ep.get('path', '') if target_ep else ''
-            target_season, target_ep_num, _ = library_service._episode_sort_key(target_name) if (target_name and library_service) else (1, 999999, '')
 
             # 1. Remove file and .aria2 control file from disk
             ddir = m.get('download_dir') or ''
-            candidate_paths = set()
-            if target_path:
-                candidate_paths.add(target_path)
-                if ddir and not os.path.isabs(target_path):
-                    candidate_paths.add(os.path.join(ddir, target_path))
-
-            if ddir and os.path.isdir(ddir) and target_name:
-                t_lower = target_name.lower().strip()
-                t_noext = os.path.splitext(t_lower)[0]
-                for root, _, files in os.walk(ddir):
-                    for f in files:
-                        f_clean = f[:-6] if f.endswith('.aria2') else f
-                        f_lower = f_clean.lower().strip()
-                        if f_lower == t_lower or os.path.splitext(f_lower)[0] == t_noext:
-                            candidate_paths.add(os.path.join(root, f_clean))
+            candidate_paths = collect_candidate_paths(
+                ddir,
+                target_name=target_name,
+                target_path=target_path
+            )
 
             for p in candidate_paths:
                 try:
@@ -852,67 +685,10 @@ class DownloadService:
                     gid = st['followedBy'][0]
 
                 af_list = dm.get_files(gid) or []
-                matched_af = None
-                if target_name:
-                    t_clean = target_name.lower().strip()
-                    for af in af_list:
-                        if os.path.basename(af.get('path', '')).lower().strip() == t_clean:
-                            matched_af = af
-                            break
-
+                matched_af = match_aria2_file(af_list, target_ep=target_ep, target_name=target_name, ep_index=idx)
                 if matched_af:
                     target_aria2_idx = str(matched_af['index'])
-                    current_selected = set(str(af['index']) for af in af_list if af.get('selected') == 'true')
-                    if target_aria2_idx in current_selected:
-                        current_selected.remove(target_aria2_idx)
-
-                    dm._rpc_call("aria2.forceRemove", [gid])
-                    dm._rpc_call("aria2.removeDownloadResult", [gid])
-
-                    if len(current_selected) > 0:
-                        selected_str = ",".join(sorted(current_selected, key=int))
-                        target_hash = ""
-                        if "xt=urn:btih:" in (m.get('magnet_uri') or "").lower():
-                            try:
-                                target_hash = m['magnet_uri'].lower().split("xt=urn:btih:")[1].split("&")[0].strip()
-                            except Exception:
-                                pass
-
-                        torrent_path = os.path.join(m['download_dir'], f"{target_hash}.torrent") if target_hash else ""
-                        new_gid = None
-                        if torrent_path and os.path.isfile(torrent_path):
-                            try:
-                                import base64
-                                with open(torrent_path, "rb") as tf:
-                                    b64 = base64.b64encode(tf.read()).decode('utf-8')
-                                opt = {
-                                    "dir": m['download_dir'],
-                                    "file-allocation": "none",
-                                    "allow-overwrite": "true",
-                                    "auto-file-renaming": "false",
-                                    "bt-prioritize-piece": "head=50M,tail=15M",
-                                    "select-file": selected_str
-                                }
-                                new_gid = dm.add_torrent(b64, m['download_dir'], opt)
-                            except Exception:
-                                pass
-
-                        if not new_gid:
-                            opt = {
-                                "dir": m['download_dir'],
-                                "file-allocation": "none",
-                                "allow-overwrite": "true",
-                                "auto-file-renaming": "false",
-                                "bt-prioritize-piece": "head=50M,tail=15M",
-                                "select-file": selected_str
-                            }
-                            new_gid = dm.add_download(m['magnet_uri'], m['download_dir'], opt)
-
-                        db.execute("UPDATE downloads SET aria2_gid=? WHERE media_id=?", (new_gid, mid))
-                        db.commit()
-                    else:
-                        db.execute("UPDATE downloads SET status='paused', progress=0 WHERE media_id=?", (mid,))
-                        db.commit()
+                    self._unselect_and_restart_aria2(dm, gid, m, target_aria2_idx, af_list, db, mid)
 
             # 4. Check if any remaining video files exist on disk for this media
             remaining_eps = await library_service.get_episodes(mid, ts=ts, dm=dm) if library_service else []
@@ -961,6 +737,8 @@ class DownloadService:
                 pass
 
     async def add_download(self, data: str, library_service=None, dm=None) -> dict:
+        dm = dm or (self.context.dm if self.context else None)
+        library_service = library_service or (self.context.library if self.context else None)
         if not library_service:
             return {"success": False, "error": "Library service unavailable"}
         res = await library_service.add_to_library(data, dm=dm, cleanup_cb=lambda mid, ddir, gid, h: self.cleanup_old_torrent_download(mid, ddir, gid, h, dm))
@@ -969,6 +747,7 @@ class DownloadService:
         return res
 
     def pause_download(self, did: int, dm=None) -> bool:
+        dm = dm or (self.context.dm if self.context else None)
         db = get_db()
         try:
             row = db.execute("SELECT aria2_gid, id FROM downloads WHERE id=? OR media_id=?", (did, did)).fetchone()
@@ -990,6 +769,7 @@ class DownloadService:
             db.close()
 
     async def resume_download(self, did: int, dm=None) -> bool:
+        dm = dm or (self.context.dm if self.context else None)
         db = get_db()
         try:
             row = db.execute("SELECT aria2_gid, magnet_uri, download_dir, id, media_id FROM downloads WHERE id=? OR media_id=?", (did, did)).fetchone()
@@ -1025,6 +805,7 @@ class DownloadService:
             db.close()
 
     def resume_all_downloads(self, dm=None) -> bool:
+        dm = dm or (self.context.dm if self.context else None)
         try:
             if dm:
                 dm.unpause_all()
@@ -1051,6 +832,7 @@ class DownloadService:
             return False
 
     def delete_download(self, did: int, dm=None) -> bool:
+        dm = dm or (self.context.dm if self.context else None)
         db = get_db()
         try:
             row = db.execute("SELECT * FROM downloads WHERE id=?", (did,)).fetchone()

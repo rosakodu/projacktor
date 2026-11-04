@@ -674,7 +674,7 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
 
                     {/* Кнопки действий: единая фиксированная ширина 190px для предсказуемости layout */}
                     <Focusable
-                      flow-children="horizontal"
+                      flow-children="row"
                       noFocusRing
                       className="projacktor-episode-actions"
                       style={{
