@@ -65,7 +65,6 @@ export function usePlayerController({
 
   const nav = usePlayerNavigation({
     containerRef, videoRef, playBtnRef, subtitleMenuRef, audioMenuRef,
-    isPlaying: () => !!(videoRef.current && !videoRef.current.paused),
     selectedSubtitle: selectedSubtitleRef,
     selectedAudio: media.selectedAudio,
     subtitleTracks: media.subtitleTracks, audioTracks: media.audioTracks,

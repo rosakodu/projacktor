@@ -29,44 +29,41 @@ export function usePlayerNavigation({
   const activeSubMenuIdxRef = useRef<number>(0); activeSubMenuIdxRef.current = activeSubMenuIdx;
   const [activeAudioMenuIdx, setActiveAudioMenuIdx] = useState<number>(0);
   const activeAudioMenuIdxRef = useRef<number>(0); activeAudioMenuIdxRef.current = activeAudioMenuIdx;
-  const lastMenuNavTimeRef = useRef<number>(0);
+  const lastMenuNavTimeRef = useRef<number>(0); const isPlayingRef = useRef(isPlaying); isPlayingRef.current = isPlaying;
 
   const checkIsPlaying = useCallback(() => {
-    if (typeof isPlaying === "function") return isPlaying();
-    if (typeof isPlaying === "boolean") return isPlaying;
+    const val = isPlayingRef.current;
+    if (typeof val === "function") return val();
+    if (typeof val === "boolean") return val;
     if (videoRef.current) return !videoRef.current.paused;
     return true;
-  }, [isPlaying, videoRef]);
+  }, [videoRef]);
 
   const getSelectedSubtitle = useCallback((): number | string | null => {
     if (typeof selectedSubtitle === "function") return (selectedSubtitle as any)();
-    if (selectedSubtitle && typeof selectedSubtitle === "object" && "current" in selectedSubtitle) {
-      return (selectedSubtitle as any).current;
-    }
+    if (selectedSubtitle && typeof selectedSubtitle === "object" && "current" in selectedSubtitle) return (selectedSubtitle as any).current;
     return selectedSubtitle ?? null;
   }, [selectedSubtitle]);
 
-  const {
-    volume, volumeHudVisible, lastFocusedBtnRef, changeVolume, focusControl, restoreControlsFocus,
-  } = usePlayerFocusVolume({ containerRef, videoRef, playBtnRef });
+  const { volume, volumeHudVisible, lastFocusedBtnRef, changeVolume, focusControl, restoreControlsFocus } =
+    usePlayerFocusVolume({ containerRef, videoRef, playBtnRef });
 
   useEffect(() => {
     setPlayerActive(true);
-    const el = containerRef.current;
-    if (el && typeof el.requestFullscreen === "function") el.requestFullscreen().catch(() => {});
+    containerRef.current?.requestFullscreen?.().catch(() => {});
     return () => {
       setPlayerActive(false);
-      if (document.fullscreenElement && typeof document.exitFullscreen === "function") document.exitFullscreen().catch(() => {});
+      if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
     };
   }, [containerRef]);
 
   const resetControlsTimer = useCallback(() => {
     setShowControls(true);
     if (controlsTimeoutRef.current !== null) { window.clearTimeout(controlsTimeoutRef.current); controlsTimeoutRef.current = null; }
-    if (checkIsPlaying() && !showAudioMenu && !showSubtitleMenu) {
-      controlsTimeoutRef.current = window.setTimeout(() => setShowControls(false), 3000);
+    if (checkIsPlaying() && !showAudioMenuRef.current && !showSubtitleMenuRef.current) {
+      controlsTimeoutRef.current = window.setTimeout(() => setShowControls(false), 5000);
     }
-  }, [checkIsPlaying, showAudioMenu, showSubtitleMenu]);
+  }, [checkIsPlaying]);
 
   const hideControls = useCallback(() => {
     setShowControls(false); setShowAudioMenu(false); setShowSubtitleMenu(false);
@@ -82,24 +79,16 @@ export function usePlayerNavigation({
     const now = Date.now();
     if (now - lastMenuNavTimeRef.current < 200) return;
     lastMenuNavTimeRef.current = now;
-    if (menuKey === "sub") {
-      const total = 1 + subtitleTracks.length;
-      if (total <= 0) return;
-      const next = Math.max(0, Math.min(total - 1, dir === "down" ? activeSubMenuIdxRef.current + 1 : activeSubMenuIdxRef.current - 1));
-      if (next !== activeSubMenuIdxRef.current) {
-        setActiveSubMenuIdx(next);
-        playNavSound();
-        subtitleMenuRef.current?.querySelectorAll<HTMLElement>(".ds-btn")?.[next]?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-      }
-    } else {
-      const total = audioTracks.length;
-      if (total <= 0) return;
-      const next = Math.max(0, Math.min(total - 1, dir === "down" ? activeAudioMenuIdxRef.current + 1 : activeAudioMenuIdxRef.current - 1));
-      if (next !== activeAudioMenuIdxRef.current) {
-        setActiveAudioMenuIdx(next);
-        playNavSound();
-        audioMenuRef.current?.querySelectorAll<HTMLElement>(".ds-btn")?.[next]?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-      }
+    const isSub = menuKey === "sub";
+    const total = isSub ? 1 + subtitleTracks.length : audioTracks.length;
+    if (total <= 0) return;
+    const curRef = isSub ? activeSubMenuIdxRef : activeAudioMenuIdxRef;
+    const setIdx = isSub ? setActiveSubMenuIdx : setActiveAudioMenuIdx;
+    const menuRef = isSub ? subtitleMenuRef : audioMenuRef;
+    const next = Math.max(0, Math.min(total - 1, dir === "down" ? curRef.current + 1 : curRef.current - 1));
+    if (next !== curRef.current) {
+      setIdx(next); playNavSound();
+      menuRef.current?.querySelectorAll<HTMLElement>(".ds-btn")?.[next]?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
   }, [subtitleTracks.length, audioTracks.length, subtitleMenuRef, audioMenuRef]);
 
@@ -107,47 +96,61 @@ export function usePlayerNavigation({
   const toggleSubtitleMenu = useCallback(() => {
     if (Date.now() - lastSubToggleRef.current < 250) return;
     lastSubToggleRef.current = Date.now();
-    setShowSubtitleMenu((prev) => !prev);
-    setShowAudioMenu(false); setShowControls(true); resetControlsTimer();
-  }, [resetControlsTimer]);
+    setShowSubtitleMenu((prev) => !prev); setShowAudioMenu(false); setShowControls(true);
+  }, []);
 
   const lastAudioToggleRef = useRef<number>(0);
   const toggleAudioMenu = useCallback(() => {
     if (Date.now() - lastAudioToggleRef.current < 250) return;
     lastAudioToggleRef.current = Date.now();
-    setShowAudioMenu((prev) => !prev);
-    setShowSubtitleMenu(false); setShowControls(true); resetControlsTimer();
-  }, [resetControlsTimer]);
+    setShowAudioMenu((prev) => !prev); setShowSubtitleMenu(false); setShowControls(true);
+  }, []);
 
   useEffect(() => {
-    resetControlsTimer();
-    return () => { if (controlsTimeoutRef.current !== null) window.clearTimeout(controlsTimeoutRef.current); };
-  }, [resetControlsTimer]);
+    if (showAudioMenu || showSubtitleMenu) {
+      if (controlsTimeoutRef.current !== null) { window.clearTimeout(controlsTimeoutRef.current); controlsTimeoutRef.current = null; }
+    } else resetControlsTimer();
+    return () => {
+      if (controlsTimeoutRef.current !== null) { window.clearTimeout(controlsTimeoutRef.current); controlsTimeoutRef.current = null; }
+    };
+  }, [showAudioMenu, showSubtitleMenu, resetControlsTimer]);
 
   useEffect(() => {
-    if (!showSubtitleMenu) return undefined;
-    const curSub = getSelectedSubtitle();
-    const found = curSub !== null && curSub !== undefined ? subtitleTracks.findIndex((s) => s.index === curSub) : -1;
-    const idx = found !== -1 ? found + 1 : 0;
-    setActiveSubMenuIdx(idx);
+    const video = videoRef.current;
+    if (!video) return () => { if (controlsTimeoutRef.current !== null) window.clearTimeout(controlsTimeoutRef.current); };
+    const onPlay = () => {
+      if (!showControlsRef.current) return;
+      if (controlsTimeoutRef.current !== null) { window.clearTimeout(controlsTimeoutRef.current); controlsTimeoutRef.current = null; }
+      if (checkIsPlaying() && !showAudioMenuRef.current && !showSubtitleMenuRef.current) controlsTimeoutRef.current = window.setTimeout(() => setShowControls(false), 5000);
+    };
+    const onPause = () => {
+      if (video.currentTime > 0 && !video.seeking) {
+        setShowControls(true);
+        if (controlsTimeoutRef.current !== null) { window.clearTimeout(controlsTimeoutRef.current); controlsTimeoutRef.current = null; }
+      }
+    };
+    video.addEventListener("play", onPlay); video.addEventListener("pause", onPause);
+    if (!video.paused) resetControlsTimer();
+    return () => {
+      video.removeEventListener("play", onPlay); video.removeEventListener("pause", onPause);
+      if (controlsTimeoutRef.current !== null) { window.clearTimeout(controlsTimeoutRef.current); controlsTimeoutRef.current = null; }
+    };
+  }, [videoRef, checkIsPlaying, resetControlsTimer]);
+
+  useEffect(() => {
+    if (!showSubtitleMenu && !showAudioMenu) return undefined;
+    const isSub = showSubtitleMenu; const cur = isSub ? getSelectedSubtitle() : selectedAudio;
+    const tracks = isSub ? subtitleTracks : audioTracks;
+    const found = cur !== null && cur !== undefined ? tracks.findIndex((t: any) => t.index === cur) : -1;
+    const idx = isSub ? found + 1 : (found !== -1 ? found : 0);
+    if (isSub) setActiveSubMenuIdx(idx); else setActiveAudioMenuIdx(idx);
+    const menuRef = isSub ? subtitleMenuRef : audioMenuRef;
     const t = setTimeout(() => {
-      const target = subtitleMenuRef.current?.querySelectorAll<HTMLElement>(".ds-btn")?.[idx] || subtitleMenuRef.current?.querySelector<HTMLElement>(".ds-btn");
-      if (target) { target.focus(); target.classList.add("gpfocus"); target.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+      const el = menuRef.current?.querySelectorAll<HTMLElement>(".ds-btn")?.[idx] || menuRef.current?.querySelector<HTMLElement>(".ds-btn");
+      if (el) { el.focus(); el.classList.add("gpfocus"); el.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
     }, 40);
     return () => clearTimeout(t);
-  }, [showSubtitleMenu, getSelectedSubtitle, subtitleTracks, subtitleMenuRef]);
-
-  useEffect(() => {
-    if (!showAudioMenu) return undefined;
-    const found = selectedAudio !== undefined ? audioTracks.findIndex((a) => a.index === selectedAudio) : -1;
-    const idx = found !== -1 ? found : 0;
-    setActiveAudioMenuIdx(idx);
-    const t = setTimeout(() => {
-      const target = audioMenuRef.current?.querySelectorAll<HTMLElement>(".ds-btn")?.[idx] || audioMenuRef.current?.querySelector<HTMLElement>(".ds-btn");
-      if (target) { target.focus(); target.classList.add("gpfocus"); target.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
-    }, 40);
-    return () => clearTimeout(t);
-  }, [showAudioMenu, selectedAudio, audioTracks, audioMenuRef]);
+  }, [showSubtitleMenu, showAudioMenu, getSelectedSubtitle, selectedAudio, subtitleTracks, audioTracks, subtitleMenuRef, audioMenuRef]);
 
   const prevShowControlsRef = useRef<boolean>(showControls);
   useEffect(() => {
@@ -159,9 +162,7 @@ export function usePlayerNavigation({
     } else if (!showControls && containerRef.current) {
       const doc = getActiveDocument(containerRef.current) || document;
       doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => { if (el !== containerRef.current) el.classList.remove("gpfocus"); });
-      containerRef.current.setAttribute("tabindex", "0");
-      containerRef.current.focus();
-      containerRef.current.classList.add("gpfocus", "gpfocuswithin");
+      containerRef.current.setAttribute("tabindex", "0"); containerRef.current.focus(); containerRef.current.classList.add("gpfocus", "gpfocuswithin");
     }
     return undefined;
   }, [showControls, showSubtitleMenu, showAudioMenu, restoreControlsFocus, containerRef]);

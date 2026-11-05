@@ -9,6 +9,7 @@ import { PlayerButtonBar } from "./PlayerButtonBar";
 
 export interface PlayerControlsProps {
   showControls: boolean;
+  resetControlsTimer?: () => void;
   isPlaying: boolean;
   currentPlayhead: number;
   duration: number;
@@ -45,7 +46,7 @@ export interface PlayerControlsProps {
 }
 
 export const PlayerControls: FC<PlayerControlsProps> = ({
-  showControls, isPlaying, currentPlayhead, duration, progressPercent, bufferedPercent = 0,
+  showControls, resetControlsTimer, isPlaying, currentPlayhead, duration, progressPercent, bufferedPercent = 0,
   isOnline, playBtnRef, subtitleBtnRef, audioBtnRef, subtitleMenuRef, audioMenuRef,
   onTogglePlay, onSeekRelative, onSeekTo, onProgressBarTouch,
   showSubtitleMenu, subtitleTracks, selectedSubtitle, activeSubMenuIdx,
@@ -86,8 +87,8 @@ export const PlayerControls: FC<PlayerControlsProps> = ({
 
   return (
     <div
-      onClick={(e) => e.stopPropagation()}
-      onTouchStart={(e) => e.stopPropagation()}
+      onClick={(e) => { e.stopPropagation(); resetControlsTimer?.(); }}
+      onTouchStart={(e) => { e.stopPropagation(); resetControlsTimer?.(); }}
       onTouchEnd={(e) => e.stopPropagation()}
       style={{
         position: "absolute", bottom: 0, left: 0, right: 0, zIndex: 10,

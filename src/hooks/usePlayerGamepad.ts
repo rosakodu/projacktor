@@ -94,7 +94,17 @@ export function usePlayerGamepad(props: UsePlayerGamepadParams) {
   const zoomAnimFrameRef = zoom?.zoomAnimFrameRef ?? props.zoomAnimFrameRef;
   const zoomHudTimerRef = zoom?.zoomHudTimerRef ?? props.zoomHudTimerRef;
   useEffect(() => {
-    const handleActivity = () => {
+    let lastPointerX = -1;
+    let lastPointerY = -1;
+    const handleActivity = (e?: Event) => {
+      if (e && (e.type === "mousemove" || e.type === "pointermove")) {
+        const me = e as MouseEvent;
+        const curX = typeof me.clientX === "number" ? me.clientX : me.screenX;
+        const curY = typeof me.clientY === "number" ? me.clientY : me.screenY;
+        if (curX === lastPointerX && curY === lastPointerY) return;
+        lastPointerX = curX;
+        lastPointerY = curY;
+      }
       resetControlsTimer();
     };
 

@@ -33,7 +33,7 @@ export const PlayerModal: FC<PlayerModalProps> = (props) => {
   return (
     <Focusable
       ref={containerRef}
-      className="projacktor-player-fullscreen gpfocus"
+      className={`projacktor-player-fullscreen gpfocus${nav.showControls ? "" : " controls-hidden"}`}
       style={{
         position: "fixed", inset: 0, width: "100vw", height: "100vh",
         color: "#fff", background: "#000", overflow: "hidden",
@@ -87,7 +87,7 @@ export const PlayerModal: FC<PlayerModalProps> = (props) => {
       </div>
 
       <PlayerControls
-        showControls={nav.showControls} isPlaying={playback.isPlaying}
+        showControls={nav.showControls} resetControlsTimer={nav.resetControlsTimer} isPlaying={playback.isPlaying}
         currentPlayhead={seek.currentPlayhead} duration={media.duration}
         progressPercent={seek.progressPercent} bufferedPercent={playback.bufferedPercent}
         isOnline={!!props.isOnline} playBtnRef={playBtnRef}
