@@ -119,7 +119,9 @@ export function usePlayerPlayback({
     setIsBuffering(true);
     setStreamUrl((curUrl) => {
       const now = Date.now();
-      return curUrl.includes("t=") ? curUrl.replace(/t=\d+/, `t=${now}`) : `${curUrl}${curUrl.includes("?") ? "&" : "?"}t=${now}`;
+      return /[?&]t=\d+/.test(curUrl)
+        ? curUrl.replace(/([?&])t=\d+/, `$1t=${now}`)
+        : `${curUrl}${curUrl.includes("?") ? "&" : "?"}t=${now}`;
     });
     setTimeout(() => {
       const video = videoRef.current;
@@ -162,12 +164,7 @@ export function usePlayerPlayback({
   });
 
   useEffect(() => {
-    return () => {
-      if (retryTimeoutRef.current) {
-        clearTimeout(retryTimeoutRef.current);
-        retryTimeoutRef.current = null;
-      }
-    };
+    return () => { if (retryTimeoutRef.current) { clearTimeout(retryTimeoutRef.current); retryTimeoutRef.current = null; } };
   }, []);
 
   return {

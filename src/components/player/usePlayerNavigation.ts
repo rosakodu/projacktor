@@ -1,9 +1,20 @@
-import { useState, useRef, useEffect, useCallback, RefObject } from "react";
+import { useState, useRef, useEffect, useCallback, RefObject, MutableRefObject } from "react";
 import { setPlayerActive } from "../../runtime/homeInputBus";
 import { getActiveDocument } from "../../runtime/activeDoc";
 import { playNavSound } from "../../runtime/navSound";
 import { AudioTrack, SubtitleTrack } from "./types";
 import { usePlayerFocusVolume } from "./usePlayerFocusVolume";
+
+function useSyncedState<T>(initial: T): [T, (val: T | ((p: T) => T)) => void, MutableRefObject<T>] {
+  const [state, setState] = useState<T>(initial);
+  const ref = useRef<T>(state); ref.current = state;
+  const setSync = useCallback((val: T | ((p: T) => T)) => {
+    if (typeof val === "function") {
+      setState((prev) => { const next = (val as (p: T) => T)(prev); ref.current = next; return next; });
+    } else { ref.current = val; setState(val); }
+  }, []);
+  return [state, setSync, ref];
+}
 
 interface UsePlayerNavigationProps {
   containerRef: RefObject<HTMLDivElement | null>; videoRef: RefObject<HTMLVideoElement | null>;
@@ -17,13 +28,10 @@ export function usePlayerNavigation({
   containerRef, videoRef, playBtnRef, subtitleMenuRef, audioMenuRef,
   isPlaying, selectedSubtitle, selectedAudio, subtitleTracks, audioTracks,
 }: UsePlayerNavigationProps) {
-  const [showControls, setShowControls] = useState<boolean>(true);
-  const showControlsRef = useRef<boolean>(showControls); showControlsRef.current = showControls;
+  const [showControls, setControlsVisible, showControlsRef] = useSyncedState<boolean>(true);
   const controlsTimeoutRef = useRef<number | null>(null);
-  const [showAudioMenu, setShowAudioMenu] = useState<boolean>(false);
-  const showAudioMenuRef = useRef(showAudioMenu); showAudioMenuRef.current = showAudioMenu;
-  const [showSubtitleMenu, setShowSubtitleMenu] = useState<boolean>(false);
-  const showSubtitleMenuRef = useRef(showSubtitleMenu); showSubtitleMenuRef.current = showSubtitleMenu;
+  const [showAudioMenu, setAudioMenuVisible, showAudioMenuRef] = useSyncedState<boolean>(false);
+  const [showSubtitleMenu, setSubtitleMenuVisible, showSubtitleMenuRef] = useSyncedState<boolean>(false);
   const [activeSubMenuIdx, setActiveSubMenuIdx] = useState<number>(0);
   const activeSubMenuIdxRef = useRef<number>(0); activeSubMenuIdxRef.current = activeSubMenuIdx;
   const [activeAudioMenuIdx, setActiveAudioMenuIdx] = useState<number>(0);
@@ -34,14 +42,13 @@ export function usePlayerNavigation({
     const val = isPlayingRef.current;
     if (typeof val === "function") return val();
     if (typeof val === "boolean") return val;
-    if (videoRef.current) return !videoRef.current.paused;
-    return true;
+    return videoRef.current ? (!videoRef.current.paused && !videoRef.current.ended) : false;
   }, [videoRef]);
 
   const getSelectedSubtitle = useCallback((): number | string | null => {
     if (typeof selectedSubtitle === "function") return (selectedSubtitle as any)();
-    if (selectedSubtitle && typeof selectedSubtitle === "object" && "current" in selectedSubtitle) return (selectedSubtitle as any).current;
-    return selectedSubtitle ?? null;
+    return selectedSubtitle && typeof selectedSubtitle === "object" && "current" in selectedSubtitle
+      ? (selectedSubtitle as any).current : (selectedSubtitle ?? null);
   }, [selectedSubtitle]);
 
   const { volume, volumeHudVisible, lastFocusedBtnRef, changeVolume, focusControl, restoreControlsFocus } =
@@ -57,22 +64,16 @@ export function usePlayerNavigation({
   }, []);
 
   const resetControlsTimer = useCallback(() => {
-    showControlsRef.current = true;
-    setShowControls(true);
-    clearControlsTimeout();
+    setControlsVisible(true); clearControlsTimeout();
     if (checkIsPlaying() && !showAudioMenuRef.current && !showSubtitleMenuRef.current) {
-      controlsTimeoutRef.current = window.setTimeout(() => {
-        showControlsRef.current = false;
-        setShowControls(false);
-      }, 5000);
+      controlsTimeoutRef.current = window.setTimeout(() => setControlsVisible(false), 5000);
     }
-  }, [checkIsPlaying, clearControlsTimeout]);
+  }, [checkIsPlaying, clearControlsTimeout, setControlsVisible]);
 
   const hideControls = useCallback(() => {
-    showControlsRef.current = false;
-    setShowControls(false); setShowAudioMenu(false); setShowSubtitleMenu(false);
+    setControlsVisible(false); setAudioMenuVisible(false); setSubtitleMenuVisible(false);
     clearControlsTimeout();
-  }, [clearControlsTimeout]);
+  }, [clearControlsTimeout, setControlsVisible, setAudioMenuVisible, setSubtitleMenuVisible]);
 
   const toggleControls = useCallback(() => {
     if (showControlsRef.current) hideControls();
@@ -83,16 +84,13 @@ export function usePlayerNavigation({
     const now = Date.now();
     if (now - lastMenuNavTimeRef.current < 200) return;
     lastMenuNavTimeRef.current = now;
-    const isSub = menuKey === "sub";
-    const total = isSub ? 1 + subtitleTracks.length : audioTracks.length;
+    const isSub = menuKey === "sub"; const total = isSub ? 1 + subtitleTracks.length : audioTracks.length;
     if (total <= 0) return;
     const curRef = isSub ? activeSubMenuIdxRef : activeAudioMenuIdxRef;
-    const setIdx = isSub ? setActiveSubMenuIdx : setActiveAudioMenuIdx;
-    const menuRef = isSub ? subtitleMenuRef : audioMenuRef;
     const next = Math.max(0, Math.min(total - 1, dir === "down" ? curRef.current + 1 : curRef.current - 1));
     if (next !== curRef.current) {
-      setIdx(next); playNavSound();
-      menuRef.current?.querySelectorAll<HTMLElement>(".ds-btn")?.[next]?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      (isSub ? setActiveSubMenuIdx : setActiveAudioMenuIdx)(next); playNavSound();
+      (isSub ? subtitleMenuRef : audioMenuRef).current?.querySelectorAll<HTMLElement>(".ds-btn")?.[next]?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
   }, [subtitleTracks.length, audioTracks.length, subtitleMenuRef, audioMenuRef]);
 
@@ -100,14 +98,18 @@ export function usePlayerNavigation({
   const toggleSubtitleMenu = useCallback(() => {
     if (Date.now() - lastSubToggleRef.current < 250) return;
     lastSubToggleRef.current = Date.now();
-    setShowSubtitleMenu((prev) => !prev); setShowAudioMenu(false); setShowControls(true);
-  }, []);
+    setControlsVisible(true);
+    setSubtitleMenuVisible((prev) => !prev);
+    setAudioMenuVisible(false);
+  }, [setControlsVisible, setSubtitleMenuVisible, setAudioMenuVisible]);
   const lastAudioToggleRef = useRef<number>(0);
   const toggleAudioMenu = useCallback(() => {
     if (Date.now() - lastAudioToggleRef.current < 250) return;
     lastAudioToggleRef.current = Date.now();
-    setShowAudioMenu((prev) => !prev); setShowSubtitleMenu(false); setShowControls(true);
-  }, []);
+    setControlsVisible(true);
+    setAudioMenuVisible((prev) => !prev);
+    setSubtitleMenuVisible(false);
+  }, [setControlsVisible, setAudioMenuVisible, setSubtitleMenuVisible]);
 
   useEffect(() => {
     if (showAudioMenu || showSubtitleMenu) clearControlsTimeout();
@@ -120,11 +122,8 @@ export function usePlayerNavigation({
     if (!video) return clearControlsTimeout;
     const onPlay = () => { if (showControlsRef.current) resetControlsTimer(); };
     const onPause = () => {
-      if (video.currentTime > 0 && !video.seeking) {
-        showControlsRef.current = true;
-        setShowControls(true);
-        clearControlsTimeout();
-      }
+      if (!video.seeking) setControlsVisible(true);
+      clearControlsTimeout();
     };
     video.addEventListener("play", onPlay); video.addEventListener("pause", onPause);
     if (!video.paused) resetControlsTimer();
@@ -132,7 +131,7 @@ export function usePlayerNavigation({
       video.removeEventListener("play", onPlay); video.removeEventListener("pause", onPause);
       clearControlsTimeout();
     };
-  }, [videoRef, resetControlsTimer, clearControlsTimeout]);
+  }, [videoRef, resetControlsTimer, clearControlsTimeout, setControlsVisible]);
 
   useEffect(() => {
     if (!showSubtitleMenu && !showAudioMenu) return undefined;
@@ -165,8 +164,9 @@ export function usePlayerNavigation({
   }, [showControls, showSubtitleMenu, showAudioMenu, restoreControlsFocus, containerRef]);
 
   return {
-    showControls, setShowControls, showControlsRef, showAudioMenu, setShowAudioMenu,
-    showAudioMenuRef, showSubtitleMenu, setShowSubtitleMenu, showSubtitleMenuRef,
+    showControls, setShowControls: setControlsVisible, showControlsRef,
+    showAudioMenu, setShowAudioMenu: setAudioMenuVisible, showAudioMenuRef,
+    showSubtitleMenu, setShowSubtitleMenu: setSubtitleMenuVisible, showSubtitleMenuRef,
     volume, volumeHudVisible, activeSubMenuIdx, setActiveSubMenuIdx, activeSubMenuIdxRef,
     activeAudioMenuIdx, setActiveAudioMenuIdx, activeAudioMenuIdxRef, lastFocusedBtnRef,
     resetControlsTimer, hideControls, toggleControls, changeVolume,

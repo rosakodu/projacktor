@@ -275,7 +275,9 @@ export function usePlayerGamepad(props: UsePlayerGamepadParams) {
         // Игнорируем B, если оверлей Steam (шторка "..." или меню STEAM) был открыт или закрылся менее 1200ms назад
         if (isOverlayActiveOrRecent(1200)) return;
         if (showAudioMenuRef.current) {
+          showAudioMenuRef.current = false;
           setShowAudioMenu(false);
+          showControlsRef.current = true;
           setShowControls(true);
           resetControlsTimer();
           setTimeout(() => {
@@ -288,7 +290,9 @@ export function usePlayerGamepad(props: UsePlayerGamepadParams) {
             }
           }, 50);
         } else if (showSubtitleMenuRef.current) {
+          showSubtitleMenuRef.current = false;
           setShowSubtitleMenu(false);
+          showControlsRef.current = true;
           setShowControls(true);
           resetControlsTimer();
           setTimeout(() => {
@@ -456,7 +460,9 @@ export function usePlayerGamepad(props: UsePlayerGamepadParams) {
         // Игнорируем, если оверлей Steam был открыт или закрылся менее 1200ms назад
         if (isOverlayActiveOrRecent(1200)) return;
         if (showAudioMenuRef.current) {
+          showAudioMenuRef.current = false;
           setShowAudioMenu(false);
+          showControlsRef.current = true;
           setShowControls(true);
           resetControlsTimer();
           setTimeout(() => {
@@ -469,7 +475,9 @@ export function usePlayerGamepad(props: UsePlayerGamepadParams) {
             }
           }, 50);
         } else if (showSubtitleMenuRef.current) {
+          showSubtitleMenuRef.current = false;
           setShowSubtitleMenu(false);
+          showControlsRef.current = true;
           setShowControls(true);
           resetControlsTimer();
           setTimeout(() => {
