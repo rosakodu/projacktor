@@ -7,8 +7,7 @@ import { usePlayerFocusVolume } from "./usePlayerFocusVolume";
 
 interface UsePlayerNavigationProps {
   containerRef: RefObject<HTMLDivElement | null>; videoRef: RefObject<HTMLVideoElement | null>;
-  playBtnRef: RefObject<HTMLDivElement | null>; subtitleMenuRef: RefObject<HTMLDivElement | null>;
-  audioMenuRef: RefObject<HTMLDivElement | null>;
+  playBtnRef: RefObject<HTMLDivElement | null>; subtitleMenuRef: RefObject<HTMLDivElement | null>; audioMenuRef: RefObject<HTMLDivElement | null>;
   isPlaying?: boolean | (() => boolean);
   selectedSubtitle?: number | string | null | (() => number | string | null) | RefObject<number | string | null> | { current: number | string | null };
   selectedAudio?: number; subtitleTracks: SubtitleTrack[]; audioTracks: AudioTrack[];
@@ -49,30 +48,35 @@ export function usePlayerNavigation({
     usePlayerFocusVolume({ containerRef, videoRef, playBtnRef });
 
   useEffect(() => {
-    setPlayerActive(true);
-    containerRef.current?.requestFullscreen?.().catch(() => {});
-    return () => {
-      setPlayerActive(false);
-      if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
-    };
+    setPlayerActive(true); containerRef.current?.requestFullscreen?.().catch(() => {});
+    return () => { setPlayerActive(false); if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {}); };
   }, [containerRef]);
 
-  const resetControlsTimer = useCallback(() => {
-    setShowControls(true);
-    if (controlsTimeoutRef.current !== null) { window.clearTimeout(controlsTimeoutRef.current); controlsTimeoutRef.current = null; }
-    if (checkIsPlaying() && !showAudioMenuRef.current && !showSubtitleMenuRef.current) {
-      controlsTimeoutRef.current = window.setTimeout(() => setShowControls(false), 5000);
-    }
-  }, [checkIsPlaying]);
-
-  const hideControls = useCallback(() => {
-    setShowControls(false); setShowAudioMenu(false); setShowSubtitleMenu(false);
+  const clearControlsTimeout = useCallback(() => {
     if (controlsTimeoutRef.current !== null) { window.clearTimeout(controlsTimeoutRef.current); controlsTimeoutRef.current = null; }
   }, []);
 
+  const resetControlsTimer = useCallback(() => {
+    showControlsRef.current = true;
+    setShowControls(true);
+    clearControlsTimeout();
+    if (checkIsPlaying() && !showAudioMenuRef.current && !showSubtitleMenuRef.current) {
+      controlsTimeoutRef.current = window.setTimeout(() => {
+        showControlsRef.current = false;
+        setShowControls(false);
+      }, 5000);
+    }
+  }, [checkIsPlaying, clearControlsTimeout]);
+
+  const hideControls = useCallback(() => {
+    showControlsRef.current = false;
+    setShowControls(false); setShowAudioMenu(false); setShowSubtitleMenu(false);
+    clearControlsTimeout();
+  }, [clearControlsTimeout]);
+
   const toggleControls = useCallback(() => {
     if (showControlsRef.current) hideControls();
-    else { setShowControls(true); resetControlsTimer(); }
+    else resetControlsTimer();
   }, [hideControls, resetControlsTimer]);
 
   const handleMenuDirection = useCallback((dir: "up" | "down", menuKey: "sub" | "audio") => {
@@ -98,7 +102,6 @@ export function usePlayerNavigation({
     lastSubToggleRef.current = Date.now();
     setShowSubtitleMenu((prev) => !prev); setShowAudioMenu(false); setShowControls(true);
   }, []);
-
   const lastAudioToggleRef = useRef<number>(0);
   const toggleAudioMenu = useCallback(() => {
     if (Date.now() - lastAudioToggleRef.current < 250) return;
@@ -107,35 +110,29 @@ export function usePlayerNavigation({
   }, []);
 
   useEffect(() => {
-    if (showAudioMenu || showSubtitleMenu) {
-      if (controlsTimeoutRef.current !== null) { window.clearTimeout(controlsTimeoutRef.current); controlsTimeoutRef.current = null; }
-    } else resetControlsTimer();
-    return () => {
-      if (controlsTimeoutRef.current !== null) { window.clearTimeout(controlsTimeoutRef.current); controlsTimeoutRef.current = null; }
-    };
-  }, [showAudioMenu, showSubtitleMenu, resetControlsTimer]);
+    if (showAudioMenu || showSubtitleMenu) clearControlsTimeout();
+    else resetControlsTimer();
+    return () => clearControlsTimeout();
+  }, [showAudioMenu, showSubtitleMenu, resetControlsTimer, clearControlsTimeout]);
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return () => { if (controlsTimeoutRef.current !== null) window.clearTimeout(controlsTimeoutRef.current); };
-    const onPlay = () => {
-      if (!showControlsRef.current) return;
-      if (controlsTimeoutRef.current !== null) { window.clearTimeout(controlsTimeoutRef.current); controlsTimeoutRef.current = null; }
-      if (checkIsPlaying() && !showAudioMenuRef.current && !showSubtitleMenuRef.current) controlsTimeoutRef.current = window.setTimeout(() => setShowControls(false), 5000);
-    };
+    if (!video) return clearControlsTimeout;
+    const onPlay = () => { if (showControlsRef.current) resetControlsTimer(); };
     const onPause = () => {
       if (video.currentTime > 0 && !video.seeking) {
+        showControlsRef.current = true;
         setShowControls(true);
-        if (controlsTimeoutRef.current !== null) { window.clearTimeout(controlsTimeoutRef.current); controlsTimeoutRef.current = null; }
+        clearControlsTimeout();
       }
     };
     video.addEventListener("play", onPlay); video.addEventListener("pause", onPause);
     if (!video.paused) resetControlsTimer();
     return () => {
       video.removeEventListener("play", onPlay); video.removeEventListener("pause", onPause);
-      if (controlsTimeoutRef.current !== null) { window.clearTimeout(controlsTimeoutRef.current); controlsTimeoutRef.current = null; }
+      clearControlsTimeout();
     };
-  }, [videoRef, checkIsPlaying, resetControlsTimer]);
+  }, [videoRef, resetControlsTimer, clearControlsTimeout]);
 
   useEffect(() => {
     if (!showSubtitleMenu && !showAudioMenu) return undefined;

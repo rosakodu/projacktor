@@ -99,6 +99,7 @@ export function usePlayerGamepad(props: UsePlayerGamepadParams) {
     const handleActivity = (e?: Event) => {
       if (e && (e.type === "mousemove" || e.type === "pointermove")) {
         const me = e as MouseEvent;
+        if (typeof me.movementX === "number" && typeof me.movementY === "number" && me.movementX === 0 && me.movementY === 0) return;
         const curX = typeof me.clientX === "number" ? me.clientX : me.screenX;
         const curY = typeof me.clientY === "number" ? me.clientY : me.screenY;
         if (curX === lastPointerX && curY === lastPointerY) return;
