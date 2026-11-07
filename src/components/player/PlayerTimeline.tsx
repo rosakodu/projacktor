@@ -22,28 +22,32 @@ export function formatTime(seconds: number): string {
 export const PlayerTimeline: FC<PlayerTimelineProps> = memo(({
   progressPercent, bufferedPercent = 0, onProgressBarTouch,
 }) => {
+  const safeProgress = Math.min(100, Math.max(0, progressPercent || 0));
+  const safeBuffered = Math.min(100, Math.max(safeProgress, bufferedPercent || 0));
+
   return (
     <div
       onClick={onProgressBarTouch}
       onTouchStart={onProgressBarTouch}
       style={{ padding: "12px 24px 6px", cursor: "pointer" }}
     >
-      <div style={{ height: 8, background: "rgba(255,255,255,0.2)", cursor: "pointer", position: "relative", borderRadius: 0, overflow: "hidden" }}>
-        {bufferedPercent > 0 && (
+      <div style={{ height: 8, background: "rgba(255, 255, 255, 0.2)", cursor: "pointer", position: "relative", borderRadius: 0, overflow: "hidden" }}>
+        {safeBuffered > 0 && (
           <div
             style={{
               position: "absolute", left: 0, top: 0, height: "100%",
-              width: `${Math.max(progressPercent, Math.min(100, bufferedPercent))}%`,
-              background: "rgba(255, 255, 255, 0.4)", borderRadius: 0,
-              transition: "width 0.25s ease", pointerEvents: "none",
+              width: `${safeBuffered}%`,
+              background: "rgba(255, 255, 255, 0.45)", borderRadius: 0,
+              zIndex: 1, transition: "width 0.25s ease", pointerEvents: "none",
             }}
           />
         )}
         <div
           style={{
             position: "absolute", left: 0, top: 0, height: "100%",
-            width: `${progressPercent}%`, background: "var(--ds-accent)",
-            borderRadius: 0, transition: "width 0.15s ease", pointerEvents: "none",
+            width: `${safeProgress}%`,
+            background: "var(--ds-accent, #1a9fff)",
+            borderRadius: 0, zIndex: 2, transition: "width 0.15s ease", pointerEvents: "none",
           }}
         />
       </div>

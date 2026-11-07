@@ -34,7 +34,7 @@ export function usePlayerPlayback({
 }: UsePlayerPlaybackProps) {
   const { t } = useI18n();
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
-  useScreensaverInhibitor(isPlaying);
+  useScreensaverInhibitor(true);
 
   const [baseTime, setBaseTime] = useState<number>(savedStartTime);
   const [videoTime, setVideoTime] = useState<number>(0);

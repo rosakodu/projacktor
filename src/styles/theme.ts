@@ -91,6 +91,21 @@ body:has(.projacktor-app-playing) #Footer,
   pointer-events: none !important;
 }
 
+/* Hide SteamOS Screensaver / Ambient Screen overlays while player is active */
+body:has(.projacktor-player-fullscreen) [class*="ScreensaverPopup"],
+body:has(.projacktor-player-fullscreen) [class*="screensaver_"],
+body:has(.projacktor-player-fullscreen) #ScreensaverPopup,
+body:has(.projacktor-player-fullscreen) [class*="AmbientScreen"],
+body:has(.projacktor-app-playing) [class*="ScreensaverPopup"],
+body:has(.projacktor-app-playing) [class*="screensaver_"],
+body:has(.projacktor-app-playing) #ScreensaverPopup,
+body:has(.projacktor-app-playing) [class*="AmbientScreen"] {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 /* ───── Projacktor Header Container & Top Header ───── */
 .projacktor-header-container {
   width: 100% !important;

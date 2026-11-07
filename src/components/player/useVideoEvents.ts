@@ -38,18 +38,33 @@ export function useVideoEvents({
     const video = videoRef.current;
     if (!video) return;
 
+    const getAvailableDuration = () => {
+      if (durationRef.current > 0) return durationRef.current;
+      const v = videoRef.current;
+      if (v?.duration && !isNaN(v.duration) && isFinite(v.duration) && v.duration > 0) {
+        durationRef.current = v.duration;
+        return v.duration;
+      }
+      return 0;
+    };
+
     const updateBuffered = () => {
       const v = videoRef.current;
       if (!v || !v.buffered || v.buffered.length === 0) return;
       const cur = v.currentTime;
       let endSec = 0;
       for (let i = 0; i < v.buffered.length; i++) {
-        if (v.buffered.start(i) <= cur + 0.5 && v.buffered.end(i) >= cur) { endSec = v.buffered.end(i); break; }
+        const start = v.buffered.start(i);
+        const end = v.buffered.end(i);
+        if (start <= cur + 1.0 && end >= cur - 0.2) {
+          endSec = Math.max(endSec, end);
+        }
       }
       if (endSec === 0 && v.buffered.length > 0) endSec = v.buffered.end(v.buffered.length - 1);
-      if (endSec > 0 && durationRef.current > 0) {
+      const dur = getAvailableDuration();
+      if (endSec > 0 && dur > 0) {
         const total = isDirectStream ? endSec : (baseTime + endSec);
-        setBufferedPercent(Math.min(100, Math.max(0, (total / durationRef.current) * 100)));
+        setBufferedPercent(Math.min(100, Math.max(0, (total / dur) * 100)));
       }
     };
 
@@ -103,6 +118,11 @@ export function useVideoEvents({
       video.play().catch(() => {});
     };
 
+    const onDurationChange = () => {
+      getAvailableDuration();
+      updateBuffered();
+    };
+
     const onPlay = () => { setIsPlaying(true); updateBuffered(); if (!hasStartedPlaybackRef.current) scheduleFirstFrame(); else setIsBuffering(false); };
     const onPlaying = () => { setIsPlaying(true); updateBuffered(); if (!hasStartedPlaybackRef.current) scheduleFirstFrame(); else setIsBuffering(false); };
     const onPause = () => { setIsPlaying(false); updateBuffered(); saveProgress(isDirectStream ? video.currentTime : (baseTime + video.currentTime), durationRef.current); };
@@ -125,6 +145,8 @@ export function useVideoEvents({
 
     video.addEventListener("timeupdate", onTimeUpdate);
     video.addEventListener("loadedmetadata", onLoadedMetadata);
+    video.addEventListener("durationchange", onDurationChange);
+    video.addEventListener("loadeddata", updateBuffered);
     video.addEventListener("play", onPlay);
     video.addEventListener("playing", onPlaying);
     video.addEventListener("pause", onPause);
@@ -133,12 +155,16 @@ export function useVideoEvents({
     video.addEventListener("progress", updateBuffered);
     video.addEventListener("ended", onEnded);
 
+    updateBuffered();
+
     return () => {
       if (rvfcId !== null && typeof (video as any).cancelVideoFrameCallback === "function") {
         try { (video as any).cancelVideoFrameCallback(rvfcId); } catch {}
       }
       video.removeEventListener("timeupdate", onTimeUpdate);
       video.removeEventListener("loadedmetadata", onLoadedMetadata);
+      video.removeEventListener("durationchange", onDurationChange);
+      video.removeEventListener("loadeddata", updateBuffered);
       video.removeEventListener("play", onPlay);
       video.removeEventListener("playing", onPlaying);
       video.removeEventListener("pause", onPause);

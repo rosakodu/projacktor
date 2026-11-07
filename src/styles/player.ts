@@ -116,6 +116,17 @@ export const PLAYER_STYLES = `
   z-index: 2147483647 !important;
 }
 
+/* ───── Hide SteamOS Screensaver Overlays During Playback / Pause ───── */
+body:has(.projacktor-player-fullscreen) [class*="ScreensaverPopup"],
+body:has(.projacktor-player-fullscreen) [class*="screensaver_"],
+body:has(.projacktor-player-fullscreen) #ScreensaverPopup,
+body:has(.projacktor-player-fullscreen) [class*="AmbientScreen"] {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 @keyframes projacktor-spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
