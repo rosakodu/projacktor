@@ -94,16 +94,18 @@ export function usePlayerSeek({
   }, [duration, getStreamUrl, isDirectStream, resetControlsTimer, selectedAudio, setBaseTime, setBufferedPercent, setErrorMsg, setStreamUrl, setVideoTime, videoRef, hasStartedPlaybackRef, retryCountRef]);
 
   const handleProgressBarTouch = useCallback((e: React.TouchEvent<HTMLDivElement> | React.MouseEvent<HTMLDivElement>) => {
-    if (!duration || duration <= 0) return;
+    const effectiveDur = duration > 0 ? duration : (videoRef.current?.duration && isFinite(videoRef.current.duration) && videoRef.current.duration > 0 ? videoRef.current.duration : 0);
+    if (!effectiveDur || effectiveDur <= 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const clientX = 'touches' in e && e.touches.length > 0 ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
     const clickX = Math.max(0, Math.min(rect.width, clientX - rect.left));
     const targetPercent = clickX / rect.width;
-    seekTo(targetPercent * duration);
-  }, [duration, seekTo]);
+    seekTo(targetPercent * effectiveDur);
+  }, [duration, seekTo, videoRef]);
 
   const currentPlayhead = isDirectStream ? videoTime : (baseTime + videoTime);
-  const progressPercent = duration > 0 ? Math.min(100, Math.max(0, (currentPlayhead / duration) * 100)) : 0;
+  const effectiveDuration = duration > 0 ? duration : (videoRef.current?.duration && isFinite(videoRef.current.duration) && videoRef.current.duration > 0 ? videoRef.current.duration : 0);
+  const progressPercent = effectiveDuration > 0 ? Math.min(100, Math.max(0, (currentPlayhead / effectiveDuration) * 100)) : 0;
 
   return {
     commitPendingSeek,

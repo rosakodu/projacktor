@@ -11,6 +11,7 @@ interface UseVideoEventsProps {
   isDirectStream: boolean;
   savedStartTime: number;
   durationRef: MutableRefObject<number>;
+  setDuration?: (d: number) => void;
   hasStartedPlaybackRef: MutableRefObject<boolean>;
   retryCountRef: MutableRefObject<number>;
   saveProgress: (cur: number, dur: number) => void;
@@ -26,7 +27,7 @@ interface UseVideoEventsProps {
 
 export function useVideoEvents({
   videoRef, streamUrl, baseTime, filePath, actualFilePath, title, isOnline,
-  isDirectStream, savedStartTime, durationRef, hasStartedPlaybackRef,
+  isDirectStream, savedStartTime, durationRef, setDuration, hasStartedPlaybackRef,
   retryCountRef, saveProgress, setVideoTime, setBufferedPercent,
   setHasStartedPlayback, setIsPlaying, setIsBuffering, setErrorMsg,
   onPlayNext, closeModal,
@@ -39,13 +40,12 @@ export function useVideoEvents({
     if (!video) return;
 
     const getAvailableDuration = () => {
-      if (durationRef.current > 0) return durationRef.current;
+      let dur = durationRef.current;
       const v = videoRef.current;
-      if (v?.duration && !isNaN(v.duration) && isFinite(v.duration) && v.duration > 0) {
-        durationRef.current = v.duration;
-        return v.duration;
+      if (dur <= 0 && v?.duration && !isNaN(v.duration) && isFinite(v.duration) && v.duration > 0) {
+        dur = v.duration; durationRef.current = dur; setDuration?.(dur);
       }
-      return 0;
+      return dur > 0 ? dur : 0;
     };
 
     const updateBuffered = () => {
@@ -108,6 +108,7 @@ export function useVideoEvents({
       const isLive = isOnline || filePath.includes("/api/stream");
       if (durationRef.current <= 0 && vDur && !isNaN(vDur) && isFinite(vDur) && vDur > 0 && (!isLive || vDur >= 180)) {
         durationRef.current = vDur;
+        setDuration?.(vDur);
       }
       if (isDirectStream && savedStartTime > 0 && !hasInitialSeekedRef.current) {
         hasInitialSeekedRef.current = true;

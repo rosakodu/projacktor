@@ -46,7 +46,8 @@ export const PlayerTimeline: FC<PlayerTimelineProps> = memo(({
           style={{
             position: "absolute", left: 0, top: 0, height: "100%",
             width: `${safeProgress}%`,
-            background: "var(--ds-accent, #1a9fff)",
+            background: "#1a9fff",
+            boxShadow: safeProgress > 0 ? "0 0 8px rgba(26, 159, 255, 0.6)" : "none",
             borderRadius: 0, zIndex: 2, transition: "width 0.15s ease", pointerEvents: "none",
           }}
         />

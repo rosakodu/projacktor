@@ -78,7 +78,7 @@ export function usePlayerController({
 
   const playback = usePlayerPlayback({
     filePath, actualFilePath, title, isOnline, isDirectStream: media.isDirectStream,
-    savedStartTime: savedStartTimeRef.current, durationRef,
+    savedStartTime: savedStartTimeRef.current, durationRef, setDuration: media.setDuration,
     hasStartedPlaybackRef, retryCountRef,
     saveProgress: saveProgressRef.current, videoRef, streamUrl: media.streamUrl,
     setStreamUrl: media.setStreamUrl, volume: nav.volume, torrentStatus: torrent.torrentStatus,

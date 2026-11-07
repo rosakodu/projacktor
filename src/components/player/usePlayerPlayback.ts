@@ -12,6 +12,7 @@ interface UsePlayerPlaybackProps {
   isDirectStream: boolean;
   savedStartTime: number;
   durationRef: MutableRefObject<number>;
+  setDuration?: (d: number) => void;
   saveProgress: (cur: number, dur: number) => void;
   videoRef: RefObject<HTMLVideoElement | null>;
   streamUrl: string;
@@ -28,7 +29,7 @@ interface UsePlayerPlaybackProps {
 
 export function usePlayerPlayback({
   filePath, actualFilePath, title, isOnline, isDirectStream, savedStartTime,
-  durationRef, saveProgress, videoRef, streamUrl, setStreamUrl,
+  durationRef, setDuration, saveProgress, videoRef, streamUrl, setStreamUrl,
   volume, torrentStatus, zeroSeedersCountRef, onPlayNext, closeModal, resetControlsTimer,
   hasStartedPlaybackRef: externalPlaybackRef, retryCountRef: externalRetryRef,
 }: UsePlayerPlaybackProps) {
@@ -157,7 +158,7 @@ export function usePlayerPlayback({
 
   useVideoEvents({
     videoRef, streamUrl, baseTime, filePath, actualFilePath, title, isOnline,
-    isDirectStream, savedStartTime, durationRef, hasStartedPlaybackRef,
+    isDirectStream, savedStartTime, durationRef, setDuration, hasStartedPlaybackRef,
     retryCountRef, saveProgress, setVideoTime, setBufferedPercent,
     setHasStartedPlayback, setIsPlaying, setIsBuffering, setErrorMsg,
     onPlayNext, closeModal,
