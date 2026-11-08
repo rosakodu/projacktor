@@ -7,11 +7,14 @@ from ..core.network import normalize_jacred_url, ping_jacred, get_ssl_context
 from ..db.settings_repo import load_settings
 from .jacred_filters import (
     DANGEROUS_EXT_REGEX, UNSUPPORTED_MEDIA_REGEX, BLOCKED_TRACKERS,
-    is_executable_release, is_unsupported_media_release, is_blocked_tracker, detect_release_quality
+    is_executable_release, is_unsupported_media_release, is_blocked_tracker, detect_release_quality,
+    clean_title_for_matching, extract_title_tokens, transliterate_text, extract_years,
+    is_tv_release, is_unwanted_sequel, matches_word_boundary, extract_segment_title,
+    is_matching_title, is_matching_year, is_matching_torrent, filter_torrents
 )
 
 _CACHE_LOCK = threading.Lock()
-_SEARCH_CACHE: Dict[Tuple[str, str, str, int], Tuple[float, List[Dict]]] = {}
+_SEARCH_CACHE: Dict[Tuple, Tuple[float, List[Dict]]] = {}
 DEFAULT_CACHE_TTL = 60
 BACKOFF_DELAYS = (0.5, 1.0, 2.0)
 
@@ -50,7 +53,17 @@ class JacRedClient:
             return f"{q} s{season:02d}"
         return f"{q} {year}" if year else q
 
-    def filter_and_normalize(self, raw_items: List[Dict], min_seeders: int = 1) -> List[Dict]:
+    def filter_and_normalize(
+        self,
+        raw_items: List[Dict],
+        min_seeders: int = 1,
+        target_title: Optional[str] = None,
+        target_year: Optional[int] = None,
+        media_type: Optional[str] = None,
+        original_title: Optional[str] = None,
+        year: Optional[int] = None,
+    ) -> List[Dict]:
+        eff_year = target_year if target_year is not None else year
         normalized = []
         for item in raw_items:
             title = item.get("Title") or item.get("title") or ""
@@ -76,6 +89,10 @@ class JacRedClient:
             if s_count < min_seeders:
                 continue
 
+            if target_title:
+                if not is_matching_torrent(title, target_title, eff_year, media_type or "movie", original_title):
+                    continue
+
             quality = detect_release_quality(title)
             pub_date = str(item.get("PublishDate") or item.get("pubdate") or item.get("PubDate") or item.get("date") or "")
             normalized.append({
@@ -85,15 +102,37 @@ class JacRedClient:
             })
         return normalized
 
-    def search(self, query: str, category: Optional[str] = None, min_seeders: int = 1, ttl: int = DEFAULT_CACHE_TTL, bypass_cache: bool = False) -> List[Dict]:
+    def search(
+        self,
+        query: str,
+        category: Optional[str] = None,
+        min_seeders: int = 1,
+        ttl: int = DEFAULT_CACHE_TTL,
+        bypass_cache: bool = False,
+        target_title: Optional[str] = None,
+        target_year: Optional[int] = None,
+        media_type: Optional[str] = None,
+        original_title: Optional[str] = None,
+        year: Optional[int] = None,
+    ) -> List[Dict]:
         """Performs search with in-memory TTL caching and HTTP 429 exponential backoff."""
         url = self.base_url
         if not url:
             return []
 
+        eff_year = target_year if target_year is not None else year
         clean_q = query.strip()
         cat_str = category or ""
-        cache_key = (url, clean_q.lower(), cat_str, min_seeders)
+        cache_key = (
+            url,
+            clean_q.lower(),
+            cat_str,
+            min_seeders,
+            str(target_title or "").lower(),
+            str(original_title or "").lower(),
+            int(eff_year) if eff_year else 0,
+            str(media_type or "").lower(),
+        )
         now = time.time()
 
         if not bypass_cache and ttl > 0:
@@ -118,7 +157,14 @@ class JacRedClient:
                 with urllib.request.urlopen(req, timeout=self.timeout, context=ctx) as response:
                     raw = json.loads(response.read().decode('utf-8'))
                     items = raw.get("Results", []) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
-                    results = self.filter_and_normalize(items, min_seeders=min_seeders)
+                    results = self.filter_and_normalize(
+                        items,
+                        min_seeders=min_seeders,
+                        target_title=target_title,
+                        target_year=eff_year,
+                        media_type=media_type,
+                        original_title=original_title,
+                    )
                     if ttl > 0:
                         with _CACHE_LOCK:
                             if len(_SEARCH_CACHE) > 128:
@@ -147,5 +193,8 @@ __all__ = [
     "JacRedClient", "normalize_jacred_url", "ping_jacred", "clear_search_cache",
     "DEFAULT_CACHE_TTL", "BACKOFF_DELAYS", "DANGEROUS_EXT_REGEX", "UNSUPPORTED_MEDIA_REGEX",
     "BLOCKED_TRACKERS", "is_executable_release", "is_unsupported_media_release",
-    "is_blocked_tracker", "detect_release_quality",
+    "is_blocked_tracker", "detect_release_quality", "clean_title_for_matching",
+    "extract_title_tokens", "transliterate_text", "extract_years", "is_tv_release",
+    "is_unwanted_sequel", "matches_word_boundary", "extract_segment_title",
+    "is_matching_title", "is_matching_year", "is_matching_torrent", "filter_torrents",
 ]

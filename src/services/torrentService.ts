@@ -46,7 +46,147 @@ export function parseQuality(title: string, existing?: string): string {
   return t.includes("web-dl") || t.includes("webrip") ? "WEB-DL" : t.includes("bdrip") || t.includes("bdremux") || t.includes("bluray") ? "BDRip" : t.includes("hdrip") ? "HDRip" : t.includes("dvd") ? "DVD" : "";
 }
 
-function filterTorrents(items: any[], targetTitle: string, targetYear?: string, mediaType: "movie" | "tv" = "movie", originalTitle?: string): any[] {
+export function cleanTitleForMatching(title: string): string {
+  if (!title) return "";
+  return title.toLowerCase().replace(/ё/g, "е").replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
+}
+
+export function extractTitleTokens(title: string): string[] {
+  const cleaned = cleanTitleForMatching(title);
+  return cleaned ? cleaned.split(" ").filter(Boolean) : [];
+}
+
+const CYR_TO_LAT: Record<string, string> = {
+  а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z",
+  и: "i", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r",
+  с: "s", т: "t", у: "u", ф: "f", х: "h", ц: "ts", ч: "ch", ш: "sh", щ: "sch",
+  ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya",
+};
+
+const LAT_TO_CYR: Record<string, string> = {
+  a: "а", b: "б", c: "к", d: "д", e: "е", f: "ф", g: "г", h: "х", i: "и",
+  j: "дж", k: "к", l: "л", m: "м", n: "н", o: "о", p: "п", q: "к", r: "р",
+  s: "с", t: "т", u: "у", v: "в", w: "в", x: "кс", y: "й", z: "з",
+};
+
+export function transliterateText(text: string): string {
+  if (!text) return "";
+  const lower = text.toLowerCase().replace(/ё/g, "е");
+  const hasCyr = /[а-я]/i.test(lower);
+  const hasLat = /[a-z]/i.test(lower);
+  if (hasCyr && !hasLat) {
+    return lower.split("").map((ch) => CYR_TO_LAT[ch] || ch).join("");
+  }
+  if (hasLat && !hasCyr) {
+    return lower.split("").map((ch) => LAT_TO_CYR[ch] || ch).join("");
+  }
+  return "";
+}
+
+const SEASON_EPISODE_WORDS = new Set([
+  "сезон", "сезона", "сезоны", "сезонов", "season", "seasons", "s",
+  "серия", "серии", "серий", "серию", "эпизод", "эпизоды", "episode", "episodes", "ep",
+  "из", "part", "часть", "й", "го", "я", "е", "му", "м", "st", "nd", "rd", "th"
+]);
+
+export function matchesWordBoundary(text: string, phrase: string): boolean {
+  if (!text || !phrase) return false;
+  const tokens = extractTitleTokens(phrase);
+  if (!tokens.length) return false;
+  const escaped = tokens.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const pattern = "(?:^|[^\\p{L}\\p{N}])" + escaped.join("[^\\p{L}\\p{N}]+") + "(?:$|[^\\p{L}\\p{N}])";
+  return new RegExp(pattern, "iu").test(text);
+}
+
+export function extractSegmentTitle(segment: string): string {
+  if (!segment) return "";
+  let s = segment.trim();
+  s = s.replace(/^\s*(?:\[[^\]]+\]\s*)+/, "");
+  s = s.replace(/^\s*(?:сериал|мини[- ]сериал|телесериал|х\/?ф|т\/?с|фильм|мультсериал|мультфильм|м\/?ф|аниме)\s*[:\-–—]?\s*/iu, "");
+  s = s.split(/\b(?:s\d+(?:e\d+)?(?:-s?\d+)?(?:-e?\d+)?|season\s*\d+|\d+[-_ ]?(?:й|го|я|е|му|м|st|nd|rd|th)?\s*сезон|сезон\s*\d+|сери[яий]|эпизод|\d+\s*из\s*\d+|\d{1,2}x\d{1,2}|e\d+|ep\d+)\b/iu)[0];
+  s = s.split(/\b(?:2160p|1080p|720p|480p|4k|uhd|fhd|hd|web-?dl|webrip|bdrip|hdrip|bluray|remux|dvdrip|camrip|tsrip)\b/iu)[0];
+  s = s.split(/(?<!^)[\(\[]/)[0];
+  return s.replace(/^[\s:.\-_–—]+|[\s:.\-_–—]+$/g, "");
+}
+
+export function isMatchingTitle(torrentTitle: string, targetTitle: string, originalTitle?: string): boolean {
+  if (!torrentTitle || !targetTitle) return false;
+
+  const rawCandidates = [targetTitle];
+  if (originalTitle && originalTitle.trim() && originalTitle.trim() !== targetTitle.trim()) {
+    rawCandidates.push(originalTitle);
+  }
+
+  const candidates: string[][] = [];
+  const candKeys = new Set<string>();
+
+  for (const rc of rawCandidates) {
+    const tokens = extractTitleTokens(rc);
+    if (tokens.length) {
+      const k = tokens.join(" ");
+      if (!candKeys.has(k)) { candKeys.add(k); candidates.push(tokens); }
+      if (tokens.length > 1 && ["the", "a", "an"].includes(tokens[0])) {
+        const noArt = tokens.slice(1);
+        const nk = noArt.join(" ");
+        if (!candKeys.has(nk)) { candKeys.add(nk); candidates.push(noArt); }
+      }
+      const trans = transliterateText(rc);
+      if (trans) {
+        const tTokens = extractTitleTokens(trans);
+        const tk = tTokens.join(" ");
+        if (tTokens.length && !candKeys.has(tk)) { candKeys.add(tk); candidates.push(tTokens); }
+      }
+    }
+  }
+
+  if (!candidates.length) return false;
+
+  const boundaryMatched = candidates.filter((cand) => matchesWordBoundary(torrentTitle, cand.join(" ")));
+  if (!boundaryMatched.length) return false;
+
+  const segments = torrentTitle.split(/[/|\\]/).map((s) => s.trim()).filter(Boolean);
+  const segList = segments.length ? segments : [torrentTitle];
+
+  for (const cand of boundaryMatched) {
+    const candJoined = cand.join(" ");
+    const candCollapsed = cand.join("");
+
+    for (const seg of segList) {
+      const segTitle = extractSegmentTitle(seg);
+      const segTokens = extractTitleTokens(segTitle);
+      if (!segTokens.length) continue;
+
+      const segNoArt = (segTokens.length > 1 && ["the", "a", "an"].includes(segTokens[0])) ? segTokens.slice(1) : segTokens;
+
+      if (segTokens.join(" ") === candJoined || segNoArt.join(" ") === candJoined) {
+        return true;
+      }
+      if (segTokens.join("") === candCollapsed) {
+        return true;
+      }
+
+      for (const st of [segTokens, segNoArt]) {
+        if (st.length > cand.length && st.slice(0, cand.length).join(" ") === candJoined) {
+          const remainder = st.slice(cand.length);
+          if (
+            remainder.every(
+              (r) =>
+                SEASON_EPISODE_WORDS.has(r) ||
+                /^\d+$/.test(r) ||
+                /^(?:s\d+(?:e\d+)?(?:-s?\d+)?(?:-e?\d+)?|e\d+|ep\d+|\d+x\d+|\d+-\d+)$/i.test(r)
+            )
+          ) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+export function filterTorrents(items: any[], targetTitle: string, targetYear?: string, mediaType: "movie" | "tv" = "movie", originalTitle?: string): any[] {
   const targetY = targetYear ? parseInt(targetYear, 10) : NaN;
   const isTargetMovie = mediaType === "movie", isTargetTv = mediaType === "tv";
   return items.filter((t) => {
@@ -63,22 +203,12 @@ function filterTorrents(items: any[], targetTitle: string, targetYear?: string, 
           const isS1 = /\b(s0?1\b|1\s*сезон|сезон\s*0?1|season\s*0?1|1[-_ ]?й\s*сезон)\b/i.test(title);
           const hasLater = /\b(s0?[2-9]\b|s[1-9]\d\b|[2-9]\s*сезон|сезон\s*[2-9]|season\s*[2-9])\b/i.test(title);
           if (isS1 && !hasLater && !years.some((y) => Math.abs(y - targetY) <= 1)) return false;
-          if (hasLater && !years.some((y) => y >= targetY - 1 && y <= targetY + 12)) return false;
+          if (hasLater && !years.some((y) => y >= targetY - 1 && y <= targetY + 15)) return false;
           if (!isS1 && !hasLater && !years.some((y) => Math.abs(y - targetY) <= 1)) return false;
         }
       }
     }
-    if (originalTitle?.trim() && !hasCJK(originalTitle)) {
-      const cleanOrig = originalTitle.trim().toLowerCase().replace(/^(the|a|an)\s+/i, "").replace(/[^a-z0-9]/g, "");
-      const slashParts = title.split("/").map((s: string) => s.trim());
-      if (slashParts.length >= 2) {
-        const latin = slashParts.find((p: string) => /^[a-zA-Z0-9\s:.'!?-]+$/.test(p) && !extractYears(p).length);
-        if (latin) {
-          const normPart = latin.toLowerCase().replace(/^(the|a|an)\s+/i, "").replace(/[^a-z0-9]/g, "");
-          if (normPart.length >= 3 && cleanOrig.length >= 3 && normPart !== cleanOrig && !normPart.startsWith(cleanOrig) && !cleanOrig.startsWith(normPart)) return false;
-        }
-      }
-    }
+    if (!isMatchingTitle(title, targetTitle, originalTitle)) return false;
     return true;
   });
 }
@@ -96,7 +226,12 @@ export async function searchTorrents(title: string, year?: string, mediaType: "m
     const cat = mediaType === "movie" ? "2000,5070" : "5000,5070";
     const fetchQ = async (q: string, category: string = cat): Promise<any[]> => {
       try {
-        const res = await fetch(`${API_BASE}/jacred/search?query=${encodeURIComponent(q)}${category ? `&category=${category}` : ""}`);
+        let u = `${API_BASE}/jacred/search?query=${encodeURIComponent(q)}${category ? `&category=${category}` : ""}`;
+        if (cleanTitle) u += `&title=${encodeURIComponent(cleanTitle)}`;
+        if (cleanOrig) u += `&original_title=${encodeURIComponent(cleanOrig)}`;
+        if (year) u += `&year=${encodeURIComponent(year)}`;
+        if (mediaType) u += `&media_type=${encodeURIComponent(mediaType)}`;
+        const res = await fetch(u);
         return res.ok ? (await res.json()) || [] : [];
       } catch { return []; }
     };
@@ -132,7 +267,7 @@ export async function searchTorrents(title: string, year?: string, mediaType: "m
       if (!isNaN(targetY)) {
         if (years.includes(targetY)) sc += 10000;
         else if (years.some((y) => Math.abs(y - targetY) <= 1)) sc += 6000;
-        else if (mediaType === "tv" && years.some((y) => y > targetY && y <= targetY + 6)) sc += 3000;
+        else if (mediaType === "tv" && years.some((y) => y > targetY && y <= targetY + 15)) sc += 3000;
         else if (years.length > 0) sc -= 10000;
       }
       const q = parseQuality(t.title || "", t.quality);

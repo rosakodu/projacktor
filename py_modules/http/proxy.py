@@ -34,8 +34,21 @@ def handle_jacred_search(handler, path="", query=None):
 
     q = query.get('query', [''])[0]
     category = query.get('category', [''])[0]
+    target_title = query.get('title', [None])[0] or query.get('target_title', [None])[0]
+    original_title = query.get('original_title', [None])[0] or query.get('orig_title', [None])[0]
+    year_raw = query.get('year', [None])[0]
+    media_type = query.get('media_type', [None])[0]
+    year = int(year_raw) if year_raw and year_raw.isdigit() else None
+
     client = JacRedClient(base_url=url)
-    results = client.search(query=q, category=category)
+    results = client.search(
+        query=q,
+        category=category,
+        target_title=target_title,
+        original_title=original_title,
+        year=year,
+        media_type=media_type,
+    )
     handler.send_json(results)
 
 
