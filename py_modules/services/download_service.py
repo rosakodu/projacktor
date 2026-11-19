@@ -1,7 +1,6 @@
 """Download management domain service for Projacktor."""
 
 import os
-import re
 import asyncio
 import shutil
 
@@ -11,6 +10,11 @@ from ..media.episodes import (
     find_target_episode,
     match_aria2_file,
     collect_candidate_paths,
+)
+from .aria2_helpers import (
+    parse_magnet_hash,
+    remove_aria2_tasks,
+    remove_aria2_control_files,
 )
 
 
@@ -30,12 +34,7 @@ class DownloadService:
         ddir = media_row.get('download_dir') or ''
         if len(current_selected) > 0:
             selected_str = ','.join(sorted(current_selected, key=int))
-            target_hash = ''
-            if 'xt=urn:btih:' in (media_row.get('magnet_uri') or '').lower():
-                try:
-                    target_hash = media_row['magnet_uri'].lower().split('xt=urn:btih:')[1].split('&')[0].strip()
-                except Exception:
-                    pass
+            target_hash = parse_magnet_hash(media_row.get('magnet_uri') or '')
 
             torrent_path = os.path.join(ddir, f'{target_hash}.torrent') if (target_hash and ddir) else ''
             new_gid = None
@@ -78,42 +77,7 @@ class DownloadService:
     @staticmethod
     def cleanup_old_torrent_download(mid: int, ddir: str, old_gid: str = "", old_hash: str = "", dm=None):
         logger.info(f"Replacing torrent: cleaning old task mid={mid}, gid={old_gid}, hash={old_hash}")
-        if dm:
-            if old_gid:
-                try:
-                    dm._rpc_call("aria2.forceRemove", [old_gid])
-                except Exception:
-                    try:
-                        dm.remove(old_gid)
-                    except Exception:
-                        pass
-                try:
-                    dm._rpc_call("aria2.removeDownloadResult", [old_gid])
-                except Exception:
-                    pass
-
-            if old_hash:
-                try:
-                    active = dm._rpc_call("aria2.tellActive") or []
-                    waiting = dm._rpc_call("aria2.tellWaiting", [0, 100]) or []
-                    stopped = dm._rpc_call("aria2.tellStopped", [0, 100]) or []
-                    for t in active + waiting + stopped:
-                        h = (t.get('infoHash') or '').lower()
-                        if h == old_hash.lower():
-                            t_gid = t.get('gid')
-                            try:
-                                dm._rpc_call("aria2.forceRemove", [t_gid])
-                            except Exception:
-                                try:
-                                    dm.remove(t_gid)
-                                except Exception:
-                                    pass
-                            try:
-                                dm._rpc_call("aria2.removeDownloadResult", [t_gid])
-                            except Exception:
-                                pass
-                except Exception as e:
-                    logger.warning(f"Error removing old hash {old_hash} from aria2: {e}")
+        remove_aria2_tasks(dm, gid=old_gid, target_hash=old_hash)
 
         db = get_db()
         try:
@@ -135,16 +99,7 @@ class DownloadService:
         finally:
             db.close()
 
-        try:
-            if ddir and os.path.isdir(ddir):
-                for fn in os.listdir(ddir):
-                    if fn.endswith(".aria2"):
-                        try:
-                            os.remove(os.path.join(ddir, fn))
-                        except Exception:
-                            pass
-        except Exception as e:
-            logger.warning(f"Error cleaning .aria2 in {ddir}: {e}")
+        remove_aria2_control_files(ddir)
 
     def get_downloads_count(self) -> int:
         db = get_db()
@@ -205,13 +160,8 @@ class DownloadService:
                 }
                 if file_indices:
                     options["select-file"] = str(file_indices)
-                    
-                target_hash = ""
-                if "xt=urn:btih:" in (magnet or "").lower():
-                    try:
-                        target_hash = magnet.lower().split("xt=urn:btih:")[1].split("&")[0].strip()
-                    except Exception:
-                        pass
+
+                target_hash = parse_magnet_hash(magnet)
 
                 st = None
                 if gid and dm:
@@ -233,13 +183,7 @@ class DownloadService:
                             st = cand_st
 
                 if dl and not st:
-                    dl_mag = dl.get('magnet_uri') or ''
-                    dl_hash = ""
-                    if "xt=urn:btih:" in dl_mag.lower():
-                        try:
-                            dl_hash = dl_mag.lower().split("xt=urn:btih:")[1].split("&")[0].strip()
-                        except Exception:
-                            pass
+                    dl_hash = parse_magnet_hash(dl.get('magnet_uri') or '')
                     if dl_hash and target_hash and dl_hash != target_hash:
                         logger.info(f"start_download: dl_hash {dl_hash} != {target_hash}, cleaning old task")
                         self.cleanup_old_torrent_download(mid, ddir, gid or '', dl_hash, dm)
@@ -476,15 +420,7 @@ class DownloadService:
                     logger.warning(f"cancel_episode_download: failed to remove file {p}: {ce}")
 
             # Remove any folder-level or project-level .aria2 control files if cancelled
-            if ddir and os.path.isdir(ddir):
-                for root, _, files in os.walk(ddir):
-                    for f in files:
-                        if f.endswith('.aria2'):
-                            try:
-                                os.remove(os.path.join(root, f))
-                                logger.info(f"cancel_episode_download: removed stale aria2 bitfield {f}")
-                            except Exception as ctl_err:
-                                logger.debug(f"Failed to remove ctl {f}: {ctl_err}")
+            remove_aria2_control_files(ddir)
 
             if dm:
                 try:
@@ -649,15 +585,7 @@ class DownloadService:
                     logger.warning(f"delete_episode: failed to remove file {p}: {fe}")
 
             # Remove any folder-level or project-level .aria2 control files so stale bitfields are cleared
-            if ddir and os.path.isdir(ddir):
-                for root, _, files in os.walk(ddir):
-                    for f in files:
-                        if f.endswith('.aria2'):
-                            try:
-                                os.remove(os.path.join(root, f))
-                                logger.info(f"delete_episode: removed stale aria2 bitfield {f}")
-                            except Exception as ctl_err:
-                                logger.debug(f"Failed to remove ctl {f}: {ctl_err}")
+            remove_aria2_control_files(ddir)
 
             if dm:
                 try:
@@ -844,51 +772,18 @@ class DownloadService:
 
             # 1. Remove aria2 tasks
             if dm:
-                target_hash = ""
-                if row.get('magnet_uri') and "xt=urn:btih:" in str(row['magnet_uri']).lower():
-                    try:
-                        target_hash = str(row['magnet_uri']).lower().split("xt=urn:btih:")[1].split("&")[0].strip()
-                    except: pass
-                elif m and m.get('magnet_uri') and "xt=urn:btih:" in str(m['magnet_uri']).lower():
-                    try:
-                        target_hash = str(m['magnet_uri']).lower().split("xt=urn:btih:")[1].split("&")[0].strip()
-                    except: pass
-
-                gids_to_remove = set()
-                if row.get('aria2_gid'):
-                    gids_to_remove.add(row['aria2_gid'])
-
-                try:
-                    all_tasks = (dm.tell_active() or []) + (dm.tell_waiting() or []) + (dm.tell_stopped() or [])
-                    for t in all_tasks:
-                        t_gid = t.get('gid')
-                        t_hash = (t.get('infoHash') or '').lower()
-                        t_dir = t.get('dir') or ''
-                        if t_gid in gids_to_remove:
-                            for fb in (t.get('followedBy') or []):
-                                gids_to_remove.add(fb)
-                        if target_hash and t_hash and t_hash == target_hash:
-                            gids_to_remove.add(t_gid)
-                        if row.get('download_dir') and t_dir and os.path.abspath(t_dir) == os.path.abspath(row['download_dir']):
-                            gids_to_remove.add(t_gid)
-                        if m and m.get('download_dir') and t_dir and os.path.abspath(t_dir) == os.path.abspath(m['download_dir']):
-                            gids_to_remove.add(t_gid)
-                except Exception as e:
-                    logger.warning(f"Error finding tasks to remove in delete_download: {e}")
-
-                for g in gids_to_remove:
-                    try:
-                        dm.remove(g)
-                    except: pass
-                    try:
-                        dm._rpc_call("aria2.forceRemove", [g])
-                    except: pass
-                    try:
-                        dm._rpc_call("aria2.removeDownloadResult", [g])
-                    except: pass
-                try:
-                    dm.purge_download_result()
-                except: pass
+                target_hash = parse_magnet_hash(row.get('magnet_uri') or '')
+                if not target_hash and m:
+                    target_hash = parse_magnet_hash(m.get('magnet_uri') or '')
+                target_dirs = [
+                    d for d in (row.get('download_dir'), m.get('download_dir') if m else None) if d
+                ]
+                remove_aria2_tasks(
+                    dm,
+                    gid=row.get('aria2_gid') or '',
+                    target_hash=target_hash,
+                    target_dirs=target_dirs,
+                )
 
             # 2. Delete all files and directories on disk
             dirs_to_clean = set()
@@ -906,10 +801,12 @@ class DownloadService:
                             os.remove(fp)
                         if fp and os.path.isfile(f"{fp}.aria2"):
                             os.remove(f"{fp}.aria2")
-                    except: pass
+                    except Exception:
+                        pass
 
             for d in dirs_to_clean:
                 if d and os.path.isdir(d):
+                    remove_aria2_control_files(d)
                     try:
                         shutil.rmtree(d, ignore_errors=True)
                         logger.info(f"delete_download: removed directory {d}")

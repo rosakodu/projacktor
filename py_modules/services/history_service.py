@@ -14,10 +14,91 @@ class HistoryService:
     def __init__(self, context=None):
         self.context = context
 
+    @staticmethod
+    def _build_in_where(conditions: list[tuple[str, set]]) -> tuple[str, list]:
+        clauses = []
+        params = []
+        for column, values in conditions:
+            if values:
+                vals = list(values)
+                placeholders = ",".join("?" for _ in vals)
+                clauses.append(f"{column} IN ({placeholders})")
+                params.extend(vals)
+        return " OR ".join(clauses), params
+
+    def _prefetch_watch_history_maps(self, db, rows: list) -> tuple[dict, dict, dict, dict, dict, dict, dict]:
+        """Batch-prefetch media_files, media metadata, and latest download status for watch_history rows."""
+        media_ids = {r['media_id'] for r in rows if r.get('media_id')}
+        tmdb_ids = {r['tmdb_id'] for r in rows if r.get('tmdb_id')}
+        titles = {r['title'] for r in rows if r.get('title')}
+
+        mf_by_tmdb: dict = {}
+        mf_by_title: dict = {}
+        mf_where, mf_params = self._build_in_where([("m.tmdb_id", tmdb_ids), ("m.title", titles)])
+        if mf_where:
+            for mf in db.execute(f"""
+                SELECT f.file_path, m.tmdb_id, m.title FROM media_files f
+                JOIN media m ON f.media_id = m.id
+                WHERE {mf_where}
+                ORDER BY f.id ASC
+            """, mf_params).fetchall():
+                if mf.get('tmdb_id'):
+                    mf_by_tmdb.setdefault(mf['tmdb_id'], mf['file_path'])
+                if mf.get('title'):
+                    mf_by_title.setdefault(mf['title'], mf['file_path'])
+
+        media_by_id: dict = {}
+        media_by_tmdb: dict = {}
+        media_by_title: dict = {}
+        dl_tmdb_ids = set(tmdb_ids)
+        m_where, m_params = self._build_in_where([("id", media_ids), ("tmdb_id", tmdb_ids), ("title", titles)])
+        if m_where:
+            for m_row in db.execute(f"""
+                SELECT id, tmdb_id, title, poster_path, backdrop_path FROM media
+                WHERE {m_where}
+                ORDER BY id ASC
+            """, m_params).fetchall():
+                media_by_id[m_row['id']] = m_row
+                if m_row.get('tmdb_id'):
+                    media_by_tmdb.setdefault(m_row['tmdb_id'], m_row)
+                    dl_tmdb_ids.add(m_row['tmdb_id'])
+                if m_row.get('title'):
+                    media_by_title.setdefault(m_row['title'], m_row)
+
+        dl_by_media_id: dict = {}
+        dl_by_tmdb_id: dict = {}
+        dl_where, dl_params = self._build_in_where([("d.media_id", media_ids), ("m.tmdb_id", dl_tmdb_ids)])
+        if dl_where:
+            for dl_row in db.execute(f"""
+                SELECT d.media_id, d.status, m.tmdb_id FROM downloads d
+                LEFT JOIN media m ON d.media_id = m.id
+                WHERE {dl_where}
+                ORDER BY d.id DESC
+            """, dl_params).fetchall():
+                if dl_row.get('media_id'):
+                    dl_by_media_id.setdefault(dl_row['media_id'], dl_row['status'])
+                if dl_row.get('tmdb_id'):
+                    dl_by_tmdb_id.setdefault(dl_row['tmdb_id'], dl_row['status'])
+
+        return mf_by_tmdb, mf_by_title, media_by_id, media_by_tmdb, media_by_title, dl_by_media_id, dl_by_tmdb_id
+
     def get_watch_history(self) -> list[dict]:
         db = get_db()
         try:
             rows = db.execute("SELECT * FROM watch_history ORDER BY watched_at DESC LIMIT 100").fetchall()
+            if not rows:
+                return []
+
+            (
+                mf_by_tmdb,
+                mf_by_title,
+                media_by_id,
+                media_by_tmdb,
+                media_by_title,
+                dl_by_media_id,
+                dl_by_tmdb_id,
+            ) = self._prefetch_watch_history_maps(db, rows)
+
             items = []
             for r in rows:
                 d = dict(r)
@@ -26,31 +107,21 @@ class HistoryService:
                     local_file = d['file_path']
                 else:
                     if d.get('tmdb_id'):
-                        mf = db.execute("""
-                            SELECT f.file_path FROM media_files f
-                            JOIN media m ON f.media_id = m.id
-                            WHERE m.tmdb_id = ?
-                            ORDER BY f.id ASC LIMIT 1
-                        """, (d['tmdb_id'],)).fetchone()
-                        if mf and os.path.isfile(mf['file_path']):
-                            local_file = mf['file_path']
+                        mf_path = mf_by_tmdb.get(d['tmdb_id'])
+                        if mf_path and os.path.isfile(mf_path):
+                            local_file = mf_path
                     if not local_file and d.get('title'):
-                        mf = db.execute("""
-                            SELECT f.file_path FROM media_files f
-                            JOIN media m ON f.media_id = m.id
-                            WHERE m.title = ?
-                            ORDER BY f.id ASC LIMIT 1
-                        """, (d['title'],)).fetchone()
-                        if mf and os.path.isfile(mf['file_path']):
-                            local_file = mf['file_path']
+                        mf_path = mf_by_title.get(d['title'])
+                        if mf_path and os.path.isfile(mf_path):
+                            local_file = mf_path
 
                 m_row = None
                 if d.get('media_id'):
-                    m_row = db.execute("SELECT tmdb_id, poster_path, backdrop_path FROM media WHERE id=?", (d['media_id'],)).fetchone()
+                    m_row = media_by_id.get(d['media_id'])
                 if not m_row and d.get('tmdb_id'):
-                    m_row = db.execute("SELECT tmdb_id, poster_path, backdrop_path FROM media WHERE tmdb_id=?", (d['tmdb_id'],)).fetchone()
+                    m_row = media_by_tmdb.get(d['tmdb_id'])
                 if not m_row and d.get('title'):
-                    m_row = db.execute("SELECT tmdb_id, poster_path, backdrop_path FROM media WHERE title=?", (d['title'],)).fetchone()
+                    m_row = media_by_title.get(d['title'])
 
                 if m_row:
                     if not d.get('tmdb_id') and m_row['tmdb_id']:
@@ -93,21 +164,10 @@ class HistoryService:
                                 except Exception:
                                     pass
 
-                    dl_row = None
-                    if d.get('media_id'):
-                        dl_row = db.execute(
-                            "SELECT status FROM downloads WHERE media_id=? ORDER BY id DESC LIMIT 1",
-                            (d['media_id'],)
-                        ).fetchone()
-                    if not dl_row and d.get('tmdb_id'):
-                        dl_row = db.execute("""
-                            SELECT d.status FROM downloads d
-                            JOIN media m ON d.media_id = m.id
-                            WHERE m.tmdb_id = ?
-                            ORDER BY d.id DESC LIMIT 1
-                        """, (d['tmdb_id'],)).fetchone()
-                    if dl_row:
-                        dl_status = dl_row['status']
+                    if d.get('media_id') and d['media_id'] in dl_by_media_id:
+                        dl_status = dl_by_media_id[d['media_id']]
+                    elif d.get('tmdb_id') and d['tmdb_id'] in dl_by_tmdb_id:
+                        dl_status = dl_by_tmdb_id[d['tmdb_id']]
                 d['download_status'] = dl_status
                 items.append(d)
             return items
@@ -313,7 +373,7 @@ class HistoryService:
         finally:
             try:
                 db.close()
-            except:
+            except Exception:
                 pass
 
     def delete_watch_history_item(self, item_id: int) -> bool:

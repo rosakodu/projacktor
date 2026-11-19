@@ -1,9 +1,15 @@
 import { useEffect, RefObject } from "react";
 import { RawButton, subscribeControllerInput } from "../runtime/controllerInput";
-import { getActiveDocument, getActiveWindow, isOverlayActiveOrRecent } from "../runtime/activeDoc";
+import { getActiveDocument, getActiveWindow } from "../runtime/activeDoc";
 import { AudioTrack, SubtitleTrack } from "../components/player/types";
 import { triggerHaptic } from "../runtime/haptics";
 import type { UsePlayerZoomReturn } from "../components/player/usePlayerZoom";
+import {
+  handlePlayerActivate,
+  handlePlayerBack,
+  handlePlayerToggleControls,
+  type PlayerInputActionContext,
+} from "./playerInputActions";
 
 interface UsePlayerGamepadParams {
   containerRef: RefObject<HTMLDivElement | null>;
@@ -113,6 +119,30 @@ export function usePlayerGamepad(props: UsePlayerGamepadParams) {
     let lastVolumeAt = 0;
     let lastToggleAt = 0;
 
+    const inputCtx: PlayerInputActionContext = {
+      containerRef,
+      playBtnRef,
+      subtitleBtnRef,
+      audioBtnRef,
+      showControlsRef,
+      showAudioMenuRef,
+      showSubtitleMenuRef,
+      setShowAudioMenu,
+      setShowSubtitleMenu,
+      setShowControls,
+      closeModalRef,
+      audioTracksRef,
+      subtitleTracksRef,
+      activeAudioMenuIdxRef,
+      activeSubMenuIdxRef,
+      toggleAudioMenu,
+      toggleSubtitleMenu,
+      selectAudioTrack,
+      selectSubtitleTrack,
+      resetControlsTimer,
+      toggleControls,
+    };
+
     // Прямая подписка на события геймпада Steam Deck
     const unController = subscribeControllerInput((e) => {
       // Плавный зум: одиночный клик L2/R2 = ровно 1%, зажатие = быстрый зум
@@ -181,132 +211,26 @@ export function usePlayerGamepad(props: UsePlayerGamepadParams) {
 
       // Кнопка L3 (25): нажатие левого стика — мгновенное скрытие / переключение интерфейса плеера
       if (e.button === RawButton.L3 || e.button === 25) {
-        triggerHaptic("click", "left");
-        if (toggleControls) {
-          toggleControls();
-        } else if (showControlsRef.current) {
-          setShowControls(false);
-          setShowAudioMenu(false);
-          setShowSubtitleMenu(false);
-        } else {
-          setShowControls(true);
-          resetControlsTimer();
-        }
+        handlePlayerToggleControls(inputCtx);
         return;
       }
 
       // Кнопка A (0): Воспроизведение / Пауза или выбор в меню / активация элемента
       if (e.button === RawButton.A || e.button === 0) {
-        if (showAudioMenuRef.current) {
-          const idx = activeAudioMenuIdxRef.current || 0;
-          const track = audioTracksRef.current?.[idx];
-          if (track) {
-            selectAudioTrack(track.index);
-          } else {
-            setShowAudioMenu(false);
-          }
-          return;
-        }
-        if (showSubtitleMenuRef.current) {
-          const idx = activeSubMenuIdxRef.current || 0;
-          if (idx === 0) {
-            selectSubtitleTrack(null);
-          } else {
-            const sub = subtitleTracksRef.current?.[idx - 1];
-            if (sub && sub.supported !== false) {
-              selectSubtitleTrack(sub.index);
-            } else {
-              setShowSubtitleMenu(false);
-            }
-          }
-          return;
-        }
-
-        // Если контролы скрыты, нажатие A всегда переключает воспроизведение (плей/пауза)
-        if (!showControlsRef.current) {
+        handlePlayerActivate(inputCtx, () => {
           if (now - lastToggleAt < 250) return;
           lastToggleAt = now;
           togglePlay();
           setShowControls(true);
           resetControlsTimer();
-          return;
-        }
-
-        const doc = getActiveDocument(containerRef.current) || document;
-        const activeEl = (doc?.activeElement && doc.activeElement !== doc.body && containerRef.current?.contains(doc.activeElement)) ? (doc.activeElement as HTMLElement) : null;
-        const gpfocus = doc?.querySelector?.(".projacktor-player-fullscreen .gpfocus") as HTMLElement | null;
-        const focusedEl = activeEl || gpfocus;
-
-        // Если фокус на кнопке субтитров: переключаем меню без паузы
-        if (subtitleBtnRef.current && (subtitleBtnRef.current === focusedEl || subtitleBtnRef.current.contains(focusedEl as Node))) {
-          toggleSubtitleMenu();
-          return;
-        }
-
-        // Если фокус на кнопке аудиодорожек: переключаем меню без паузы
-        if (audioBtnRef.current && (audioBtnRef.current === focusedEl || audioBtnRef.current.contains(focusedEl as Node))) {
-          toggleAudioMenu();
-          return;
-        }
-
-        // Если фокус на другой интерактивной кнопке (кроме playBtnRef): не вызываем togglePlay,
-        // позволяя нативному Focusable.onActivate выполниться
-        if (
-          focusedEl &&
-          focusedEl !== playBtnRef.current &&
-          !playBtnRef.current?.contains(focusedEl) &&
-          focusedEl !== containerRef.current &&
-          focusedEl !== doc?.body &&
-          !focusedEl.classList.contains("projacktor-player-fullscreen")
-        ) {
-          return;
-        }
-
-        if (now - lastToggleAt < 250) return;
-        lastToggleAt = now;
-        togglePlay();
-        setShowControls(true);
-        resetControlsTimer();
+        });
         return;
       }
 
       // Кнопка B (1): Закрыть меню аудио/субтитров или выйти из плеера
       if (e.button === RawButton.B || e.button === 1) {
         // Игнорируем B, если оверлей Steam (шторка "..." или меню STEAM) был открыт или закрылся менее 1200ms назад
-        if (isOverlayActiveOrRecent(1200)) return;
-        if (showAudioMenuRef.current) {
-          showAudioMenuRef.current = false;
-          setShowAudioMenu(false);
-          showControlsRef.current = true;
-          setShowControls(true);
-          resetControlsTimer();
-          setTimeout(() => {
-            if (audioBtnRef.current) {
-              const doc = getActiveDocument(audioBtnRef.current) || document;
-              doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-              audioBtnRef.current.focus();
-              try { (audioBtnRef.current as any).TakeFocus?.(0); } catch {}
-              audioBtnRef.current.classList.add("gpfocus");
-            }
-          }, 50);
-        } else if (showSubtitleMenuRef.current) {
-          showSubtitleMenuRef.current = false;
-          setShowSubtitleMenu(false);
-          showControlsRef.current = true;
-          setShowControls(true);
-          resetControlsTimer();
-          setTimeout(() => {
-            if (subtitleBtnRef.current) {
-              const doc = getActiveDocument(subtitleBtnRef.current) || document;
-              doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-              subtitleBtnRef.current.focus();
-              try { (subtitleBtnRef.current as any).TakeFocus?.(0); } catch {}
-              subtitleBtnRef.current.classList.add("gpfocus");
-            }
-          }, 50);
-        } else if (closeModalRef.current) {
-          closeModalRef.current();
-        }
+        handlePlayerBack(inputCtx);
         return;
       }
 
@@ -457,41 +381,7 @@ export function usePlayerGamepad(props: UsePlayerGamepadParams) {
         e.preventDefault();
         e.stopPropagation();
         (e as any).stopImmediatePropagation?.();
-        // Игнорируем, если оверлей Steam был открыт или закрылся менее 1200ms назад
-        if (isOverlayActiveOrRecent(1200)) return;
-        if (showAudioMenuRef.current) {
-          showAudioMenuRef.current = false;
-          setShowAudioMenu(false);
-          showControlsRef.current = true;
-          setShowControls(true);
-          resetControlsTimer();
-          setTimeout(() => {
-            if (audioBtnRef.current) {
-              const doc = getActiveDocument(audioBtnRef.current) || document;
-              doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-              audioBtnRef.current.focus();
-              try { (audioBtnRef.current as any).TakeFocus?.(0); } catch {}
-              audioBtnRef.current.classList.add("gpfocus");
-            }
-          }, 50);
-        } else if (showSubtitleMenuRef.current) {
-          showSubtitleMenuRef.current = false;
-          setShowSubtitleMenu(false);
-          showControlsRef.current = true;
-          setShowControls(true);
-          resetControlsTimer();
-          setTimeout(() => {
-            if (subtitleBtnRef.current) {
-              const doc = getActiveDocument(subtitleBtnRef.current) || document;
-              doc.querySelectorAll(".projacktor-player-fullscreen .gpfocus").forEach((el) => el.classList.remove("gpfocus"));
-              subtitleBtnRef.current.focus();
-              try { (subtitleBtnRef.current as any).TakeFocus?.(0); } catch {}
-              subtitleBtnRef.current.classList.add("gpfocus");
-            }
-          }, 50);
-        } else if (closeModalRef.current) {
-          closeModalRef.current();
-        }
+        handlePlayerBack(inputCtx);
         return;
       }
 
@@ -515,54 +405,7 @@ export function usePlayerGamepad(props: UsePlayerGamepadParams) {
         e.preventDefault();
         e.stopPropagation();
         (e as any).stopImmediatePropagation?.();
-        if (showAudioMenuRef.current) {
-          const idx = activeAudioMenuIdxRef.current || 0;
-          const track = audioTracksRef.current?.[idx];
-          if (track) selectAudioTrack(track.index);
-          else setShowAudioMenu(false);
-          return;
-        }
-        if (showSubtitleMenuRef.current) {
-          const idx = activeSubMenuIdxRef.current || 0;
-          if (idx === 0) selectSubtitleTrack(null);
-          else {
-            const sub = subtitleTracksRef.current?.[idx - 1];
-            if (sub && sub.supported !== false) selectSubtitleTrack(sub.index);
-            else setShowSubtitleMenu(false);
-          }
-          return;
-        }
-
-        if (!showControlsRef.current) {
-          togglePlay();
-          return;
-        }
-
-        const doc = getActiveDocument(containerRef.current) || document;
-        const activeEl = (doc?.activeElement && doc.activeElement !== doc.body && containerRef.current?.contains(doc.activeElement)) ? (doc.activeElement as HTMLElement) : null;
-        const gpfocus = doc?.querySelector?.(".projacktor-player-fullscreen .gpfocus") as HTMLElement | null;
-        const focusedEl = activeEl || gpfocus;
-
-        if (subtitleBtnRef.current && (subtitleBtnRef.current === focusedEl || subtitleBtnRef.current.contains(focusedEl as Node))) {
-          toggleSubtitleMenu();
-          return;
-        }
-        if (audioBtnRef.current && (audioBtnRef.current === focusedEl || audioBtnRef.current.contains(focusedEl as Node))) {
-          toggleAudioMenu();
-          return;
-        }
-        if (
-          focusedEl &&
-          focusedEl !== playBtnRef.current &&
-          !playBtnRef.current?.contains(focusedEl) &&
-          focusedEl !== containerRef.current &&
-          focusedEl !== doc?.body &&
-          !focusedEl.classList.contains("projacktor-player-fullscreen")
-        ) {
-          return;
-        }
-
-        togglePlay();
+        handlePlayerActivate(inputCtx, togglePlay);
       } else if (e.key === "j" || e.key === "J") {
         e.preventDefault();
         e.stopPropagation();
@@ -646,17 +489,7 @@ export function usePlayerGamepad(props: UsePlayerGamepadParams) {
         e.preventDefault();
         e.stopPropagation();
         (e as any).stopImmediatePropagation?.();
-        triggerHaptic("click", "left");
-        if (toggleControls) {
-          toggleControls();
-        } else if (showControlsRef.current) {
-          setShowControls(false);
-          setShowAudioMenu(false);
-          setShowSubtitleMenu(false);
-        } else {
-          setShowControls(true);
-          resetControlsTimer();
-        }
+        handlePlayerToggleControls(inputCtx);
       }
     };
 

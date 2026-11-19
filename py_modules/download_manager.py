@@ -12,6 +12,9 @@ import secrets
 from .db import CONFIG_DIR, get_db, DB_LOCK, logger
 from .common import get_bin_path, _clean_env, POPULAR_TRACKERS, is_executable_release, write_pid_file, terminate_process
 from .stream import is_header_ready
+from .torrserver import extract_hash_from_magnet
+
+VIDEO_EXTS = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov', '.m4v'}
 
 class DownloadManager:
     def __init__(self, port):
@@ -241,6 +244,35 @@ class DownloadManager:
             finally:
                 db.close()
 
+    @staticmethod
+    def _dir_has_aria2(row_dir):
+        if not row_dir or not os.path.isdir(row_dir):
+            return False
+        for _, _, r_files in os.walk(row_dir):
+            if any(f.endswith('.aria2') for f in r_files):
+                return True
+        return False
+
+    @staticmethod
+    def _scan_dir_state(row_dir):
+        has_aria2 = False
+        found_videos = []
+        if not row_dir or not os.path.isdir(row_dir):
+            return has_aria2, found_videos
+        for r_root, _, r_files in os.walk(row_dir):
+            for r_f in r_files:
+                if r_f.endswith('.aria2'):
+                    has_aria2 = True
+                if os.path.splitext(r_f)[1].lower() in VIDEO_EXTS:
+                    fp = os.path.join(r_root, r_f)
+                    try:
+                        sz = os.path.getsize(fp)
+                        if sz > 10 * 1024 * 1024 and is_header_ready(fp):
+                            found_videos.append((fp, sz))
+                    except (OSError, IOError) as e:
+                        logger.debug(f"Could not get file size for {fp}: {e}")
+        return has_aria2, found_videos
+
     def _update_db_inner(self, db, task_map, all_tasks):
         cursor = db.cursor()
         cursor.execute("SELECT id, aria2_gid, status, download_dir, media_id, magnet_uri FROM downloads")
@@ -248,38 +280,37 @@ class DownloadManager:
             row_id = row['id']
             gid = row['aria2_gid']
             row_dir = row['download_dir']
-            
-            # Проверяем, есть ли на диске служебные файлы .aria2
-            has_aria2 = False
-            found_videos = []
-            if row_dir and os.path.isdir(row_dir):
-                video_exts = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov'}
-                for r_root, _, r_files in os.walk(row_dir):
-                    for r_f in r_files:
-                        if r_f.endswith('.aria2'):
-                            has_aria2 = True
-                        if os.path.splitext(r_f)[1].lower() in video_exts:
-                            fp = os.path.join(r_root, r_f)
-                            try:
-                                sz = os.path.getsize(fp)
-                                if sz > 10 * 1024 * 1024 and is_header_ready(fp):
-                                    found_videos.append((fp, sz))
-                            except (OSError, IOError) as e:
-                                logger.debug(f"Could not get file size for {fp}: {e}")
 
-            # Если задача уже числится как 'completed', но на диске нет .aria2 — пропускаем её
-            if row['status'] == 'completed' and not has_aria2:
-                # Очищаем завершенную задачу из памяти и сессии aria2c, чтобы она не стартовала заново при ребуте
-                if gid and task_map.get(gid):
-                    try:
-                        self._rpc_call("aria2.remove", [gid])
-                    except Exception:
-                        pass
-                    try:
-                        self._rpc_call("aria2.removeDownloadResult", [gid])
-                    except Exception:
-                        pass
-                continue
+            # Для уже завершённых задач пропускаем лишний os.walk, если в aria2 нет активной/связанной задачи
+            if row['status'] == 'completed':
+                gid_task = task_map.get(gid) if gid else None
+                if not gid_task:
+                    norm_dir = os.path.normpath(row_dir) if row_dir else ""
+                    target_hash = extract_hash_from_magnet(row['magnet_uri'] or "")
+                    has_matching_task = any(
+                        (gid and cand.get('following') == gid)
+                        or (target_hash and (cand.get('infoHash') or '').lower() == target_hash)
+                        or (norm_dir and cand.get('dir') and os.path.normpath(cand.get('dir', '')) == norm_dir)
+                        for cand in all_tasks
+                    )
+                    if not has_matching_task:
+                        continue
+                if not self._dir_has_aria2(row_dir):
+                    # Очищаем завершенную задачу из памяти и сессии aria2c, чтобы она не стартовала заново при ребуте
+                    if gid_task:
+                        try:
+                            self._rpc_call("aria2.remove", [gid])
+                        except Exception:
+                            pass
+                        try:
+                            self._rpc_call("aria2.removeDownloadResult", [gid])
+                        except Exception:
+                            pass
+                    continue
+                has_aria2 = True
+                found_videos = []
+            else:
+                has_aria2, found_videos = self._scan_dir_state(row_dir)
 
             # 1. Приоритетная проверка диска: если видеофайл готов и .aria2 файла нет, и нет активной задачи aria2c
             if found_videos and not has_aria2 and not task_map.get(gid):
@@ -331,15 +362,8 @@ class DownloadManager:
 
             # Fallback: поиск по infoHash или директории
             if not t:
-                magnet = (row['magnet_uri'] or "").lower()
                 norm_dir = os.path.normpath(row_dir) if row_dir else ""
-                target_hash = ""
-                if "xt=urn:btih:" in magnet:
-                    try:
-                        target_hash = magnet.split("xt=urn:btih:")[1].split("&")[0].strip()
-                    except Exception as e:
-                        logger.debug(f"Failed to parse magnet target hash: {e}")
-                        target_hash = ""
+                target_hash = extract_hash_from_magnet(row['magnet_uri'] or "")
 
                 for cand in all_tasks:
                     cand_hash = cand.get('infoHash', '').lower()
@@ -380,8 +404,7 @@ class DownloadManager:
             t_files = t.get('files') or []
             real_files = [f for f in t_files if f.get('path') and not f.get('path').startswith('[METADATA]')]
             if real_files:
-                video_exts = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov', '.m4v'}
-                has_video = any(os.path.splitext(f.get('path', ''))[1].lower() in video_exts for f in real_files)
+                has_video = any(os.path.splitext(f.get('path', ''))[1].lower() in VIDEO_EXTS for f in real_files)
                 if not has_video:
                     has_exe = any(is_executable_release(f.get('path', '')) for f in real_files)
                     if has_exe:
@@ -418,10 +441,16 @@ class DownloadManager:
                 row_dir = row['download_dir']
                 is_file_ready = err_code == '13' or 'exists, but a control file' in err_msg
                 if not is_file_ready and row_dir and os.path.isdir(row_dir):
-                    video_exts = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov'}
-                    has_aria2 = any(f.endswith('.aria2') for _, _, fs in os.walk(row_dir) for f in fs)
-                    has_video = any(os.path.splitext(f)[1].lower() in video_exts for _, _, fs in os.walk(row_dir) for f in fs)
-                    if not has_aria2 and has_video:
+                    dir_has_aria2 = False
+                    dir_has_video = False
+                    for _, _, fs in os.walk(row_dir):
+                        for f in fs:
+                            if f.endswith('.aria2'):
+                                dir_has_aria2 = True
+                            elif os.path.splitext(f)[1].lower() in VIDEO_EXTS:
+                                dir_has_video = True
+                    has_aria2 = dir_has_aria2
+                    if not has_aria2 and dir_has_video:
                         is_file_ready = True
                 
                 if is_file_ready:
@@ -470,10 +499,9 @@ class DownloadManager:
                     except Exception:
                         pass
 
-        video_exts = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov'}
         for root, _, files in os.walk(ddir):
             for f in files:
-                if os.path.splitext(f)[1].lower() in video_exts:
+                if os.path.splitext(f)[1].lower() in VIDEO_EXTS:
                     fp = os.path.join(root, f)
                     if os.path.exists(fp + ".aria2") or not is_header_ready(fp):
                         continue

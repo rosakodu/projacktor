@@ -28,6 +28,7 @@ from ..media.episodes import (
     natural_keys as _natural_keys,
     episode_sort_key as _episode_sort_key
 )
+from .aria2_helpers import remove_aria2_tasks
 from .library_scanner import (
     LibraryScanner,
     rescan_library_from_disk,
@@ -354,6 +355,15 @@ class LibraryService:
             logger.error(f"LibraryService get_episodes error: {e}")
             return []
 
+    @staticmethod
+    def _has_active_aria2_in_dir(ddir: str) -> bool:
+        if not ddir or not os.path.isdir(ddir):
+            return False
+        try:
+            return any(f.endswith('.aria2') for _, _, fs in os.walk(ddir) for f in fs)
+        except Exception:
+            return False
+
     async def get_library(self) -> list[dict]:
         try:
             trigger_background_auto_scan()
@@ -392,10 +402,18 @@ class LibraryService:
                 GROUP BY m.id
                 ORDER BY m.id DESC
             """).fetchall()
+
+            files_by_media: dict[int, list] = {}
+            if rows:
+                for mf in db.execute(
+                    "SELECT * FROM media_files WHERE file_size > 102400 ORDER BY id ASC"
+                ).fetchall():
+                    files_by_media.setdefault(mf['media_id'], []).append(mf)
+
             result = []
             for r in rows:
                 d = dict(r)
-                m_files = db.execute("SELECT * FROM media_files WHERE media_id=? AND file_size > 102400 ORDER BY id ASC", (d['id'],)).fetchall()
+                m_files = files_by_media.get(d['id'], [])
                 valid_files = []
                 for f in m_files:
                     f_dict = dict(f)
@@ -421,22 +439,19 @@ class LibraryService:
                         eps_data = json.loads(d['episodes_json'])
                         if isinstance(eps_data, list):
                             total_eps = len(eps_data)
-                    except: pass
+                    except Exception:
+                        pass
                 if total_eps == 0 and d.get('episodes_count'):
                     try:
                         total_eps = int(d['episodes_count'])
-                    except: pass
+                    except Exception:
+                        pass
                 d['total_episodes_count'] = total_eps
 
                 # Проверка статусов для фильмов: ошибка или отсутствие файлов не могут быть 'completed'
                 if d.get('media_type') != 'tv':
                     ddir = d.get('effective_download_dir') or d.get('download_dir') or ''
-                    has_active_aria2 = False
-                    if ddir and os.path.isdir(ddir):
-                        try:
-                            has_active_aria2 = any(f.endswith('.aria2') for _, _, fs in os.walk(ddir) for f in fs)
-                        except Exception:
-                            has_active_aria2 = False
+                    has_active_aria2 = self._has_active_aria2_in_dir(ddir)
 
                     if d.get('download_status') == 'error':
                         if not valid_files:
@@ -454,12 +469,7 @@ class LibraryService:
                 # Проверка статусов для сериалов: если скорость 0 и нет активных .aria2 файлов, не показываем 'downloading'
                 if d.get('media_type') == 'tv':
                     ddir = d.get('effective_download_dir') or d.get('download_dir') or ''
-                    has_active_aria2 = False
-                    if ddir and os.path.isdir(ddir):
-                        try:
-                            has_active_aria2 = any(f.endswith('.aria2') for _, _, fs in os.walk(ddir) for f in fs)
-                        except Exception:
-                            has_active_aria2 = False
+                    has_active_aria2 = self._has_active_aria2_in_dir(ddir)
 
                     if d.get('download_status') == 'downloading' and (d.get('download_speed') or 0) == 0 and not has_active_aria2:
                         if total_eps > 0 and len(valid_files) >= total_eps:
@@ -576,16 +586,8 @@ class LibraryService:
                         """, (mid, magnet, torrent_title, ddir, quality))
                     else:
                         old_mag = dl_row['magnet_uri'] or ''
-                        old_hash = ""
-                        if "xt=urn:btih:" in old_mag.lower():
-                            try:
-                                old_hash = old_mag.lower().split("xt=urn:btih:")[1].split("&")[0].strip()
-                            except: pass
-                        new_hash = ""
-                        if "xt=urn:btih:" in (magnet or "").lower():
-                            try:
-                                new_hash = magnet.lower().split("xt=urn:btih:")[1].split("&")[0].strip()
-                            except: pass
+                        old_hash = extract_hash_from_magnet(old_mag).lower()
+                        new_hash = extract_hash_from_magnet(magnet or '').lower()
 
                         if old_hash and new_hash and old_hash != new_hash:
                             logger.info(f"add_to_library: Replacing torrent {old_hash} -> {new_hash} for media {mid}")
@@ -623,51 +625,24 @@ class LibraryService:
             dl = db.execute("SELECT * FROM downloads WHERE media_id=?", (mid,)).fetchone()
 
             if dm:
-                target_hash = ""
-                if dl and dl.get('magnet_uri') and "xt=urn:btih:" in str(dl['magnet_uri']).lower():
-                    try:
-                        target_hash = str(dl['magnet_uri']).lower().split("xt=urn:btih:")[1].split("&")[0].strip()
-                    except: pass
-                elif m and m.get('magnet_uri') and "xt=urn:btih:" in str(m['magnet_uri']).lower():
-                    try:
-                        target_hash = str(m['magnet_uri']).lower().split("xt=urn:btih:")[1].split("&")[0].strip()
-                    except: pass
-
-                gids_to_remove = set()
-                if dl and dl.get('aria2_gid'):
-                    gids_to_remove.add(dl['aria2_gid'])
-
-                try:
-                    all_tasks = (dm.tell_active() or []) + (dm.tell_waiting() or []) + (dm.tell_stopped() or [])
-                    for t in all_tasks:
-                        t_gid = t.get('gid')
-                        t_hash = (t.get('infoHash') or '').lower()
-                        t_dir = t.get('dir') or ''
-                        if t_gid in gids_to_remove:
-                            for fb in (t.get('followedBy') or []):
-                                gids_to_remove.add(fb)
-                        if target_hash and t_hash and t_hash == target_hash:
-                            gids_to_remove.add(t_gid)
-                        if m and m.get('download_dir') and t_dir and os.path.abspath(t_dir) == os.path.abspath(m['download_dir']):
-                            gids_to_remove.add(t_gid)
-                        if dl and dl.get('download_dir') and t_dir and os.path.abspath(t_dir) == os.path.abspath(dl['download_dir']):
-                            gids_to_remove.add(t_gid)
-                except Exception as e:
-                    logger.warning(f"Error finding tasks to remove: {e}")
-
-                for g in gids_to_remove:
-                    try:
-                        dm.remove(g)
-                    except: pass
-                    try:
-                        dm._rpc_call("aria2.forceRemove", [g])
-                    except: pass
-                    try:
-                        dm._rpc_call("aria2.removeDownloadResult", [g])
-                    except: pass
-                try:
-                    dm.purge_download_result()
-                except: pass
+                target_hash = (
+                    (extract_hash_from_magnet(str(dl['magnet_uri'])) if dl and dl.get('magnet_uri') else '')
+                    or (extract_hash_from_magnet(str(m['magnet_uri'])) if m and m.get('magnet_uri') else '')
+                ).lower()
+                target_dirs = [
+                    d_dir
+                    for d_dir in (
+                        m.get('download_dir') if m else None,
+                        dl.get('download_dir') if dl else None,
+                    )
+                    if d_dir
+                ]
+                remove_aria2_tasks(
+                    dm,
+                    gid=(dl.get('aria2_gid') or '') if dl else '',
+                    target_hash=target_hash,
+                    target_dirs=target_dirs,
+                )
 
             files = db.execute("SELECT file_path FROM media_files WHERE media_id=?", (mid,)).fetchall()
             for f in files:
@@ -677,7 +652,8 @@ class LibraryService:
                         os.remove(fp)
                     if fp and os.path.isfile(f"{fp}.aria2"):
                         os.remove(f"{fp}.aria2")
-                except: pass
+                except Exception:
+                    pass
 
             dirs_to_clean = set()
             if m and m.get('download_dir'):
