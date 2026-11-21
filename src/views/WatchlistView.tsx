@@ -95,7 +95,7 @@ export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie, onNa
   }, [items, loading]);
 
   const handleRemove = useCallback(
-    async (tmdbId: number, e?: any) => {
+    async (item: WatchlistItem, e?: any) => {
       if (e) {
         try {
           e.stopPropagation();
@@ -104,8 +104,9 @@ export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie, onNa
       }
       playNavSound();
       try {
-        await rpcRemoveFromWatchlist(tmdbId);
-        setItems((prev) => prev.filter((i) => i.tmdb_id !== tmdbId));
+        if (await rpcRemoveFromWatchlist(item.tmdb_id, item.media_type)) {
+          setItems((prev) => prev.filter((i) => i.id !== item.id));
+        }
       } catch (err) {
         console.error("Failed to remove from watchlist:", err);
       }
@@ -268,9 +269,9 @@ export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie, onNa
 
             return (
               <div
-                key={item.tmdb_id || item.id}
+                key={item.id}
                 className="projacktor-dl-grid-card"
-                data-item-id={item.tmdb_id || item.id}
+                data-item-id={item.id}
                 data-card-index={index}
               >
                 {/* Постер / Карточка */}
@@ -342,8 +343,8 @@ export const WatchlistView: FC<WatchlistViewProps> = memo(({ onSelectMovie, onNa
                     className="projacktor-dl-btn-icon danger"
                     noFocusRing
                     tabIndex={0}
-                    onClick={(e: any) => handleRemove(item.tmdb_id, e)}
-                    onActivate={(e: any) => handleRemove(item.tmdb_id, e)}
+                    onClick={(e: any) => handleRemove(item, e)}
+                    onActivate={(e: any) => handleRemove(item, e)}
                     title={t("removeFromWatchlist")}
                   >
                     <FaTrash style={{ fontSize: 9.5 }} />

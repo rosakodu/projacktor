@@ -20,8 +20,7 @@ interface UsePlayerPlaybackProps {
   volume: number;
   torrentStatus: TorrentStatusInfo | null;
   zeroSeedersCountRef: MutableRefObject<number>;
-  onPlayNext?: () => boolean | void;
-  closeModal?: () => void;
+  onPlaybackEnded: () => void;
   resetControlsTimer: () => void;
   hasStartedPlaybackRef?: MutableRefObject<boolean>;
   retryCountRef?: MutableRefObject<number>;
@@ -30,7 +29,7 @@ interface UsePlayerPlaybackProps {
 export function usePlayerPlayback({
   filePath, actualFilePath, title, isOnline, isDirectStream, savedStartTime,
   durationRef, setDuration, saveProgress, videoRef, streamUrl, setStreamUrl,
-  volume, torrentStatus, zeroSeedersCountRef, onPlayNext, closeModal, resetControlsTimer,
+  volume, torrentStatus, zeroSeedersCountRef, onPlaybackEnded, resetControlsTimer,
   hasStartedPlaybackRef: externalPlaybackRef, retryCountRef: externalRetryRef,
 }: UsePlayerPlaybackProps) {
   const { t } = useI18n();
@@ -161,7 +160,7 @@ export function usePlayerPlayback({
     isDirectStream, savedStartTime, durationRef, setDuration, hasStartedPlaybackRef,
     retryCountRef, saveProgress, setVideoTime, setBufferedPercent,
     setHasStartedPlayback, setIsPlaying, setIsBuffering, setErrorMsg,
-    onPlayNext, closeModal,
+    onPlaybackEnded,
   });
 
   useEffect(() => {

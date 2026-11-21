@@ -3,11 +3,11 @@
 import os
 import re
 import json
-import shutil
 import sqlite3
 import asyncio
 from typing import Optional
 
+from ..constants import MISSING_DOWNLOAD_FILES
 from ..db import (
     get_db,
     logger,
@@ -29,11 +29,47 @@ from ..media.episodes import (
     episode_sort_key as _episode_sort_key
 )
 from .aria2_helpers import remove_aria2_tasks
+from .media_cleanup import aria2_file_paths, indexed_file_paths, remove_media_files
 from .library_scanner import (
     LibraryScanner,
+    VIDEO_EXTENSIONS,
     rescan_library_from_disk,
     trigger_background_auto_scan
 )
+
+
+def hide_missing_library_item(item, *, has_files: bool, had_indexed_files: bool) -> bool:
+    """Hide previously available media whose local files have since disappeared."""
+    if has_files:
+        return False
+
+    status = item.get("download_status")
+    if status == "error" and item.get("download_error_message") == MISSING_DOWNLOAD_FILES:
+        return True
+
+    was_downloaded = status == "completed" or (
+        status is None and (had_indexed_files or item.get("status") in ("downloaded", "watched"))
+    )
+    if not was_downloaded:
+        return False
+    if had_indexed_files:
+        return True
+
+    # Legacy completed downloads can have files on disk before the scanner indexes them.
+    directory = item.get("effective_download_dir") or item.get("download_dir")
+    if not directory or not os.path.isdir(directory):
+        return True
+    for root, _, filenames in os.walk(directory):
+        for name in filenames:
+            path = os.path.join(root, name)
+            if (
+                os.path.splitext(name)[1].lower() in VIDEO_EXTENSIONS
+                and os.path.isfile(path)
+                and not os.path.exists(path + ".aria2")
+                and is_header_ready(path)
+            ):
+                return False
+    return True
 
 
 class LibraryService:
@@ -377,6 +413,7 @@ class LibraryService:
                        COALESCE(SUM(f.file_size), 0) AS total_file_size,
                        d.id AS download_id,
                        d.status AS download_status,
+                       d.error_message AS download_error_message,
                        d.progress AS download_progress,
                        d.download_speed,
                        d.total_size AS download_total_size,
@@ -394,14 +431,16 @@ class LibraryService:
                     ORDER BY CASE 
                         WHEN status = 'downloading' THEN 1 
                         WHEN status = 'paused' THEN 2 
-                        WHEN status = 'completed' THEN 3 
-                        ELSE 4 
+                        WHEN status IN ('queued', 'seeding') THEN 3
+                        WHEN status = 'completed' THEN 4
+                        WHEN status = 'error' AND error_message = ? THEN 6
+                        ELSE 5
                     END, id DESC LIMIT 1
                 )
                 WHERE m.in_library = 1 OR (d.id IS NOT NULL AND d.status NOT IN ('queued', 'cancelled')) OR f.id IS NOT NULL
                 GROUP BY m.id
                 ORDER BY m.id DESC
-            """).fetchall()
+            """, (MISSING_DOWNLOAD_FILES,)).fetchall()
 
             files_by_media: dict[int, list] = {}
             if rows:
@@ -427,6 +466,8 @@ class LibraryService:
                             db.commit()
                         except Exception:
                             pass
+                if hide_missing_library_item(d, has_files=bool(valid_files), had_indexed_files=bool(r['file_count'])):
+                    continue
                 d['files'] = valid_files
                 d['downloaded_episodes_count'] = len(valid_files)
 
@@ -526,7 +567,7 @@ class LibraryService:
             db = get_db()
             try:
                 cursor = db.cursor()
-                cursor.execute("SELECT id, in_library, magnet_uri FROM media WHERE tmdb_id=?", (tmdb_id,))
+                cursor.execute("SELECT id, in_library, magnet_uri FROM media WHERE tmdb_id=? AND media_type=?", (tmdb_id, mtype))
                 row = cursor.fetchone()
                 if not row:
                     init_hash = extract_hash_from_magnet(magnet).lower() if magnet else ''
@@ -622,52 +663,14 @@ class LibraryService:
         db = get_db()
         try:
             m = db.execute("SELECT * FROM media WHERE id=?", (mid,)).fetchone()
-            dl = db.execute("SELECT * FROM downloads WHERE media_id=?", (mid,)).fetchone()
-
-            if dm:
-                target_hash = (
-                    (extract_hash_from_magnet(str(dl['magnet_uri'])) if dl and dl.get('magnet_uri') else '')
-                    or (extract_hash_from_magnet(str(m['magnet_uri'])) if m and m.get('magnet_uri') else '')
-                ).lower()
-                target_dirs = [
-                    d_dir
-                    for d_dir in (
-                        m.get('download_dir') if m else None,
-                        dl.get('download_dir') if dl else None,
-                    )
-                    if d_dir
-                ]
-                remove_aria2_tasks(
-                    dm,
-                    gid=(dl.get('aria2_gid') or '') if dl else '',
-                    target_hash=target_hash,
-                    target_dirs=target_dirs,
-                )
-
-            files = db.execute("SELECT file_path FROM media_files WHERE media_id=?", (mid,)).fetchall()
-            for f in files:
-                try:
-                    fp = f.get('file_path')
-                    if fp and os.path.isfile(fp):
-                        os.remove(fp)
-                    if fp and os.path.isfile(f"{fp}.aria2"):
-                        os.remove(f"{fp}.aria2")
-                except Exception:
-                    pass
-
-            dirs_to_clean = set()
-            if m and m.get('download_dir'):
-                dirs_to_clean.add(m['download_dir'])
-            if dl and dl.get('download_dir'):
-                dirs_to_clean.add(dl['download_dir'])
-
-            for d in dirs_to_clean:
-                if d and os.path.isdir(d):
-                    try:
-                        shutil.rmtree(d, ignore_errors=True)
-                        logger.info(f"delete_library_item: removed download_dir {d}")
-                    except Exception as e:
-                        logger.warning(f"Error removing download_dir {d}: {e}")
+            downloads = db.execute("SELECT * FROM downloads WHERE media_id=?", (mid,)).fetchall()
+            paths = indexed_file_paths(db, mid)
+            for download in downloads:
+                gid = download.get("aria2_gid") or ""
+                paths.update(aria2_file_paths(dm, gid, download.get("download_dir") or ""))
+                target_hash = extract_hash_from_magnet(download.get("magnet_uri") or "")
+                remove_aria2_tasks(dm, gid=gid, target_hash=target_hash)
+            remove_media_files(db, mid, paths)
 
             # Also update watch_history for this media item so is_downloaded = 0 and file_path = NULL
             try:
@@ -677,13 +680,13 @@ class LibraryService:
                 )
                 if m and m.get('tmdb_id'):
                     db.execute(
-                        "UPDATE watch_history SET is_downloaded = 0, file_path = NULL, is_online = 1 WHERE tmdb_id = ?",
-                        (m['tmdb_id'],)
+                        "UPDATE watch_history SET is_downloaded = 0, file_path = NULL, is_online = 1 WHERE tmdb_id = ? AND media_type = ?",
+                        (m['tmdb_id'], m['media_type'])
                     )
                 if m and m.get('title'):
                     db.execute(
-                        "UPDATE watch_history SET is_downloaded = 0, file_path = NULL, is_online = 1 WHERE title = ?",
-                        (m['title'],)
+                        "UPDATE watch_history SET is_downloaded = 0, file_path = NULL, is_online = 1 WHERE title = ? AND media_type = ? AND tmdb_id IS NULL",
+                        (m['title'], m['media_type'])
                     )
             except Exception as e:
                 logger.warning(f"Error resetting watch_history on delete_library_item: {e}")

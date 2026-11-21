@@ -73,10 +73,6 @@ def remove_aria2_tasks(
             dm._rpc_call("aria2.removeDownloadResult", [g])
         except Exception:
             pass
-    try:
-        dm.purge_download_result()
-    except Exception:
-        pass
 
 
 def remove_aria2_control_files(ddir: str) -> None:

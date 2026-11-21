@@ -1,8 +1,47 @@
 import os
+import re
 import shutil
 import sqlite3
 import time
 from .connection import CONFIG_DIR, DB_PATH, DB_LOCK, logger, is_valid_sqlite_db
+
+
+def _migrate_tmdb_identity(conn):
+    # Rebuild both legacy tables in one transaction. Keep local IDs and their
+    # foreign-key references intact while replacing the inline UNIQUE constraint.
+    conn.execute("PRAGMA foreign_keys = OFF")
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        for table in ("media", "watchlist"):
+            ddl = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)
+            ).fetchone()[0]
+            updated, count = re.subn(r"(\btmdb_id\s+INTEGER)\s+UNIQUE\b", r"\1", ddl, flags=re.I)
+            if not count:
+                continue
+
+            rebuilt = table + "_tmdb_migration"
+            definitions = updated[updated.index("("):updated.rindex(")")]
+            indexes = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL",
+                (table,),
+            ).fetchall()
+            sequence = conn.execute("SELECT seq FROM sqlite_sequence WHERE name=?", (table,)).fetchone()
+            conn.execute(f"CREATE TABLE {rebuilt} {definitions}, UNIQUE (media_type, tmdb_id))")
+            conn.execute(f"INSERT INTO {rebuilt} SELECT * FROM {table}")
+            conn.execute(f"DROP TABLE {table}")
+            conn.execute(f"ALTER TABLE {rebuilt} RENAME TO {table}")
+            for (index_sql,) in indexes:
+                conn.execute(index_sql)
+            if sequence:
+                conn.execute("DELETE FROM sqlite_sequence WHERE name=?", (table,))
+                conn.execute("INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)", (table, sequence[0]))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")
 
 
 def _execute_schema_and_migrations(db_path: str):
@@ -21,7 +60,7 @@ def _execute_schema_and_migrations(db_path: str):
 
         CREATE TABLE IF NOT EXISTS media (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tmdb_id INTEGER UNIQUE,
+            tmdb_id INTEGER,
             imdb_id TEXT,
             media_type TEXT NOT NULL CHECK(media_type IN ('movie', 'tv')),
             title TEXT NOT NULL,
@@ -35,7 +74,8 @@ def _execute_schema_and_migrations(db_path: str):
             runtime INTEGER,
             status TEXT DEFAULT 'catalog' CHECK(status IN ('catalog','downloading','downloaded','watched')),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (media_type, tmdb_id)
         );
         CREATE TABLE IF NOT EXISTS media_files (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -80,7 +120,7 @@ def _execute_schema_and_migrations(db_path: str):
 
         CREATE TABLE IF NOT EXISTS watchlist (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tmdb_id INTEGER UNIQUE,
+            tmdb_id INTEGER,
             media_type TEXT NOT NULL DEFAULT 'movie',
             title TEXT NOT NULL,
             original_title TEXT,
@@ -89,7 +129,8 @@ def _execute_schema_and_migrations(db_path: str):
             poster_path TEXT,
             backdrop_path TEXT,
             vote_average REAL DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (media_type, tmdb_id)
         );
         CREATE INDEX IF NOT EXISTS idx_watchlist_tmdb_id ON watchlist(tmdb_id);
 
@@ -125,6 +166,8 @@ def _execute_schema_and_migrations(db_path: str):
         CREATE INDEX IF NOT EXISTS idx_downloads_aria2_gid ON downloads(aria2_gid);
         CREATE INDEX IF NOT EXISTS idx_downloads_status ON downloads(status);
         ''')
+
+        _migrate_tmdb_identity(conn)
 
         # Safe migration for watch_history to drop NOT NULL constraint on media_id if present
         try:
@@ -303,6 +346,8 @@ def init_db():
         try:
             _execute_schema_and_migrations(DB_PATH)
         except sqlite3.DatabaseError as e:
+            if is_valid_sqlite_db(DB_PATH):
+                raise
             logger.error(f"Database error in init_db: {e}. Starting recovery...")
             _recover_corrupt_database(DB_PATH, bak_path)
             _execute_schema_and_migrations(DB_PATH)

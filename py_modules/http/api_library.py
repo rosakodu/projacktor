@@ -2,8 +2,10 @@
 
 import os
 
-from ..core.env import logger
+from ..constants import MISSING_DOWNLOAD_FILES
 from ..db import get_db
+from ..services.library_service import hide_missing_library_item
+from ..services.media_cleanup import indexed_file_paths, remove_media_files
 
 
 def handle_library_list(handler, path="", query=None):
@@ -13,7 +15,8 @@ def handle_library_list(handler, path="", query=None):
             SELECT m.*, 
                    COUNT(f.id) AS file_count, 
                    COALESCE(SUM(f.file_size), 0) AS total_file_size,
-                   d.id AS download_id, d.status AS download_status, d.progress AS download_progress,
+                   d.id AS download_id, d.status AS download_status,
+                   d.error_message AS download_error_message, d.progress AS download_progress,
                    d.download_speed, d.total_size AS download_total_size, d.downloaded_size AS download_downloaded_size,
                    d.aria2_gid, COALESCE(m.magnet_uri, d.magnet_uri) AS effective_magnet,
                    COALESCE(m.quality, d.quality) AS effective_quality,
@@ -21,17 +24,32 @@ def handle_library_list(handler, path="", query=None):
                    COALESCE(m.download_dir, d.download_dir) AS effective_download_dir
             FROM media m
             LEFT JOIN media_files f ON m.id = f.media_id
-            LEFT JOIN downloads d ON m.id = d.media_id
+            LEFT JOIN downloads d ON d.id = (
+                SELECT id FROM downloads WHERE media_id = m.id
+                ORDER BY CASE
+                    WHEN status = 'downloading' THEN 1
+                    WHEN status = 'paused' THEN 2
+                    WHEN status IN ('queued', 'seeding') THEN 3
+                    WHEN status = 'completed' THEN 4
+                    WHEN status = 'error' AND error_message = ? THEN 6
+                    ELSE 5
+                END, id DESC LIMIT 1
+            )
             WHERE m.in_library = 1 OR d.id IS NOT NULL OR f.id IS NOT NULL
             GROUP BY m.id
             ORDER BY m.id DESC
-        """).fetchall()
+        """, (MISSING_DOWNLOAD_FILES,)).fetchall()
         result = []
         for r in rows:
             d = dict(r)
             m_files = db.execute("SELECT * FROM media_files WHERE media_id=? ORDER BY id ASC", (d['id'],)).fetchall()
-            files_list = [dict(f) for f in m_files]
-            if not files_list and d.get('effective_download_dir') and os.path.isdir(d['effective_download_dir']):
+            files_list = [
+                dict(f) for f in m_files
+                if os.path.isfile(f['file_path']) and not os.path.exists(f['file_path'] + ".aria2")
+            ]
+            if hide_missing_library_item(d, has_files=bool(files_list), had_indexed_files=bool(m_files)):
+                continue
+            if not m_files and d.get('effective_download_dir') and os.path.isdir(d['effective_download_dir']):
                 for root, _, fnames in os.walk(d['effective_download_dir']):
                     for fn in sorted(fnames):
                         if os.path.splitext(fn)[1].lower() in {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov'}:
@@ -83,14 +101,13 @@ def handle_library_patch(handler, path="", query=None):
 
 def handle_library_delete(handler, path="", query=None):
     mid = path.split('/')[-1]
+    if not mid.isdecimal():
+        handler.send_json({"success": False}, status=404)
+        return
+    mid = int(mid)
     db = get_db()
     try:
-        files = db.execute("SELECT file_path FROM media_files WHERE media_id=?", (mid,)).fetchall()
-        for f in files:
-            try:
-                os.remove(f['file_path'])
-            except Exception as e:
-                logger.warning(f"Error removing file {f.get('file_path')}: {e}")
+        remove_media_files(db, mid, indexed_file_paths(db, mid))
         db.execute("DELETE FROM media WHERE id=?", (mid,))
         db.commit()
     finally:

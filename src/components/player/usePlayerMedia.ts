@@ -1,12 +1,11 @@
 import { useState, useEffect, useCallback, RefObject, MutableRefObject } from "react";
-import { rpcResumeAllDownloads, rpcDropStream, fetchMovieLogo, API_BASE, API_HOST } from "../../api";
+import { fetchMovieLogo, API_BASE, API_HOST } from "../../api";
 import { PlayerMediaInfo } from "../../types";
 import { AudioTrack, SubtitleTrack } from "./types";
 
 interface UsePlayerMediaProps {
   filePath: string;
   isOnline: boolean;
-  torrentHash?: string;
   mediaInfo?: PlayerMediaInfo;
   videoRef: RefObject<HTMLVideoElement | null>;
   audioBtnRef: RefObject<HTMLDivElement | null>;
@@ -25,7 +24,7 @@ interface UsePlayerMediaProps {
 }
 
 export function usePlayerMedia({
-  filePath, isOnline, torrentHash, mediaInfo, videoRef, audioBtnRef,
+  filePath, isOnline, mediaInfo, videoRef, audioBtnRef,
   savedStartTime, currentPlayheadRef, durationRef, hasStartedPlaybackRef,
   retryCountRef, setBaseTime, setVideoTime, setErrorMsg,
   focusControl, resetControlsTimer, retryPlayback, setShowAudioMenu,
@@ -147,14 +146,6 @@ export function usePlayerMedia({
     runProbe();
     return () => { cancelled = true; if (retryTimer) clearTimeout(retryTimer); };
   }, [actualFilePath, filePath]);
-
-  useEffect(() => {
-    return () => {
-      rpcResumeAllDownloads().catch(() => {});
-      try { fetch(`${API_BASE}/stream/stop`).catch(() => {}); } catch {}
-      if (torrentHash) rpcDropStream(torrentHash).catch(() => {});
-    };
-  }, [torrentHash]);
 
   return {
     actualFilePath, duration, setDuration, isDirectStream, setIsDirectStream,

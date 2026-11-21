@@ -23,6 +23,7 @@ interface UsePlayerGamepadParams {
   setShowSubtitleMenu: (show: boolean) => void;
   setShowControls: (show: boolean) => void;
   closeModalRef: RefObject<(() => void) | undefined>;
+  endScreenActionRef?: RefObject<(() => void) | null>;
   audioTracksRef: RefObject<AudioTrack[] | null | undefined> | { current: AudioTrack[] };
   subtitleTracksRef: RefObject<SubtitleTrack[] | null | undefined> | { current: SubtitleTrack[] };
   activeAudioMenuIdxRef: RefObject<number | null | undefined> | { current: number };
@@ -70,6 +71,7 @@ export function usePlayerGamepad(props: UsePlayerGamepadParams) {
     setShowSubtitleMenu,
     setShowControls,
     closeModalRef,
+    endScreenActionRef,
     audioTracksRef,
     subtitleTracksRef,
     activeAudioMenuIdxRef,
@@ -145,6 +147,14 @@ export function usePlayerGamepad(props: UsePlayerGamepadParams) {
 
     // Прямая подписка на события геймпада Steam Deck
     const unController = subscribeControllerInput((e) => {
+      if (endScreenActionRef?.current) {
+        if (e.pressed && (e.button === RawButton.A || e.button === 0)) {
+          endScreenActionRef.current();
+        } else if (e.pressed && (e.button === RawButton.B || e.button === 1)) {
+          handlePlayerBack(inputCtx);
+        }
+        return;
+      }
       // Плавный зум: одиночный клик L2/R2 = ровно 1%, зажатие = быстрый зум
       if (e.button === RawButton.L2 || e.button === 28) {
         if (e.pressed && !l2HeldRef.current) {
@@ -338,6 +348,15 @@ export function usePlayerGamepad(props: UsePlayerGamepadParams) {
     });
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (endScreenActionRef?.current) {
+        if (!["Enter", " ", "Escape", "Backspace"].includes(e.key)) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (e.repeat) return;
+        if (e.key === "Enter" || e.key === " ") endScreenActionRef.current();
+        else handlePlayerBack(inputCtx);
+        return;
+      }
       const isVolumeOrZoom =
         e.key === "ArrowUp" ||
         e.key === "ArrowDown" ||
@@ -539,6 +558,7 @@ export function usePlayerGamepad(props: UsePlayerGamepadParams) {
     applyZoomStep,
     changeVolume,
     commitPendingSeek,
+    endScreenActionRef,
     resetControlsTimer,
     seekRelative,
     toggleAudioMenu,

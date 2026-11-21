@@ -1,4 +1,4 @@
-import { FC, useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { FC, useState, useCallback, useEffect, useRef, useMemo, useSyncExternalStore } from "react";
 import { Navigation, Focusable, showModal, GamepadButton } from "@decky/ui";
 import { PROJACKTOR_STYLES } from "../styles";
 import { MediaItem, PlayerMediaInfo, PlaylistItem } from "../types";
@@ -17,7 +17,11 @@ import { playNavSound } from "../runtime/navSound";
 import { triggerHaptic } from "../runtime/haptics";
 import { getActiveDocument } from "../runtime/activeDoc";
 import { useI18n, initI18n } from "../i18n";
-import { initUserSettings } from "../runtime/userSettings";
+import { API_BASE, rpcDropStream, rpcGetEpisodes, rpcResumeAllDownloads } from "../api";
+import { buildEpisodePlaylist, preparePlaylistEpisode } from "../services/episodePlaylist";
+import { getCatalogCacheScope } from "../api/cache";
+import { subscribeLocale } from "../i18n/state";
+import { initUserSettings, subscribeUserSettings } from "../runtime/userSettings";
 import { useIdlePause, useInputMode } from "../hooks";
 import { beginFocusGuard } from "../runtime/focusGuard";
 
@@ -44,6 +48,15 @@ interface PlayerConfig {
   playlist?: PlaylistItem[];
 }
 
+function subscribeCatalogPreferences(onChange: () => void): () => void {
+  const unsubscribeSettings = subscribeUserSettings(onChange);
+  const unsubscribeLocale = subscribeLocale(onChange);
+  return () => {
+    unsubscribeSettings();
+    unsubscribeLocale();
+  };
+}
+
 export const ProjacktorApp: FC = () => {
   const rootRef = useRef<HTMLDivElement>(null);
   const fallbackRef = useRef<HTMLDivElement>(null);
@@ -54,6 +67,7 @@ export const ProjacktorApp: FC = () => {
   const [isPlayerOpen, setIsPlayerOpen] = useState<boolean>(false);
   const [playerConfig, setPlayerConfig] = useState<PlayerConfig | null>(null);
   const { t } = useI18n();
+  const catalogScope = useSyncExternalStore(subscribeCatalogPreferences, getCatalogCacheScope);
 
   useEffect(() => {
     initI18n();
@@ -102,12 +116,29 @@ export const ProjacktorApp: FC = () => {
     }
   };
 
+  const playerConfigRef = useRef(playerConfig);
+  playerConfigRef.current = playerConfig;
+  const nextEpisodePendingRef = useRef(false);
+
+  useEffect(() => {
+    if (!isPlayerOpen) return;
+    return () => {
+      rpcResumeAllDownloads().catch(() => {});
+      fetch(`${API_BASE}/stream/stop`).catch(() => {});
+      const hash = playerConfigRef.current?.torrentHash;
+      if (hash) rpcDropStream(hash).catch(() => {});
+    };
+  }, [isPlayerOpen]);
+
   const lastPlayedMediaIdRef = useRef<number | string | null>(null);
 
   const closePlayer = useCallback(() => {
     lastPlayerCloseTimeRef.current = Date.now();
     setIsPlayerOpen(false);
     setPlayerActive(false);
+    const hash = playerConfigRef.current?.torrentHash;
+    if (hash) rpcDropStream(hash).catch(() => {});
+    playerConfigRef.current = null;
     setPlayerConfig(null);
     setTimeout(() => {
       const root = rootRef.current;
@@ -159,46 +190,54 @@ export const ProjacktorApp: FC = () => {
     []
   );
 
-  const extractCleanPath = (p: string | null | undefined): string => {
-    if (!p) return "";
-    const match = p.match(/[?&]file=([^&]+)/);
-    if (match) {
-      try {
-        return decodeURIComponent(match[1]);
-      } catch {
-        return match[1];
-      }
-    }
-    return p.split("?")[0];
-  };
-
-  const handlePlayNext = useCallback(() => {
-    if (!playerConfig?.playlist || playerConfig.playlist.length <= 1) return false;
-    const currentTarget = extractCleanPath(playerConfig.filePath);
-    const currentIdx = playerConfig.playlist.findIndex((p) => {
-      if (p.filePath === playerConfig.filePath) return true;
-      const cleanP = extractCleanPath(p.filePath);
-      return Boolean(cleanP && currentTarget && cleanP === currentTarget);
-    });
-    if (currentIdx >= 0 && currentIdx + 1 < playerConfig.playlist.length) {
-      const nextItem = playerConfig.playlist[currentIdx + 1];
-      if (nextItem.mediaInfo?.mediaId) {
-        lastPlayedMediaIdRef.current = nextItem.mediaInfo.mediaId;
-      }
-      setPlayerConfig({
-        filePath: nextItem.filePath,
-        title: nextItem.title,
-        isOnline: nextItem.isOnline || false,
-        torrentHash: nextItem.torrentHash,
-        mediaInfo: nextItem.mediaInfo,
-        initialTime: 0,
-        playlist: playerConfig.playlist,
-      });
-      return true;
-    }
-    return false;
+  useEffect(() => {
+    const info = playerConfig?.mediaInfo;
+    if (!playerConfig || playerConfig.playlist || info?.mediaType !== "tv" || !info.mediaId) return;
+    let active = true;
+    const config = playerConfig;
+    rpcGetEpisodes(info.mediaId).then((episodes) => {
+      if (!active || playerConfigRef.current !== config) return;
+      const playlist = buildEpisodePlaylist(episodes, info);
+      const path = new URLSearchParams(config.filePath.split("?")[1]).get("file") || config.filePath;
+      const current = playlist.find((episode) => episode.filePath === path)
+        || playlist.find((episode) => episode.mediaInfo?.episodeName === info.episodeName && info.episodeName);
+      if (!current) return;
+      current.filePath = config.filePath;
+      setPlayerConfig({ ...config, playlist });
+    }).catch(() => {});
+    return () => { active = false; };
   }, [playerConfig]);
 
+  const currentEpisodeIndex = playerConfig?.playlist?.findIndex((episode) => episode.filePath === playerConfig.filePath) ?? -1;
+  const nextEpisode = currentEpisodeIndex >= 0 ? playerConfig?.playlist?.[currentEpisodeIndex + 1] : undefined;
+
+  const handlePlayNext = useCallback(async () => {
+    if (!playerConfig?.playlist || !nextEpisode || nextEpisodePendingRef.current) return false;
+    nextEpisodePendingRef.current = true;
+    try {
+      const source = await preparePlaylistEpisode(nextEpisode);
+      if (!source) return false;
+      if (playerConfigRef.current !== playerConfig) {
+        if (source.torrentHash && source.torrentHash !== playerConfigRef.current?.torrentHash) {
+          rpcDropStream(source.torrentHash).catch(() => {});
+        }
+        return false;
+      }
+      const playlist = playerConfig.playlist.map((entry) =>
+        entry === nextEpisode ? { ...entry, filePath: source.filePath } : entry,
+      );
+      if (source.mediaInfo?.mediaId) lastPlayedMediaIdRef.current = source.mediaInfo.mediaId;
+      if (playerConfig.torrentHash && playerConfig.torrentHash !== source.torrentHash) {
+        rpcDropStream(playerConfig.torrentHash).catch(() => {});
+      }
+      const config = { ...source, title: nextEpisode.title, initialTime: 0, playlist };
+      playerConfigRef.current = config;
+      setPlayerConfig(config);
+      return true;
+    } finally {
+      nextEpisodePendingRef.current = false;
+    }
+  }, [playerConfig, nextEpisode]);
 
   const ensureContentFocusRef = useRef<(force?: boolean) => boolean>(() => false);
 
@@ -235,10 +274,11 @@ export const ProjacktorApp: FC = () => {
         streamTitle: string,
         torrentHash?: string,
         isOnline: boolean = true,
-        mediaInfo?: PlayerMediaInfo
+        mediaInfo?: PlayerMediaInfo,
+        playlist?: PlaylistItem[]
       ) => {
         close(false);
-        handlePlayVideo(filePath, streamTitle, isOnline, torrentHash, mediaInfo);
+        handlePlayVideo(filePath, streamTitle, isOnline, torrentHash, mediaInfo, undefined, playlist);
       };
       const onStartMagicBlack = () => {
         close(false);
@@ -740,22 +780,22 @@ export const ProjacktorApp: FC = () => {
       >
 
         {activeTab === "home" && (
-          <CatalogView key="home" category="home" onSelectMovie={handleOpenMovie} onNavigateUp={focusActiveTab} />
+          <CatalogView key={`home_${catalogScope}`} category="home" onSelectMovie={handleOpenMovie} onNavigateUp={focusActiveTab} />
         )}
         {activeTab === "movies" && (
-          <CatalogView key="movies" category="movie" onSelectMovie={handleOpenMovie} onNavigateUp={focusActiveTab} />
+          <CatalogView key={`movies_${catalogScope}`} category="movie" onSelectMovie={handleOpenMovie} onNavigateUp={focusActiveTab} />
         )}
         {activeTab === "tv" && (
-          <CatalogView key="tv" category="tv" onSelectMovie={handleOpenMovie} onNavigateUp={focusActiveTab} />
+          <CatalogView key={`tv_${catalogScope}`} category="tv" onSelectMovie={handleOpenMovie} onNavigateUp={focusActiveTab} />
         )}
         {activeTab === "cartoons" && (
-          <CatalogView key="cartoons" category="cartoon" onSelectMovie={handleOpenMovie} onNavigateUp={focusActiveTab} />
+          <CatalogView key={`cartoons_${catalogScope}`} category="cartoon" onSelectMovie={handleOpenMovie} onNavigateUp={focusActiveTab} />
         )}
         {activeTab === "anime" && (
-          <CatalogView key="anime" category="anime" onSelectMovie={handleOpenMovie} onNavigateUp={focusActiveTab} />
+          <CatalogView key={`anime_${catalogScope}`} category="anime" onSelectMovie={handleOpenMovie} onNavigateUp={focusActiveTab} />
         )}
         {activeTab === "search" && (
-          <SearchView onSelectMovie={handleOpenMovie} onNavigateUp={focusActiveTab} />
+          <SearchView key={catalogScope} onSelectMovie={handleOpenMovie} onNavigateUp={focusActiveTab} />
         )}
         {activeTab === "watchlist" && (
           <WatchlistView onSelectMovie={handleOpenMovie} onNavigateToCatalog={() => handleSelectTab("movies")} onNavigateUp={focusActiveTab} />
@@ -787,7 +827,7 @@ export const ProjacktorApp: FC = () => {
           mediaInfo={playerConfig.mediaInfo}
           initialTime={playerConfig.initialTime}
           closeModal={closePlayer}
-          playlist={playerConfig.playlist}
+          nextEpisode={nextEpisode}
           onPlayNext={handlePlayNext}
         />
       )}

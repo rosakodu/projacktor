@@ -152,7 +152,10 @@ export interface PlayerMediaInfo {
 }
 
 export interface PlaylistItem {
-  filePath: string;
+  filePath?: string;
+  downloaded?: boolean;
+  episodeIndex?: number;
+  magnet?: string;
   title: string;
   isOnline?: boolean;
   torrentHash?: string;

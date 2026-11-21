@@ -1,4 +1,4 @@
-import { useEffect, RefObject, MutableRefObject } from "react";
+import { useEffect, useRef, RefObject, MutableRefObject } from "react";
 
 interface UseVideoEventsProps {
   videoRef: RefObject<HTMLVideoElement | null>;
@@ -21,8 +21,7 @@ interface UseVideoEventsProps {
   setIsPlaying: (b: boolean) => void;
   setIsBuffering: (b: boolean) => void;
   setErrorMsg: (msg: string | null) => void;
-  onPlayNext?: () => boolean | void;
-  closeModal?: () => void;
+  onPlaybackEnded: () => void;
 }
 
 export function useVideoEvents({
@@ -30,9 +29,11 @@ export function useVideoEvents({
   isDirectStream, savedStartTime, durationRef, setDuration, hasStartedPlaybackRef,
   retryCountRef, saveProgress, setVideoTime, setBufferedPercent,
   setHasStartedPlayback, setIsPlaying, setIsBuffering, setErrorMsg,
-  onPlayNext, closeModal,
+  onPlaybackEnded,
 }: UseVideoEventsProps) {
-  const hasInitialSeekedRef = { current: false };
+  const hasInitialSeekedRef = useRef(false);
+  const onPlaybackEndedRef = useRef(onPlaybackEnded);
+  onPlaybackEndedRef.current = onPlaybackEnded;
 
   useEffect(() => {
     setErrorMsg(null);
@@ -139,9 +140,8 @@ export function useVideoEvents({
         if (cleanTitle) localStorage.removeItem(`projacktor_progress_t_${cleanTitle}`);
         saveProgress(0, durationRef.current);
       } catch {}
-      let nextStarted = false;
-      if (onPlayNext) nextStarted = Boolean(onPlayNext());
-      if (!nextStarted) closeModal?.();
+      setIsBuffering(false);
+      onPlaybackEndedRef.current();
     };
 
     video.addEventListener("timeupdate", onTimeUpdate);

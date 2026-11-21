@@ -44,7 +44,7 @@ const modalBtnStyle: React.CSSProperties = {
 interface EpisodesModalProps {
   item: LibraryItem;
   closeModal?: () => void;
-  onWatchOnline: (item: LibraryItem, epIndex: number, localFilePath?: string, epName?: string) => void;
+  onWatchOnline: (item: LibraryItem, epIndex: number, localFilePath: string | undefined, episodes: EpisodeItem[]) => void;
   onDownloadEpisode: (item: LibraryItem, ep: EpisodeItem) => void;
   onPauseEpisodeDownload?: (item: LibraryItem, ep: EpisodeItem) => void;
   onCancelEpisodeDownload?: (item: LibraryItem, ep: EpisodeItem) => void;
@@ -308,13 +308,13 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
     }, 60);
   }, [focusEl]);
 
-  const handleWatchOnline = (epIndex: number, localFilePath?: string, epName?: string) => {
+  const handleWatchOnline = (epIndex: number, localFilePath?: string) => {
     triggerHaptic("click", "both");
     // Защита от фантомного клика / удержания кнопки A при открытии списка серий
     if (Date.now() - modalOpenedTimeRef.current < 450) {
       return;
     }
-    onWatchOnline(item, epIndex, localFilePath, epName);
+    onWatchOnline(item, epIndex, localFilePath, episodes);
   };
 
   const handleDownload = async (ep: EpisodeItem) => {
@@ -731,11 +731,11 @@ export const EpisodesModal: FC<EpisodesModalProps> = ({
                             tabIndex={0}
                             onActivate={(e: any) => {
                               try { e?.stopPropagation?.(); } catch {}
-                              handleWatchOnline(ep.index, matchedLocalFile?.file_path, ep.name);
+                              handleWatchOnline(ep.index, matchedLocalFile?.file_path);
                             }}
                             onClick={(e: any) => {
                               try { e?.stopPropagation?.(); } catch {}
-                              handleWatchOnline(ep.index, matchedLocalFile?.file_path, ep.name);
+                              handleWatchOnline(ep.index, matchedLocalFile?.file_path);
                             }}
                             onCancelButton={closeModal}
                             title={t("watchFile")}

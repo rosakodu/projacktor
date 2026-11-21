@@ -1,6 +1,6 @@
 import { MediaItem, CatalogCategory } from "../types";
 import { API_BASE, isGhostCatalogItem } from "../api/utils";
-import { getCachedCatalog, setCachedCatalog } from "../api/cache";
+import { getCachedCatalog, setCachedCatalog, getCatalogCacheScope } from "../api/cache";
 import { getLocale } from "../i18n/state";
 import { getUserSettings } from "../runtime/userSettings";
 
@@ -72,6 +72,7 @@ function buildCatalogUrl(ep: string, cat: CatalogCategory, page: number, isKids:
 }
 
 export async function fetchCatalog(endpoint: string, mediaType: CatalogCategory = "movie", page: number = 1): Promise<MediaItem[]> {
+  const scope = getCatalogCacheScope();
   try {
     const isKidsMode = getUserSettings().kidsMode;
     const today = new Date().toISOString().split("T")[0];
@@ -79,7 +80,7 @@ export async function fetchCatalog(endpoint: string, mediaType: CatalogCategory 
     if (!url) return [];
     const isEn = getLocale() === "en";
     const res = await fetch(`${url}${url.includes("?") ? "&" : "?"}language=${isEn ? "en-US" : "ru-RU"}`);
-    if (!res.ok) return getCachedCatalog(endpoint, mediaType) || [];
+    if (!res.ok) return getCachedCatalog(endpoint, mediaType, page, scope) || [];
     const data = await res.json();
     let valid = (data.results || []).filter((item: any) => !isGhostCatalogItem(item, today, isEn));
     if (isKidsMode) valid = valid.filter((i: any) => !i.adult && (!Array.isArray(i.genre_ids) || !i.genre_ids.some((g: number) => [27, 10752].includes(g))));
@@ -91,14 +92,14 @@ export async function fetchCatalog(endpoint: string, mediaType: CatalogCategory 
       media_type: item.media_type || inf || (item.first_air_date ? "tv" : "movie"),
     }));
     if (isKidsMode && items.length > 0) {
-      const ratings = await Promise.all(items.map(async (i: any) => ({ id: i.id, rating: await fetchAgeRating(i.id, i.media_type).catch(() => null) })));
-      const rMap = new Map<number, string | null>(ratings.map((r) => [r.id, r.rating]));
-      items = items.filter((i: any) => { const r = rMap.get(i.id); return !r || (!r.includes("18") && !r.includes("16")); });
+      const ratings = await Promise.all(items.map(async (i: any) => ({ key: `${i.media_type}_${i.id}`, rating: await fetchAgeRating(i.id, i.media_type).catch(() => null) })));
+      const rMap = new Map<string, string | null>(ratings.map((r) => [r.key, r.rating]));
+      items = items.filter((i: any) => { const r = rMap.get(`${i.media_type}_${i.id}`); return !r || (!r.includes("18") && !r.includes("16")); });
     }
-    if (items.length > 0) setCachedCatalog(endpoint, mediaType, items);
+    if (items.length > 0) setCachedCatalog(endpoint, mediaType, items, page, scope);
     return items;
   } catch {
-    return getCachedCatalog(endpoint, mediaType) || [];
+    return getCachedCatalog(endpoint, mediaType, page, scope) || [];
   }
 }
 
@@ -112,9 +113,9 @@ export async function searchCatalog(query: string): Promise<MediaItem[]> {
     const isKids = getUserSettings().kidsMode;
     let raw = (data.results || []).filter((i: any) => (i.media_type === "movie" || i.media_type === "tv") && (!isKids || (!i.adult && (!Array.isArray(i.genre_ids) || !i.genre_ids.some((g: number) => [27, 10752].includes(g))))));
     if (isKids && raw.length > 0) {
-      const ratings = await Promise.all(raw.map(async (i: any) => ({ id: i.id, rating: await fetchAgeRating(i.id, i.media_type).catch(() => null) })));
-      const rMap = new Map<number, string | null>(ratings.map((r) => [r.id, r.rating]));
-      raw = raw.filter((i: any) => { const r = rMap.get(i.id); return !r || (!r.includes("18") && !r.includes("16")); });
+      const ratings = await Promise.all(raw.map(async (i: any) => ({ key: `${i.media_type}_${i.id}`, rating: await fetchAgeRating(i.id, i.media_type).catch(() => null) })));
+      const rMap = new Map<string, string | null>(ratings.map((r) => [r.key, r.rating]));
+      raw = raw.filter((i: any) => { const r = rMap.get(`${i.media_type}_${i.id}`); return !r || (!r.includes("18") && !r.includes("16")); });
     }
     return raw.map((i: any) => ({ ...i, title: i.title || i.name || (isEn ? "Untitled" : "Без названия"), release_date: i.release_date || i.first_air_date || "", age_rating: ageRatingCache.get(`${i.media_type || "movie"}_${i.id}`) || i.age_rating }));
   } catch {

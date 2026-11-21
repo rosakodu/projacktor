@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { PlayerModalProps } from "../PlayerModal";
 import { usePlayerZoom } from "./usePlayerZoom";
 import { usePlayerProgress } from "./usePlayerProgress";
@@ -9,11 +9,12 @@ import { usePlayerSeek } from "./usePlayerSeek";
 import { usePlayerSubtitles } from "./usePlayerSubtitles";
 import { useTorrentStatus } from "./useTorrentStatus";
 import { usePlayerTouchGestures } from "./usePlayerTouchGestures";
+import { isOverlayActiveOrRecent } from "../../runtime/activeDoc";
 import { usePlayerGamepad } from "../../hooks/usePlayerGamepad";
 
 export function usePlayerController({
   filePath, title, isOnline = false, torrentHash, mediaInfo,
-  initialTime, closeModal, playlist, onPlayNext,
+  initialTime, closeModal, nextEpisode, onPlayNext,
 }: PlayerModalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -36,10 +37,34 @@ export function usePlayerController({
     return filePath.startsWith("http://") || filePath.startsWith("https://") ? null : filePath;
   })();
 
-  const currentPlaylistIndex = playlist && playlist.length > 0
-    ? playlist.findIndex((p) => p.filePath === filePath || (actualFilePath && p.filePath === actualFilePath))
-    : -1;
-  const hasNextEpisode = playlist && currentPlaylistIndex >= 0 && currentPlaylistIndex < playlist.length - 1;
+  const [showNextEpisode, setShowNextEpisode] = useState(false);
+  const [loadingNextEpisode, setLoadingNextEpisode] = useState(false);
+  const [nextEpisodeFailed, setNextEpisodeFailed] = useState(false);
+  const pendingNextRef = useRef(false);
+  const playNextEpisode = useCallback(async () => {
+    if (!onPlayNext || pendingNextRef.current) return;
+    pendingNextRef.current = true;
+    setLoadingNextEpisode(true);
+    setNextEpisodeFailed(false);
+    try {
+      if (!await onPlayNext()) setNextEpisodeFailed(true);
+    } catch {
+      setNextEpisodeFailed(true);
+    } finally {
+      pendingNextRef.current = false;
+      setLoadingNextEpisode(false);
+    }
+  }, [onPlayNext]);
+
+  const endScreenActionRef = useRef<(() => void) | null>(null);
+  const activateEndScreen = () => {
+    const container = containerRef.current;
+    const active = container?.ownerDocument.activeElement;
+    if (isOverlayActiveOrRecent(1200)) return;
+    if (active?.closest("[data-next-episode-close]") && container?.contains(active)) closeModal?.();
+    else void playNextEpisode();
+  };
+  endScreenActionRef.current = showNextEpisode ? activateEndScreen : null;
 
   const { savedStartTimeRef, saveProgressRef } = usePlayerProgress({
     filePath, actualFilePath, title, initialTime, mediaInfo, torrentHash, isOnline, duration: durationRef.current,
@@ -51,7 +76,7 @@ export function usePlayerController({
   const selectedSubtitleRef = useRef<number | string | null>(null);
 
   const media = usePlayerMedia({
-    filePath, isOnline, torrentHash, mediaInfo, videoRef, audioBtnRef,
+    filePath, isOnline, mediaInfo, videoRef, audioBtnRef,
     savedStartTime: savedStartTimeRef.current, currentPlayheadRef, durationRef,
     hasStartedPlaybackRef, retryCountRef,
     setBaseTime: (t) => playbackRef.current?.setBaseTime(t),
@@ -82,7 +107,20 @@ export function usePlayerController({
     hasStartedPlaybackRef, retryCountRef,
     saveProgress: saveProgressRef.current, videoRef, streamUrl: media.streamUrl,
     setStreamUrl: media.setStreamUrl, volume: nav.volume, torrentStatus: torrent.torrentStatus,
-    zeroSeedersCountRef: torrent.zeroSeedersCountRef, onPlayNext, closeModal,
+    zeroSeedersCountRef: torrent.zeroSeedersCountRef,
+    onPlaybackEnded: () => {
+      if (!nextEpisode || !onPlayNext) {
+        closeModal?.();
+        return;
+      }
+      nav.showAudioMenuRef.current = false;
+      nav.showSubtitleMenuRef.current = false;
+      nav.setShowAudioMenu(false);
+      nav.setShowSubtitleMenu(false);
+      setNextEpisodeFailed(false);
+      setShowNextEpisode(true);
+      endScreenActionRef.current = activateEndScreen;
+    },
     resetControlsTimer: nav.resetControlsTimer,
   });
   playbackRef.current = playback;
@@ -120,7 +158,7 @@ export function usePlayerController({
     showControlsRef: nav.showControlsRef, showAudioMenuRef: nav.showAudioMenuRef,
     showSubtitleMenuRef: nav.showSubtitleMenuRef, setShowAudioMenu: nav.setShowAudioMenu,
     setShowSubtitleMenu: nav.setShowSubtitleMenu, setShowControls: nav.setShowControls,
-    closeModalRef, audioTracksRef, subtitleTracksRef,
+    closeModalRef, endScreenActionRef, audioTracksRef, subtitleTracksRef,
     activeAudioMenuIdxRef: nav.activeAudioMenuIdxRef, activeSubMenuIdxRef: nav.activeSubMenuIdxRef,
     togglePlay: playback.togglePlay, toggleAudioMenu: nav.toggleAudioMenu,
     toggleSubtitleMenu: nav.toggleSubtitleMenu, selectAudioTrack: media.selectAudioTrack,
@@ -133,6 +171,7 @@ export function usePlayerController({
 
   return {
     containerRef, videoRef, playBtnRef, subtitleBtnRef, audioBtnRef, subtitleMenuRef, audioMenuRef,
-    zoomControls, media, nav, torrent, playback, seek, subs, gestures, hasNextEpisode,
+    zoomControls, media, nav, torrent, playback, seek, subs, gestures,
+    showNextEpisode, loadingNextEpisode, nextEpisodeFailed, playNextEpisode,
   };
 }

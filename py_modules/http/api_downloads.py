@@ -43,11 +43,21 @@ def handle_downloads_add(handler, path="", query=None):
     ddir = os.path.join(base_dir, folder, f"{safe_title} ({year})".strip())
     os.makedirs(ddir, exist_ok=True)
 
-    gid = handler.app_context.dm.add_download(magnet, ddir) if (handler.app_context and handler.app_context.dm) else None
+    dm = handler.app_context.dm if handler.app_context else None
+    if not dm:
+        handler.send_json({"success": False, "error": "aria2 unavailable"}, status=503)
+        return
+
     db = get_db()
+    gid = None
     try:
+        gid = dm.add_download(magnet, ddir)
+        if not gid:
+            handler.send_json({"success": False, "error": "aria2 failed to add download"}, status=502)
+            return
+        db.execute("BEGIN IMMEDIATE")
         cursor = db.cursor()
-        cursor.execute("SELECT id FROM media WHERE tmdb_id=?", (tmdb_id,))
+        cursor.execute("SELECT id FROM media WHERE tmdb_id=? AND media_type=?", (tmdb_id, mtype))
         row = cursor.fetchone()
         if not row:
             cursor.execute("""
@@ -71,6 +81,16 @@ def handle_downloads_add(handler, path="", query=None):
         """, (mid, magnet, f"{title} ({quality})".strip(), ddir, gid, quality))
         new_dl_id = cursor.lastrowid
         db.commit()
+    except Exception:
+        logger.exception("Failed to persist download")
+        db.rollback()
+        if gid:
+            try:
+                dm.remove(gid)
+            except Exception:
+                logger.exception("Failed to cancel unrecorded aria2 download")
+        handler.send_json({"success": False, "error": "Failed to persist download"}, status=500)
+        return
     finally:
         db.close()
     handler.send_json({"success": True, "id": new_dl_id, "gid": gid})

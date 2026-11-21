@@ -9,6 +9,7 @@ import subprocess
 
 import shutil
 import secrets
+from .constants import MISSING_DOWNLOAD_FILES
 from .db import CONFIG_DIR, get_db, DB_LOCK, logger
 from .common import get_bin_path, _clean_env, POPULAR_TRACKERS, is_executable_release, write_pid_file, terminate_process
 from .stream import is_header_ready
@@ -283,6 +284,25 @@ class DownloadManager:
 
             # Для уже завершённых задач пропускаем лишний os.walk, если в aria2 нет активной/связанной задачи
             if row['status'] == 'completed':
+                if row_dir and not os.path.isdir(row_dir):
+                    media_id = row['media_id']
+                    indexed_paths = cursor.execute(
+                        "SELECT file_path FROM media_files WHERE media_id=?", (media_id,)
+                    ).fetchall()
+                    if not any(os.path.isfile(file['file_path']) for file in indexed_paths):
+                        cursor.execute("""
+                            UPDATE downloads
+                            SET status='error', progress=0, downloaded_size=0, download_speed=0,
+                                upload_speed=0, aria2_gid=NULL, completed_at=NULL,
+                                error_message=?
+                            WHERE id=?
+                        """, (MISSING_DOWNLOAD_FILES, row_id))
+                        if media_id:
+                            cursor.execute("UPDATE media SET status='catalog' WHERE id=?", (media_id,))
+                        db.commit()
+                        if gid:
+                            self._rpc_call("aria2.removeDownloadResult", [gid])
+                        continue
                 gid_task = task_map.get(gid) if gid else None
                 if not gid_task:
                     norm_dir = os.path.normpath(row_dir) if row_dir else ""
@@ -427,8 +447,18 @@ class DownloadManager:
             if raw_status == 'complete':
                 if has_followed or is_metadata_only or has_aria2:
                     new_status = 'downloading'
-                else:
+                elif any(
+                    os.path.splitext(f['path'])[1].lower() in VIDEO_EXTS and os.path.isfile(f['path'])
+                    for f in real_files
+                ):
                     new_status = 'completed'
+                else:
+                    new_status = 'error'
+                    prog = completed = 0
+                    cursor.execute(
+                        "UPDATE downloads SET error_message=? WHERE id=?",
+                        (MISSING_DOWNLOAD_FILES, row_id),
+                    )
             elif raw_status == 'active':
                 new_status = 'downloading'
             elif raw_status == 'paused':
@@ -488,16 +518,6 @@ class DownloadManager:
     def _scan_and_add_files(self, cursor, media_id, ddir):
         if not os.path.isdir(ddir):
             return
-
-        # Удаляем любые случайные исполняемые файлы из папки медиа
-        for root, _, files in os.walk(ddir):
-            for f in files:
-                if is_executable_release(f):
-                    try:
-                        os.remove(os.path.join(root, f))
-                        logger.warning(f"Removed dangerous executable file from download dir: {f}")
-                    except Exception:
-                        pass
 
         for root, _, files in os.walk(ddir):
             for f in files:

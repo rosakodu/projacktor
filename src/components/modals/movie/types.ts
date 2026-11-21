@@ -1,5 +1,5 @@
 import { RefObject } from "react";
-import { MediaItem, PlayerMediaInfo } from "../../../api";
+import { MediaItem, PlayerMediaInfo, PlaylistItem } from "../../../api";
 
 export type TorrentSortMode = "seeds" | "newest" | "oldest";
 
@@ -11,7 +11,8 @@ export interface MovieModalProps {
     title: string,
     torrentHash?: string,
     isOnline?: boolean,
-    mediaInfo?: PlayerMediaInfo
+    mediaInfo?: PlayerMediaInfo,
+    playlist?: PlaylistItem[]
   ) => void;
   onStartMagicBlack?: () => void;
 }

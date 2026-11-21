@@ -1,5 +1,4 @@
 import { callable } from "@decky/api";
-import { clearLocalCache } from "../api/cache";
 
 const rpcGetSettings = callable<[], Record<string, any>>("get_settings");
 const rpcSaveSettings = callable<[string], boolean>("save_settings");
@@ -80,7 +79,6 @@ export function setUserSetting<K extends keyof UserSettings>(
   value: UserSettings[K]
 ): void {
   if (currentSettings[key] === value) return;
-  const oldKidsMode = currentSettings.kidsMode;
   const updated = { ...currentSettings, [key]: value };
 
   if (key === "soundEffectsEnabled") {
@@ -99,11 +97,6 @@ export function setUserSetting<K extends keyof UserSettings>(
   } catch {}
 
   notifyListeners();
-
-  // Если меняется детский режим - сбрасываем кэш каталога, чтобы витрина сразу отфильтровалась
-  if (key === "kidsMode" && oldKidsMode !== value) {
-    clearLocalCache();
-  }
 
   // Синхронизируем с бэкендом
   rpcSaveSettings(

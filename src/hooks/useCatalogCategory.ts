@@ -26,21 +26,21 @@ export function useCatalogCategory(category: CatalogCategory): CatalogCategorySt
     return !(cached && cached.length > 0);
   });
 
-  const mountedRef = useRef<boolean>(true);
+  const requestRef = useRef(0);
 
   const loadData = useCallback(() => {
-    mountedRef.current = true;
+    const request = ++requestRef.current;
     let completed = 0;
     const markCompleted = () => {
       completed++;
-      if (mountedRef.current && completed >= 1) {
+      if (request === requestRef.current && completed === 1) {
         setLoading(false);
       }
     };
 
     fetchCatalog("watching_today", category)
       .then((items) => {
-        if (mountedRef.current && items.length > 0) {
+        if (request === requestRef.current) {
           setWatchingItems(items);
         }
         markCompleted();
@@ -49,7 +49,7 @@ export function useCatalogCategory(category: CatalogCategory): CatalogCategorySt
 
     fetchCatalog("trending_today", category)
       .then((items) => {
-        if (mountedRef.current && items.length > 0) {
+        if (request === requestRef.current) {
           setTrendingItems(items);
         }
         markCompleted();
@@ -58,7 +58,7 @@ export function useCatalogCategory(category: CatalogCategory): CatalogCategorySt
 
     fetchCatalog("top_rated", category)
       .then((items) => {
-        if (mountedRef.current && items.length > 0) {
+        if (request === requestRef.current) {
           setTopRatedItems(items);
         }
         markCompleted();
@@ -67,10 +67,9 @@ export function useCatalogCategory(category: CatalogCategory): CatalogCategorySt
   }, [category]);
 
   useEffect(() => {
-    mountedRef.current = true;
     loadData();
     return () => {
-      mountedRef.current = false;
+      requestRef.current++;
     };
   }, [loadData]);
 

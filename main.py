@@ -236,11 +236,11 @@ class Plugin:
     async def add_to_watchlist(self, data: str):
         return self.context.watchlist.add_to_watchlist(data)
 
-    async def remove_from_watchlist(self, tmdb_id: int):
-        return self.context.watchlist.remove_from_watchlist(tmdb_id)
+    async def remove_from_watchlist(self, tmdb_id: int, media_type: str | None = None):
+        return self.context.watchlist.remove_from_watchlist(tmdb_id, media_type)
 
-    async def is_in_watchlist(self, tmdb_id: int):
-        return self.context.watchlist.is_in_watchlist(tmdb_id)
+    async def is_in_watchlist(self, tmdb_id: int, media_type: str | None = None):
+        return self.context.watchlist.is_in_watchlist(tmdb_id, media_type)
 
     # History
     async def get_watch_history(self):

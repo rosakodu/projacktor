@@ -1,5 +1,11 @@
 import { MediaItem, CatalogCategory } from "../types";
+import { getLocale } from "../i18n/state";
+import { getUserSettings } from "../runtime/userSettings";
 import { isGhostCatalogItem } from "./utils";
+
+export function getCatalogCacheScope(): string {
+  return `${getLocale()}_${getUserSettings().kidsMode ? "kids" : "all"}`;
+}
 
 const catalogMemoryCache = new Map<string, { time: number; data: MediaItem[] }>();
 
@@ -8,7 +14,7 @@ export function clearLocalCache(): void {
   try {
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const k = localStorage.key(i);
-      if (k && (k.startsWith("projacktor_cat_") || k.startsWith("projacktor_cat_v2_"))) {
+      if (k && k.startsWith("projacktor_cat_")) {
         localStorage.removeItem(k);
       }
     }
@@ -17,9 +23,11 @@ export function clearLocalCache(): void {
 
 export function getCachedCatalog(
   endpoint: string,
-  mediaType: CatalogCategory = "movie"
+  mediaType: CatalogCategory = "movie",
+  page = 1,
+  scope = getCatalogCacheScope()
 ): MediaItem[] | null {
-  const cacheKey = `projacktor_cat_v2_${mediaType}_${endpoint}`;
+  const cacheKey = `projacktor_cat_v3_${scope}_${mediaType}_${endpoint}_${page}`;
   const mem = catalogMemoryCache.get(cacheKey);
   if (mem && mem.data.length > 0) {
     const valid = mem.data.filter((it) => !isGhostCatalogItem(it));
@@ -44,9 +52,11 @@ export function getCachedCatalog(
 export function setCachedCatalog(
   endpoint: string,
   mediaType: CatalogCategory,
-  items: MediaItem[]
+  items: MediaItem[],
+  page = 1,
+  scope = getCatalogCacheScope()
 ): void {
-  const cacheKey = `projacktor_cat_v2_${mediaType}_${endpoint}`;
+  const cacheKey = `projacktor_cat_v3_${scope}_${mediaType}_${endpoint}_${page}`;
   const validItems = (items || []).filter((it) => !isGhostCatalogItem(it));
   if (validItems.length > 0) {
     catalogMemoryCache.set(cacheKey, { time: Date.now(), data: validItems });

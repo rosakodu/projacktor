@@ -13,8 +13,8 @@ const rpcDelLib = callable<[number], boolean>("delete_library_item");
 const rpcRescanLib = callable<[], { success: boolean; restored_count: number; error?: string }>("rescan_library");
 const rpcGetWatch = callable<[], WatchlistItem[]>("get_watchlist");
 const rpcAddWatch = callable<[string], { success: boolean; error?: string }>("add_to_watchlist");
-const rpcRemWatch = callable<[number], boolean>("remove_from_watchlist");
-const rpcCheckWatch = callable<[number], boolean>("is_in_watchlist");
+const rpcRemWatch = callable<[number, "movie" | "tv"], boolean>("remove_from_watchlist");
+const rpcCheckWatch = callable<[number, "movie" | "tv"], boolean>("is_in_watchlist");
 const rpcGetHist = callable<[], WatchHistoryItem[]>("get_watch_history");
 const rpcSaveProg = callable<[string], boolean>("save_watch_progress");
 const rpcDelHist = callable<[number], boolean>("delete_watch_history_item");
@@ -72,17 +72,17 @@ export async function addToWatchlist(item: WatchlistItem): Promise<{ success: bo
   }
 }
 
-export async function removeFromWatchlist(id: number): Promise<boolean> {
+export async function removeFromWatchlist(id: number, mediaType: "movie" | "tv" = "movie"): Promise<boolean> {
   try {
-    return await rpcRemWatch(id);
+    return await rpcRemWatch(id, mediaType);
   } catch {
     return false;
   }
 }
 
-export async function isInWatchlist(id: number): Promise<boolean> {
+export async function isInWatchlist(id: number, mediaType: "movie" | "tv" = "movie"): Promise<boolean> {
   try {
-    return await rpcCheckWatch(id);
+    return await rpcCheckWatch(id, mediaType);
   } catch {
     return false;
   }

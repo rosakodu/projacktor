@@ -1,6 +1,5 @@
 # Node
 node_modules/
-pnpm-lock.yaml
 
 # Build
 dist/
@@ -51,7 +50,9 @@ test_artifacts/
 .agents/
 PROJECT.md
 test_*.py
-tests/
+tests/*
+!tests/regressions/
+!tests/regressions/test_backend.py
 open_projacktor.sh
 
 

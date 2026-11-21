@@ -7,6 +7,7 @@ import { PlayerControls } from "./player/PlayerControls";
 import { PlayerHeaderBar } from "./player/PlayerHeaderBar";
 import { PlayerErrorOverlay } from "./player/PlayerErrorOverlay";
 import { PlayerSubtitleOverlay } from "./player/PlayerSubtitleOverlay";
+import { NextEpisodeOverlay } from "./player/NextEpisodeOverlay";
 import { usePlayerController } from "./player/usePlayerController";
 
 export type { AudioTrack, SubtitleTrack };
@@ -19,25 +20,25 @@ export interface PlayerModalProps {
   mediaInfo?: PlayerMediaInfo;
   initialTime?: number;
   closeModal?: () => void;
-  playlist?: PlaylistItem[];
-  onPlayNext?: () => boolean | void;
+  nextEpisode?: PlaylistItem;
+  onPlayNext?: () => Promise<boolean>;
 }
 
 export const PlayerModal: FC<PlayerModalProps> = (props) => {
   const {
     containerRef, videoRef, playBtnRef, subtitleBtnRef, audioBtnRef,
     subtitleMenuRef, audioMenuRef, zoomControls, media, nav, torrent,
-    playback, seek, subs, gestures, hasNextEpisode,
+    playback, seek, subs, gestures, showNextEpisode, loadingNextEpisode, nextEpisodeFailed, playNextEpisode,
   } = usePlayerController(props);
 
   return (
     <Focusable
       ref={containerRef}
-      className={`projacktor-player-fullscreen gpfocus${nav.showControls ? "" : " controls-hidden"}`}
+      className={`projacktor-player-fullscreen gpfocus${nav.showControls || showNextEpisode ? "" : " controls-hidden"}`}
       style={{
         position: "fixed", inset: 0, width: "100vw", height: "100vh",
         color: "#fff", background: "#000", overflow: "hidden",
-        borderRadius: 0, zIndex: 2147483647, cursor: nav.showControls ? "default" : "none",
+        borderRadius: 0, zIndex: 2147483647, cursor: nav.showControls || showNextEpisode ? "default" : "none",
       }}
     >
       <PlayerHeaderBar showControls={nav.showControls} hasStartedPlayback={playback.hasStartedPlayback} title={props.title} />
@@ -86,26 +87,37 @@ export const PlayerModal: FC<PlayerModalProps> = (props) => {
         />
       </div>
 
-      <PlayerControls
-        showControls={nav.showControls} resetControlsTimer={nav.resetControlsTimer} isPlaying={playback.isPlaying}
-        currentPlayhead={seek.currentPlayhead} duration={media.duration}
-        progressPercent={seek.progressPercent} bufferedPercent={playback.bufferedPercent}
-        isOnline={!!props.isOnline} playBtnRef={playBtnRef}
-        subtitleBtnRef={subtitleBtnRef} audioBtnRef={audioBtnRef}
-        subtitleMenuRef={subtitleMenuRef} audioMenuRef={audioMenuRef}
-        onTogglePlay={playback.togglePlay} onSeekRelative={seek.seekRelative}
-        onSeekTo={seek.seekTo} onProgressBarTouch={seek.handleProgressBarTouch}
-        showSubtitleMenu={nav.showSubtitleMenu} subtitleTracks={media.subtitleTracks}
-        selectedSubtitle={subs.selectedSubtitle} activeSubMenuIdx={nav.activeSubMenuIdx}
-        onToggleSubtitleMenu={nav.toggleSubtitleMenu} onSelectSubtitle={subs.selectSubtitleTrack}
-        onHoverSubItem={(idx) => { nav.setActiveSubMenuIdx(idx); nav.activeSubMenuIdxRef.current = idx; }}
-        showAudioMenu={nav.showAudioMenu} audioTracks={media.audioTracks}
-        selectedAudio={media.selectedAudio} activeAudioMenuIdx={nav.activeAudioMenuIdx}
-        onToggleAudioMenu={nav.toggleAudioMenu} onSelectAudio={media.selectAudioTrack}
-        onHoverAudioItem={(idx) => { nav.setActiveAudioMenuIdx(idx); nav.activeAudioMenuIdxRef.current = idx; }}
-        onChangeVolume={nav.changeVolume} hasNextEpisode={!!hasNextEpisode}
-        onPlayNextEpisode={() => props.onPlayNext?.()} onBtnFocus={(el) => { nav.lastFocusedBtnRef.current = el; }}
-      />
+      {showNextEpisode && props.nextEpisode ? (
+        <NextEpisodeOverlay
+          episode={props.nextEpisode}
+          loading={loadingNextEpisode}
+          failed={nextEpisodeFailed}
+          onPlay={playNextEpisode}
+          onClose={props.closeModal}
+          focusControl={nav.focusControl}
+        />
+      ) : (
+        <PlayerControls
+          showControls={nav.showControls} resetControlsTimer={nav.resetControlsTimer} isPlaying={playback.isPlaying}
+          currentPlayhead={seek.currentPlayhead} duration={media.duration}
+          progressPercent={seek.progressPercent} bufferedPercent={playback.bufferedPercent}
+          isOnline={!!props.isOnline} playBtnRef={playBtnRef}
+          subtitleBtnRef={subtitleBtnRef} audioBtnRef={audioBtnRef}
+          subtitleMenuRef={subtitleMenuRef} audioMenuRef={audioMenuRef}
+          onTogglePlay={playback.togglePlay} onSeekRelative={seek.seekRelative}
+          onSeekTo={seek.seekTo} onProgressBarTouch={seek.handleProgressBarTouch}
+          showSubtitleMenu={nav.showSubtitleMenu} subtitleTracks={media.subtitleTracks}
+          selectedSubtitle={subs.selectedSubtitle} activeSubMenuIdx={nav.activeSubMenuIdx}
+          onToggleSubtitleMenu={nav.toggleSubtitleMenu} onSelectSubtitle={subs.selectSubtitleTrack}
+          onHoverSubItem={(idx) => { nav.setActiveSubMenuIdx(idx); nav.activeSubMenuIdxRef.current = idx; }}
+          showAudioMenu={nav.showAudioMenu} audioTracks={media.audioTracks}
+          selectedAudio={media.selectedAudio} activeAudioMenuIdx={nav.activeAudioMenuIdx}
+          onToggleAudioMenu={nav.toggleAudioMenu} onSelectAudio={media.selectAudioTrack}
+          onHoverAudioItem={(idx) => { nav.setActiveAudioMenuIdx(idx); nav.activeAudioMenuIdxRef.current = idx; }}
+          onChangeVolume={nav.changeVolume} hasNextEpisode={!!props.nextEpisode}
+          onPlayNextEpisode={playNextEpisode} onBtnFocus={(el) => { nav.lastFocusedBtnRef.current = el; }}
+        />
+      )}
     </Focusable>
   );
 };

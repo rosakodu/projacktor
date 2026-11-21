@@ -37,15 +37,15 @@ class HistoryService:
         mf_where, mf_params = self._build_in_where([("m.tmdb_id", tmdb_ids), ("m.title", titles)])
         if mf_where:
             for mf in db.execute(f"""
-                SELECT f.file_path, m.tmdb_id, m.title FROM media_files f
+                SELECT f.file_path, m.tmdb_id, m.title, m.media_type FROM media_files f
                 JOIN media m ON f.media_id = m.id
                 WHERE {mf_where}
                 ORDER BY f.id ASC
             """, mf_params).fetchall():
                 if mf.get('tmdb_id'):
-                    mf_by_tmdb.setdefault(mf['tmdb_id'], mf['file_path'])
+                    mf_by_tmdb.setdefault((mf['tmdb_id'], mf['media_type']), mf['file_path'])
                 if mf.get('title'):
-                    mf_by_title.setdefault(mf['title'], mf['file_path'])
+                    mf_by_title.setdefault((mf['title'], mf['media_type']), mf['file_path'])
 
         media_by_id: dict = {}
         media_by_tmdb: dict = {}
@@ -54,23 +54,23 @@ class HistoryService:
         m_where, m_params = self._build_in_where([("id", media_ids), ("tmdb_id", tmdb_ids), ("title", titles)])
         if m_where:
             for m_row in db.execute(f"""
-                SELECT id, tmdb_id, title, poster_path, backdrop_path FROM media
+                SELECT id, tmdb_id, title, poster_path, backdrop_path, media_type FROM media
                 WHERE {m_where}
                 ORDER BY id ASC
             """, m_params).fetchall():
                 media_by_id[m_row['id']] = m_row
                 if m_row.get('tmdb_id'):
-                    media_by_tmdb.setdefault(m_row['tmdb_id'], m_row)
+                    media_by_tmdb.setdefault((m_row['tmdb_id'], m_row['media_type']), m_row)
                     dl_tmdb_ids.add(m_row['tmdb_id'])
                 if m_row.get('title'):
-                    media_by_title.setdefault(m_row['title'], m_row)
+                    media_by_title.setdefault((m_row['title'], m_row['media_type']), m_row)
 
         dl_by_media_id: dict = {}
         dl_by_tmdb_id: dict = {}
         dl_where, dl_params = self._build_in_where([("d.media_id", media_ids), ("m.tmdb_id", dl_tmdb_ids)])
         if dl_where:
             for dl_row in db.execute(f"""
-                SELECT d.media_id, d.status, m.tmdb_id FROM downloads d
+                SELECT d.media_id, d.status, m.tmdb_id, m.media_type FROM downloads d
                 LEFT JOIN media m ON d.media_id = m.id
                 WHERE {dl_where}
                 ORDER BY d.id DESC
@@ -78,7 +78,7 @@ class HistoryService:
                 if dl_row.get('media_id'):
                     dl_by_media_id.setdefault(dl_row['media_id'], dl_row['status'])
                 if dl_row.get('tmdb_id'):
-                    dl_by_tmdb_id.setdefault(dl_row['tmdb_id'], dl_row['status'])
+                    dl_by_tmdb_id.setdefault((dl_row['tmdb_id'], dl_row['media_type']), dl_row['status'])
 
         return mf_by_tmdb, mf_by_title, media_by_id, media_by_tmdb, media_by_title, dl_by_media_id, dl_by_tmdb_id
 
@@ -102,16 +102,19 @@ class HistoryService:
             items = []
             for r in rows:
                 d = dict(r)
+                media_type = d.get("media_type") or "movie"
+                tmdb_key = (d.get("tmdb_id"), media_type)
+                title_key = (d.get("title"), media_type)
                 local_file = None
                 if d.get('file_path') and os.path.isfile(d.get('file_path')):
                     local_file = d['file_path']
                 else:
                     if d.get('tmdb_id'):
-                        mf_path = mf_by_tmdb.get(d['tmdb_id'])
+                        mf_path = mf_by_tmdb.get(tmdb_key)
                         if mf_path and os.path.isfile(mf_path):
                             local_file = mf_path
                     if not local_file and d.get('title'):
-                        mf_path = mf_by_title.get(d['title'])
+                        mf_path = mf_by_title.get(title_key)
                         if mf_path and os.path.isfile(mf_path):
                             local_file = mf_path
 
@@ -119,9 +122,9 @@ class HistoryService:
                 if d.get('media_id'):
                     m_row = media_by_id.get(d['media_id'])
                 if not m_row and d.get('tmdb_id'):
-                    m_row = media_by_tmdb.get(d['tmdb_id'])
+                    m_row = media_by_tmdb.get(tmdb_key)
                 if not m_row and d.get('title'):
-                    m_row = media_by_title.get(d['title'])
+                    m_row = media_by_title.get(title_key)
 
                 if m_row:
                     if not d.get('tmdb_id') and m_row['tmdb_id']:
@@ -166,8 +169,8 @@ class HistoryService:
 
                     if d.get('media_id') and d['media_id'] in dl_by_media_id:
                         dl_status = dl_by_media_id[d['media_id']]
-                    elif d.get('tmdb_id') and d['tmdb_id'] in dl_by_tmdb_id:
-                        dl_status = dl_by_tmdb_id[d['tmdb_id']]
+                    elif d.get('tmdb_id') and tmdb_key in dl_by_tmdb_id:
+                        dl_status = dl_by_tmdb_id[tmdb_key]
                 d['download_status'] = dl_status
                 items.append(d)
             return items
@@ -205,7 +208,7 @@ class HistoryService:
             try:
                 if not media_id:
                     if tmdb_id:
-                        m_row = db.execute("SELECT id, tmdb_id, poster_path, backdrop_path FROM media WHERE tmdb_id=?", (tmdb_id,)).fetchone()
+                        m_row = db.execute("SELECT id, tmdb_id, poster_path, backdrop_path FROM media WHERE tmdb_id=? AND media_type=?", (tmdb_id, media_type)).fetchone()
                         if m_row:
                             media_id = m_row['id']
                             if not poster_path:
@@ -213,7 +216,7 @@ class HistoryService:
                             if not backdrop_path:
                                 backdrop_path = m_row['backdrop_path']
                     if not media_id and clean_title:
-                        m_row = db.execute("SELECT id, tmdb_id, poster_path, backdrop_path FROM media WHERE title=?", (clean_title,)).fetchone()
+                        m_row = db.execute("SELECT id, tmdb_id, poster_path, backdrop_path FROM media WHERE title=? AND media_type=? AND (? IS NULL OR tmdb_id IS NULL)", (clean_title, media_type, tmdb_id)).fetchone()
                         if m_row:
                             media_id = m_row['id']
                             if not tmdb_id and m_row['tmdb_id']:
@@ -227,24 +230,24 @@ class HistoryService:
                 if episode_name:
                     if tmdb_id:
                         existing = db.execute(
-                            "SELECT id FROM watch_history WHERE tmdb_id=? AND episode_name=?",
-                            (tmdb_id, episode_name)
+                            "SELECT id FROM watch_history WHERE tmdb_id=? AND media_type=? AND episode_name=?",
+                            (tmdb_id, media_type, episode_name)
                         ).fetchone()
                     if not existing:
                         existing = db.execute(
-                            "SELECT id FROM watch_history WHERE title=? AND episode_name=?",
-                            (clean_title, episode_name)
+                            "SELECT id FROM watch_history WHERE title=? AND media_type=? AND (? IS NULL OR tmdb_id IS NULL) AND episode_name=?",
+                            (clean_title, media_type, tmdb_id, episode_name)
                         ).fetchone()
                 else:
                     if tmdb_id:
                         existing = db.execute(
-                            "SELECT id FROM watch_history WHERE tmdb_id=? AND (episode_name IS NULL OR episode_name='')",
-                            (tmdb_id,)
+                            "SELECT id FROM watch_history WHERE tmdb_id=? AND media_type=? AND (episode_name IS NULL OR episode_name='')",
+                            (tmdb_id, media_type)
                         ).fetchone()
                     if not existing:
                         existing = db.execute(
-                            "SELECT id FROM watch_history WHERE title=? AND (episode_name IS NULL OR episode_name='')",
-                            (clean_title,)
+                            "SELECT id FROM watch_history WHERE title=? AND media_type=? AND (? IS NULL OR tmdb_id IS NULL) AND (episode_name IS NULL OR episode_name='')",
+                            (clean_title, media_type, tmdb_id)
                         ).fetchone()
 
                 now_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -305,9 +308,9 @@ class HistoryService:
             if mid:
                 m = db.execute("SELECT * FROM media WHERE id=?", (mid,)).fetchone()
             if not m and h.get('tmdb_id'):
-                m = db.execute("SELECT * FROM media WHERE tmdb_id=?", (h['tmdb_id'],)).fetchone()
+                m = db.execute("SELECT * FROM media WHERE tmdb_id=? AND media_type=?", (h['tmdb_id'], h.get('media_type') or "movie")).fetchone()
             if not m and h.get('title'):
-                m = db.execute("SELECT * FROM media WHERE title=?", (h['title'],)).fetchone()
+                m = db.execute("SELECT * FROM media WHERE title=? AND media_type=? AND (? IS NULL OR tmdb_id IS NULL)", (h['title'], h.get('media_type') or "movie", h.get('tmdb_id'))).fetchone()
 
             if not m:
                 return {"success": False, "error": "Медиа-проект не найден в базе"}

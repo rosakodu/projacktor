@@ -1,5 +1,8 @@
 import { useState, useRef, useCallback } from "react";
-import { MediaItem, TorrentItem, EpisodeItem, PlayerMediaInfo, rpcGetTorrentEpisodes, rpcDownloadEpisode, rpcPrepareStream, sortEpisodes } from "../../../api";
+import { MediaItem, TorrentItem, EpisodeItem, PlayerMediaInfo, rpcGetEpisodes, rpcGetTorrentEpisodes, rpcDownloadEpisode, sortEpisodes } from "../../../api";
+
+import type { MovieModalProps } from "./types";
+import { buildEpisodePlaylist, preparePlaylistEpisode } from "../../../services/episodePlaylist";
 
 interface UseEpisodeStateProps {
   movie: MediaItem;
@@ -7,13 +10,7 @@ interface UseEpisodeStateProps {
   currentMediaInfo: PlayerMediaInfo;
   getOrCreateMediaId: (torrent: TorrentItem, inLibrary: boolean) => Promise<number>;
   closeModal?: () => void;
-  onWatchOnline?: (
-    filePath: string,
-    title: string,
-    torrentHash?: string,
-    isOnline?: boolean,
-    mediaInfo?: PlayerMediaInfo
-  ) => void;
+  onWatchOnline?: MovieModalProps["onWatchOnline"];
   onStartMagicBlack?: () => void;
 }
 
@@ -76,17 +73,26 @@ export function useEpisodeState({
     setStreamingEpIdx(ep.index);
     try {
       const mid = await getOrCreateMediaId(torrent, false);
-      const res = await rpcPrepareStream(mid, ep.index, true, torrent.magnet);
-      if (res && res.success && (res.stream_url || res.file_path)) {
-        if (closeModal) closeModal();
-        if (onWatchOnline) {
-          const isOnline = res.online !== false && (res.stream_url ? !res.stream_url.includes("file=") : false);
-          onWatchOnline(res.stream_url || res.file_path!, res.title || `${title} - ${ep.name}`, res.torrent_hash, isOnline, {
-            ...currentMediaInfo, mediaId: mid, episodeName: ep.name, episodeNumber: ep.index,
-            duration: res.duration && res.duration > 0 ? res.duration : undefined,
-          });
-        }
-      } else { throw new Error(res?.error || "Не удалось подготовить серию"); }
+      const episodes = episodesMap[torrent.id || torrent.magnet] || [ep];
+      const playlist = buildEpisodePlaylist(episodes, { ...currentMediaInfo, mediaId: mid }, torrent.magnet);
+      const current = playlist.find((entry) => entry.episodeIndex === ep.index);
+      if (!current) throw new Error("Серия не найдена");
+      const [source, libraryEpisodes] = await Promise.all([
+        preparePlaylistEpisode(current, true),
+        rpcGetEpisodes(mid).catch(() => []),
+      ]);
+      if (!source) throw new Error("Не удалось подготовить серию");
+
+      const downloaded = new Map(libraryEpisodes.filter((item) => item.downloaded).map((item) => [item.name, item]));
+      for (const entry of playlist) {
+        const local = downloaded.get(entry.mediaInfo?.episodeName || "");
+        if (!local) continue;
+        entry.downloaded = true;
+        if (local.path.startsWith("/")) entry.filePath = local.path;
+      }
+      current.filePath = source.filePath;
+      closeModal?.();
+      onWatchOnline?.(source.filePath, current.title, source.torrentHash, source.isOnline, source.mediaInfo, playlist);
     } catch (err: any) {
       console.error("Ошибка просмотра серии:", err);
     } finally {

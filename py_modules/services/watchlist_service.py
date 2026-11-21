@@ -36,10 +36,9 @@ class WatchlistService:
                 db.execute("""
                     INSERT INTO watchlist (tmdb_id, media_type, title, original_title, year, overview, poster_path, backdrop_path, vote_average)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(tmdb_id) DO UPDATE SET
+                    ON CONFLICT(media_type, tmdb_id) DO UPDATE SET
                         title=excluded.title,
                         original_title=excluded.original_title,
-                        media_type=excluded.media_type,
                         year=excluded.year,
                         overview=excluded.overview,
                         poster_path=excluded.poster_path,
@@ -54,11 +53,19 @@ class WatchlistService:
             logger.error(f"WatchlistService add_to_watchlist error: {e}")
             return {"success": False, "error": str(e)}
 
-    def remove_from_watchlist(self, tmdb_id: int) -> bool:
+    def remove_from_watchlist(self, tmdb_id: int, media_type: str | None = None) -> bool:
         try:
             db = get_db()
             try:
-                db.execute("DELETE FROM watchlist WHERE tmdb_id=?", (tmdb_id,))
+                if media_type is None:
+                    db.execute("BEGIN IMMEDIATE")
+                    matches = db.execute("SELECT id FROM watchlist WHERE tmdb_id=?", (tmdb_id,)).fetchall()
+                    if len(matches) > 1:
+                        return False
+                    if matches:
+                        db.execute("DELETE FROM watchlist WHERE id=?", (matches[0][0],))
+                else:
+                    db.execute("DELETE FROM watchlist WHERE tmdb_id=? AND media_type=?", (tmdb_id, media_type))
                 db.commit()
                 return True
             finally:
@@ -67,11 +74,14 @@ class WatchlistService:
             logger.error(f"WatchlistService remove_from_watchlist error: {e}")
             return False
 
-    def is_in_watchlist(self, tmdb_id: int) -> bool:
+    def is_in_watchlist(self, tmdb_id: int, media_type: str | None = None) -> bool:
         try:
             db = get_db()
             try:
-                row = db.execute("SELECT id FROM watchlist WHERE tmdb_id=?", (tmdb_id,)).fetchone()
+                row = db.execute(
+                    "SELECT id FROM watchlist WHERE tmdb_id=? AND (? IS NULL OR media_type=?)",
+                    (tmdb_id, media_type, media_type),
+                ).fetchone()
                 return bool(row)
             finally:
                 db.close()

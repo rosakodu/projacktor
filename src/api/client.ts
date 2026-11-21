@@ -12,8 +12,8 @@ import { StorageDrive, DiskSpaceInfo } from "../services/types";
 export const rpcGetSteamLanguage = callable<[], string>("get_steam_language");
 export const rpcGetWatchlist = callable<[], WatchlistItem[]>("get_watchlist");
 export const rpcAddToWatchlist = callable<[string], { success: boolean; error?: string }>("add_to_watchlist");
-export const rpcRemoveFromWatchlist = callable<[number], boolean>("remove_from_watchlist");
-export const rpcIsInWatchlist = callable<[number], boolean>("is_in_watchlist");
+export const rpcRemoveFromWatchlist = callable<[number, "movie" | "tv"], boolean>("remove_from_watchlist");
+export const rpcIsInWatchlist = callable<[number, "movie" | "tv"], boolean>("is_in_watchlist");
 
 export const rpcGetWatchHistory = callable<[], WatchHistoryItem[]>("get_watch_history");
 export const rpcSaveWatchProgress = callable<[string], boolean>("save_watch_progress");

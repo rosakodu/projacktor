@@ -7,9 +7,10 @@ import time
 import threading
 import urllib.parse
 
-from ..core.env import CONFIG_DIR, get_user_home, logger
+from ..core.env import logger
 from ..db import get_db
 from ..db.settings_repo import load_settings
+from ..services.library_scanner import LibraryScanner
 
 _HEAL_LOCK = threading.Lock()
 _HEAL_IN_FLIGHT = {}
@@ -30,19 +31,14 @@ def check_stream_security(handler, source: str, is_http: bool, filepath: str):
     if not is_http:
         real_path = os.path.realpath(source)
         sett = load_settings()
-        allowed_dirs = [
-            os.path.realpath(os.path.expanduser(sett.get('download_path', '~/Videos/Projacktor'))),
-            os.path.realpath(CONFIG_DIR),
-            "/run/media",
-            get_user_home()
-        ]
-        if not any(real_path.startswith(ad) for ad in allowed_dirs):
+        allowed_dirs = LibraryScanner().get_search_roots(sett.get("download_path"))
+        if not any(os.path.commonpath((real_path, root)) == root for root in allowed_dirs):
             logger.warning(f"Path traversal attempt blocked: {filepath}")
             handler.send_response(403)
             handler.send_cors_headers()
             handler.end_headers()
             return None
-        if not os.path.exists(real_path):
+        if not os.path.isfile(real_path):
             handler.send_response(404)
             handler.send_cors_headers()
             handler.end_headers()

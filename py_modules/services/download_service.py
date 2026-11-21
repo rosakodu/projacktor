@@ -2,21 +2,19 @@
 
 import os
 import asyncio
-import shutil
 
 from ..db import get_db, logger
 from ..common import is_executable_release
 from ..media.episodes import (
     find_target_episode,
     match_aria2_file,
-    collect_candidate_paths,
 )
 from .aria2_helpers import (
     parse_magnet_hash,
     remove_aria2_tasks,
-    remove_aria2_control_files,
 )
 
+from .media_cleanup import aria2_file_paths, episode_file_paths, indexed_file_paths, remove_media_files
 
 
 class DownloadService:
@@ -77,29 +75,17 @@ class DownloadService:
     @staticmethod
     def cleanup_old_torrent_download(mid: int, ddir: str, old_gid: str = "", old_hash: str = "", dm=None):
         logger.info(f"Replacing torrent: cleaning old task mid={mid}, gid={old_gid}, hash={old_hash}")
+        paths = aria2_file_paths(dm, old_gid, ddir)
         remove_aria2_tasks(dm, gid=old_gid, target_hash=old_hash)
 
         db = get_db()
         try:
-            cur = db.cursor()
-            old_files = cur.execute("SELECT file_path FROM media_files WHERE media_id=?", (mid,)).fetchall()
-            for f in old_files:
-                fp = f['file_path']
-                try:
-                    if os.path.exists(fp):
-                        os.remove(fp)
-                    if os.path.exists(fp + ".aria2"):
-                        os.remove(fp + ".aria2")
-                except Exception as fe:
-                    logger.warning(f"Error removing old file {fp}: {fe}")
-            cur.execute("DELETE FROM media_files WHERE media_id=?", (mid,))
+            paths.update(indexed_file_paths(db, mid))
+            remove_media_files(db, mid, paths)
+            db.execute("DELETE FROM media_files WHERE media_id=?", (mid,))
             db.commit()
-        except Exception as e:
-            logger.warning(f"Error clearing media_files for media {mid}: {e}")
         finally:
             db.close()
-
-        remove_aria2_control_files(ddir)
 
     def get_downloads_count(self) -> int:
         db = get_db()
@@ -235,8 +221,8 @@ class DownloadService:
                     
                     if target_hash:
                         try:
-                            cursor.execute("UPDATE watch_history SET torrent_hash=?, is_downloaded=0, watched_at=CURRENT_TIMESTAMP WHERE media_id=? OR tmdb_id=?", 
-                                           (target_hash, mid, m['tmdb_id']))
+                            cursor.execute("UPDATE watch_history SET torrent_hash=?, is_downloaded=0, watched_at=CURRENT_TIMESTAMP WHERE media_id=? OR (tmdb_id=? AND media_type=?)",
+                                           (target_hash, mid, m['tmdb_id'], m['media_type']))
                         except Exception as e:
                             logger.warning(f"Failed to update watch_history: {e}")
                         
@@ -245,7 +231,9 @@ class DownloadService:
                         dm.sync_once()
                     return {"success": True, "gid": gid}
 
-                new_gid = dm.add_download(magnet, ddir, options) if dm else ""
+                new_gid = dm.add_download(magnet, ddir, options) if dm else None
+                if not new_gid:
+                    return {"success": False, "error": "aria2 failed to add download"}
                 if dl:
                     cursor.execute("UPDATE downloads SET aria2_gid=?, status='downloading', error_message=NULL, magnet_uri=?, torrent_title=?, quality=? WHERE id=?", 
                                    (new_gid, magnet, m['torrent_title'], m['quality'], dl['id']))
@@ -259,8 +247,8 @@ class DownloadService:
                 
                 if target_hash:
                     try:
-                        cursor.execute("UPDATE watch_history SET torrent_hash=?, is_downloaded=0, watched_at=CURRENT_TIMESTAMP WHERE media_id=? OR tmdb_id=?", 
-                                       (target_hash, mid, m['tmdb_id']))
+                        cursor.execute("UPDATE watch_history SET torrent_hash=?, is_downloaded=0, watched_at=CURRENT_TIMESTAMP WHERE media_id=? OR (tmdb_id=? AND media_type=?)",
+                                       (target_hash, mid, m['tmdb_id'], m['media_type']))
                     except Exception as e:
                         logger.warning(f"Failed to update watch_history: {e}")
                     
@@ -388,12 +376,7 @@ class DownloadService:
 
             # Collect all candidate file paths for this episode to delete from disk
             ddir = m.get('download_dir') or dl.get('download_dir') or ''
-            candidate_paths = collect_candidate_paths(
-                ddir,
-                target_name=target_name,
-                target_path=target_path,
-                matched_path=target_file_path
-            )
+            candidate_paths = episode_file_paths(db, mid, ddir, target_name, target_path, target_file_path)
 
             if matched_af:
                 target_aria2_idx = str(matched_af['index'])
@@ -405,22 +388,7 @@ class DownloadService:
                 else:
                     logger.info(f"cancel_episode_download: no episodes left selected, marked download as paused for mid {mid}")
 
-            # Clean up incomplete files on disk for cancelled episode
-            for p in candidate_paths:
-                try:
-                    ctl = f"{p}.aria2" if not p.endswith('.aria2') else p
-                    if os.path.isfile(ctl):
-                        os.remove(ctl)
-                        logger.info(f"cancel_episode_download: removed ctl {ctl}")
-                    target_p = p[:-6] if p.endswith('.aria2') else p
-                    if os.path.isfile(target_p):
-                        os.remove(target_p)
-                        logger.info(f"cancel_episode_download: removed partial file {target_p}")
-                except Exception as ce:
-                    logger.warning(f"cancel_episode_download: failed to remove file {p}: {ce}")
-
-            # Remove any folder-level or project-level .aria2 control files if cancelled
-            remove_aria2_control_files(ddir)
+            remove_media_files(db, mid, candidate_paths)
 
             if dm:
                 try:
@@ -439,16 +407,10 @@ class DownloadService:
             except Exception as dbe:
                 logger.warning(f"cancel_episode_download: error deleting media_files record: {dbe}")
 
-            # Check if ANY completed video files or active downloads remain for this media
-            video_exts = {'.mkv', '.mp4', '.avi', '.webm', '.ts', '.mov', '.m4v'}
-            completed_files = []
-            if ddir and os.path.isdir(ddir):
-                for root, _, files in os.walk(ddir):
-                    for f in files:
-                        if not f.endswith('.aria2') and os.path.splitext(f)[1].lower() in video_exts:
-                            fp = os.path.join(root, f)
-                            if not os.path.isfile(f"{fp}.aria2") and os.path.getsize(fp) > 1024 * 1024:
-                                completed_files.append(fp)
+            has_completed_files = any(
+                os.path.isfile(path) and not os.path.exists(path + ".aria2")
+                for path in indexed_file_paths(db, mid)
+            )
 
             has_aria2_tasks = False
             if dm and dl and dl.get('aria2_gid'):
@@ -459,18 +421,12 @@ class DownloadService:
                 except Exception:
                     pass
 
-            if len(completed_files) == 0 and not has_aria2_tasks:
-                if ddir and os.path.isdir(ddir):
-                    try:
-                        shutil.rmtree(ddir, ignore_errors=True)
-                        logger.info(f"cancel_episode_download: removed empty/cancelled project dir {ddir}")
-                    except Exception as rmtree_err:
-                        logger.warning(f"cancel_episode_download: rmtree error: {rmtree_err}")
+            if not has_completed_files and not has_aria2_tasks:
                 db.execute("DELETE FROM media_files WHERE media_id=?", (mid,))
                 db.execute("DELETE FROM downloads WHERE media_id=?", (mid,))
                 db.execute("UPDATE media SET in_library=0, status='catalog' WHERE id=?", (mid,))
                 try:
-                    db.execute("UPDATE watch_history SET is_downloaded=0, file_path=NULL WHERE media_id=? OR tmdb_id=?", (mid, m.get('tmdb_id')))
+                    db.execute("UPDATE watch_history SET is_downloaded=0, file_path=NULL WHERE media_id=? OR (tmdb_id=? AND media_type=?)", (mid, m.get('tmdb_id'), m['media_type']))
                 except Exception:
                     pass
                 db.commit()
@@ -565,27 +521,8 @@ class DownloadService:
 
             # 1. Remove file and .aria2 control file from disk
             ddir = m.get('download_dir') or ''
-            candidate_paths = collect_candidate_paths(
-                ddir,
-                target_name=target_name,
-                target_path=target_path
-            )
-
-            for p in candidate_paths:
-                try:
-                    ctl = f"{p}.aria2" if not p.endswith('.aria2') else p
-                    if os.path.isfile(ctl):
-                        os.remove(ctl)
-                        logger.info(f"delete_episode: removed ctl {ctl}")
-                    target_p = p[:-6] if p.endswith('.aria2') else p
-                    if os.path.isfile(target_p):
-                        os.remove(target_p)
-                        logger.info(f"delete_episode: removed file {target_p}")
-                except Exception as fe:
-                    logger.warning(f"delete_episode: failed to remove file {p}: {fe}")
-
-            # Remove any folder-level or project-level .aria2 control files so stale bitfields are cleared
-            remove_aria2_control_files(ddir)
+            candidate_paths = episode_file_paths(db, mid, ddir, target_name, target_path)
+            remove_media_files(db, mid, candidate_paths)
 
             if dm:
                 try:
@@ -624,17 +561,11 @@ class DownloadService:
             is_active_dl = dl and dl.get('status') == 'downloading'
 
             if not has_remaining_files and not is_active_dl:
-                if ddir and os.path.isdir(ddir):
-                    try:
-                        shutil.rmtree(ddir, ignore_errors=True)
-                        logger.info(f"delete_episode: removed empty project dir {ddir}")
-                    except Exception as rmtree_err:
-                        logger.warning(f"delete_episode: rmtree error: {rmtree_err}")
                 db.execute("DELETE FROM media_files WHERE media_id=?", (mid,))
                 db.execute("DELETE FROM downloads WHERE media_id=?", (mid,))
                 db.execute("UPDATE media SET in_library=0, status='catalog' WHERE id=?", (mid,))
                 try:
-                    db.execute("UPDATE watch_history SET is_downloaded=0, file_path=NULL WHERE media_id=? OR tmdb_id=?", (mid, m['tmdb_id']))
+                    db.execute("UPDATE watch_history SET is_downloaded=0, file_path=NULL WHERE media_id=? OR (tmdb_id=? AND media_type=?)", (mid, m['tmdb_id'], m['media_type']))
                 except Exception:
                     pass
                 db.commit()
@@ -770,48 +701,11 @@ class DownloadService:
             mid = row.get('media_id')
             m = db.execute("SELECT * FROM media WHERE id=?", (mid,)).fetchone() if mid else None
 
-            # 1. Remove aria2 tasks
-            if dm:
-                target_hash = parse_magnet_hash(row.get('magnet_uri') or '')
-                if not target_hash and m:
-                    target_hash = parse_magnet_hash(m.get('magnet_uri') or '')
-                target_dirs = [
-                    d for d in (row.get('download_dir'), m.get('download_dir') if m else None) if d
-                ]
-                remove_aria2_tasks(
-                    dm,
-                    gid=row.get('aria2_gid') or '',
-                    target_hash=target_hash,
-                    target_dirs=target_dirs,
-                )
-
-            # 2. Delete all files and directories on disk
-            dirs_to_clean = set()
-            if row.get('download_dir'):
-                dirs_to_clean.add(row['download_dir'])
-            if m and m.get('download_dir'):
-                dirs_to_clean.add(m['download_dir'])
-
-            if mid:
-                files = db.execute("SELECT file_path FROM media_files WHERE media_id=?", (mid,)).fetchall()
-                for f in files:
-                    try:
-                        fp = f.get('file_path')
-                        if fp and os.path.isfile(fp):
-                            os.remove(fp)
-                        if fp and os.path.isfile(f"{fp}.aria2"):
-                            os.remove(f"{fp}.aria2")
-                    except Exception:
-                        pass
-
-            for d in dirs_to_clean:
-                if d and os.path.isdir(d):
-                    remove_aria2_control_files(d)
-                    try:
-                        shutil.rmtree(d, ignore_errors=True)
-                        logger.info(f"delete_download: removed directory {d}")
-                    except Exception as e:
-                        logger.warning(f"Error removing download_dir {d}: {e}")
+            gid = row.get("aria2_gid") or ""
+            paths = indexed_file_paths(db, mid)
+            paths.update(aria2_file_paths(dm, gid, row.get("download_dir") or ""))
+            remove_aria2_tasks(dm, gid=gid, target_hash=parse_magnet_hash(row.get("magnet_uri") or ""))
+            remove_media_files(db, mid, paths)
 
             # 3. Clean up DB records
             if mid:
@@ -826,8 +720,8 @@ class DownloadService:
                 if m and m.get('tmdb_id'):
                     try:
                         db.execute(
-                            "UPDATE watch_history SET is_downloaded = 0, file_path = NULL, is_online = 1 WHERE tmdb_id = ?",
-                            (m['tmdb_id'],)
+                            "UPDATE watch_history SET is_downloaded = 0, file_path = NULL, is_online = 1 WHERE tmdb_id = ? AND media_type = ?",
+                            (m['tmdb_id'], m['media_type'])
                         )
                     except Exception: pass
 

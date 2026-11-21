@@ -54,7 +54,7 @@ export function useMovieModalState({ movie, closeModal, onWatchOnline, onStartMa
 
   useEffect(() => {
     if (movie.id) {
-      rpcIsInWatchlist(movie.id).then((inList) => setInWatchlist(!!inList)).catch(() => {});
+      rpcIsInWatchlist(movie.id, movie.media_type || "movie").then((inList) => setInWatchlist(!!inList)).catch(() => {});
       fetchMovieLogo(movie.id, (movie.media_type as any) || "movie").then((path) => {
         if (path) { setMovieLogoPath(path); const img = new Image(); img.src = getLogoUrl(path); }
       }).catch(() => {});
@@ -67,15 +67,14 @@ export function useMovieModalState({ movie, closeModal, onWatchOnline, onStartMa
     playNavSound();
     try {
       if (inWatchlist) {
-        await rpcRemoveFromWatchlist(movie.id);
-        setInWatchlist(false);
+        if (await rpcRemoveFromWatchlist(movie.id, movie.media_type || "movie")) setInWatchlist(false);
       } else {
-        await rpcAddToWatchlist(JSON.stringify({
+        const result = await rpcAddToWatchlist(JSON.stringify({
           tmdb_id: movie.id, title, original_title: origTitle, media_type: movie.media_type || "movie",
           year, overview: movie.overview || "", poster_path: movie.poster_path || "",
           backdrop_path: movie.backdrop_path || "", vote_average: movie.vote_average || 0,
         }));
-        setInWatchlist(true);
+        if (result.success) setInWatchlist(true);
       }
     } catch (err) { console.error("Failed to toggle watchlist:", err); }
     finally { setWatchlistLoading(false); }
@@ -140,7 +139,8 @@ export function useMovieModalState({ movie, closeModal, onWatchOnline, onStartMa
     setDownloadingTorrentId(tId);
     try {
       const mid = await getOrCreateMediaId(torrent, true);
-      await rpcStartDownload(mid);
+      const result = await rpcStartDownload(mid);
+      if (!result.success) throw new Error(result.error || "Не удалось начать загрузку");
       if (closeModal) closeModal();
     } catch (err: any) { console.error("Ошибка загрузки:", err); }
     finally { setDownloadingTorrentId(null); }
@@ -152,7 +152,8 @@ export function useMovieModalState({ movie, closeModal, onWatchOnline, onStartMa
     setDownloadingTorrentId(tId);
     try {
       const mid = await getOrCreateMediaId(torrent, true);
-      await rpcStartDownload(mid);
+      const result = await rpcStartDownload(mid);
+      if (!result.success) throw new Error(result.error || "Не удалось начать загрузку");
       if (closeModal) closeModal();
       if (onStartMagicBlack) onStartMagicBlack();
     } catch (err: any) { console.error("Ошибка загрузки:", err); }

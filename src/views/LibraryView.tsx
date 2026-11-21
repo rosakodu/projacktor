@@ -1,8 +1,9 @@
 import { FC, memo, useEffect, useRef, useCallback } from "react";
 import { Focusable, showModal } from "@decky/ui";
 import { FaPlay, FaPause, FaDownload, FaTrash, FaMoon, FaSync, FaFilm } from "react-icons/fa";
-import { LibraryItem, PlayerMediaInfo, PlaylistItem } from "../types";
+import { EpisodeItem, LibraryItem, PlayerMediaInfo, PlaylistItem } from "../types";
 import { formatSpeed, getImageUrl } from "../api";
+import { buildEpisodePlaylist, preparePlaylistEpisode } from "../services/episodePlaylist";
 import { useLibrary } from "../hooks/useLibrary";
 import { useEnsureFocus } from "../hooks/useEnsureFocus";
 import { getActiveDocument } from "../runtime/activeDoc";
@@ -82,7 +83,6 @@ export const LibraryView: FC<LibraryViewProps> = memo(
       pauseEpisodeDownload,
       cancelEpisodeDownload,
       deleteEpisode,
-      watchOnline,
     } = useLibrary(onPlayVideo);
 
     const getParentWindow = (): EventTarget => {
@@ -98,111 +98,58 @@ export const LibraryView: FC<LibraryViewProps> = memo(
       }
     };
 
-    // Просмотр конкретной серии из модалки с созданием плейлиста для автоперехода
-    const handleWatchEpisode = useCallback(
-      (item: LibraryItem, epIdx: number, localFilePath?: string, epName?: string) => {
-        const sorted = getSortedDownloadedEpisodes(item);
-        if (sorted.length > 0) {
-          const playlist: PlaylistItem[] = sorted.map((ep) => {
-            const info = parseEpisodeInfo(ep.file_name, ep.season_number, ep.episode_number);
-            const epTitle = info.episode !== 999999
-              ? `${item.title} - S${String(info.season).padStart(2, "0")}E${String(info.episode).padStart(2, "0")}`
-              : `${item.title} - ${ep.file_name}`;
-            return {
-              filePath: ep.file_path,
-              title: epTitle,
-              isOnline: false,
-              mediaInfo: {
-                mediaId: item.id,
-                tmdbId: item.tmdb_id,
-                title: item.title,
-                mediaType: "tv",
-                year: item.year,
-                posterPath: item.poster_path,
-                backdropPath: item.backdrop_path,
-                overview: item.overview,
-                seasonNumber: info.season,
-                episodeNumber: info.episode !== 999999 ? info.episode : undefined,
-              },
-            };
-          });
-
-          // 1. Если был передан точный путь к файлу
-          let targetItem = localFilePath ? playlist.find((p) => p.filePath === localFilePath) : undefined;
-
-          // 2. Если имя серии передано — пробуем сопоставить по имени / SxxExx
-          if (!targetItem && epName) {
-            const epNameClean = epName.toLowerCase();
-            targetItem = playlist.find((p) => p.filePath.toLowerCase().endsWith(epNameClean) || p.title.toLowerCase().includes(epNameClean));
-            if (!targetItem) {
-              const epMatch = epName.match(/(?:s|season\s*)(\d{1,3})(?:e|x|episode\s*|\b[.\s_-]+)(\d{1,4})/i) || epName.match(/(?:e|ep|серия\s*)(\d{1,4})/i);
-              if (epMatch) {
-                targetItem = playlist.find((p) => {
-                  const pMatch = p.filePath.match(/(?:s|season\s*)(\d{1,3})(?:e|x|episode\s*|\b[.\s_-]+)(\d{1,4})/i) || p.filePath.match(/(?:e|ep|серия\s*)(\d{1,4})/i);
-                  return pMatch && pMatch[0].toLowerCase() === epMatch[0].toLowerCase();
-                });
-              }
-            }
-          }
-
-          // 3. Fallback: по номеру эпизода
-          if (!targetItem) {
-            targetItem = playlist.find((p) => p.mediaInfo?.episodeNumber === epIdx);
-          }
-          if (!targetItem && epIdx > 0 && epIdx <= playlist.length) {
-            targetItem = playlist[epIdx - 1];
-          }
-          if (!targetItem) {
-            targetItem = playlist[0];
-          }
-
-          onPlayVideo(targetItem.filePath, targetItem.title, false, undefined, targetItem.mediaInfo, 0, playlist);
-          return;
-        }
-
-        watchOnline(item, epIdx);
-      },
-      [onPlayVideo, watchOnline]
-    );
-
-    // Запуск сериала с первой серии с автопереходом на следующие серии
-    const handlePlaySeries = useCallback(
-      (item: LibraryItem) => {
-        const sorted = getSortedDownloadedEpisodes(item);
-        if (sorted.length === 0) {
-          handleOpenEpisodes(item);
-          return;
-        }
-
-        const playlist: PlaylistItem[] = sorted.map((ep) => {
-          const info = parseEpisodeInfo(ep.file_name, ep.season_number, ep.episode_number);
-          const epTitle = info.episode !== 999999
-            ? `${item.title} - S${String(info.season).padStart(2, "0")}E${String(info.episode).padStart(2, "0")}`
-            : `${item.title} - ${ep.file_name}`;
-          return {
-            filePath: ep.file_path,
-            title: epTitle,
-            isOnline: false,
-            mediaInfo: {
-              mediaId: item.id,
-              tmdbId: item.tmdb_id,
-              title: item.title,
-              mediaType: "tv",
-              year: item.year,
-              posterPath: item.poster_path,
-              backdropPath: item.backdrop_path,
-              overview: item.overview,
-              seasonNumber: info.season,
-              episodeNumber: info.episode !== 999999 ? info.episode : undefined,
-            },
-          };
+    const episodeLaunchPending = useRef(false);
+    const handleWatchEpisode = useCallback(async (
+      item: LibraryItem, epIndex: number, localFilePath: string | undefined, episodes: EpisodeItem[],
+    ) => {
+      if (episodeLaunchPending.current) return;
+      episodeLaunchPending.current = true;
+      try {
+        const playlist = buildEpisodePlaylist(episodes, {
+          mediaId: item.id,
+          tmdbId: item.tmdb_id,
+          title: item.title,
+          mediaType: "tv",
+          year: item.year,
+          posterPath: item.poster_path,
+          backdropPath: item.backdrop_path,
+          overview: item.overview,
         });
+        const episode = playlist.find((entry) => entry.episodeIndex === epIndex);
+        if (!episode) return;
+        if (localFilePath && episode.downloaded) episode.filePath = localFilePath;
+        const source = await preparePlaylistEpisode(episode);
+        if (!source) return;
+        episode.filePath = source.filePath;
+        onPlayVideo(source.filePath, episode.title, source.isOnline, source.torrentHash, source.mediaInfo, 0, playlist);
+      } catch (error) {
+        console.error("Ошибка запуска серии:", error);
+      } finally {
+        episodeLaunchPending.current = false;
+      }
+    }, [onPlayVideo]);
 
-        const firstEp = playlist[0];
-        onPlayVideo(firstEp.filePath, firstEp.title, false, undefined, firstEp.mediaInfo, 0, playlist);
-      },
-      [onPlayVideo]
-    );
+    const handlePlaySeries = useCallback((item: LibraryItem) => {
+      const first = getSortedDownloadedEpisodes(item)[0];
+      if (!first) {
+        handleOpenEpisodes(item);
+        return;
+      }
+      const info = parseEpisodeInfo(first.file_name, first.season_number, first.episode_number);
+      onPlayVideo(first.file_path, `${item.title} - ${first.file_name}`, false, undefined, {
+        mediaId: item.id,
+        tmdbId: item.tmdb_id,
+        title: item.title,
+        mediaType: "tv",
+        year: item.year,
+        posterPath: item.poster_path,
+        backdropPath: item.backdrop_path,
+        overview: item.overview,
+        episodeName: first.file_name,
+        seasonNumber: info.season,
+        episodeNumber: info.episode !== 999999 ? info.episode : undefined,
+      }, 0);
+    }, [onPlayVideo]);
 
     // Открытие модалки серий через нативный Decky showModal — B кнопка работает автоматически
     const handleOpenEpisodes = useCallback((item: LibraryItem) => {
@@ -249,7 +196,7 @@ export const LibraryView: FC<LibraryViewProps> = memo(
         <EpisodesModal
           item={item}
           closeModal={() => close(true)}
-          onWatchOnline={(i, epIdx, localFilePath, epName) => { close(false); handleWatchEpisode(i, epIdx, localFilePath, epName); }}
+          onWatchOnline={(i, epIdx, localFilePath, episodes) => { close(false); void handleWatchEpisode(i, epIdx, localFilePath, episodes); }}
           onDownloadEpisode={(i, ep) => downloadEpisode(i, ep)}
           onPauseEpisodeDownload={(i, ep) => pauseEpisodeDownload(i, ep)}
           onCancelEpisodeDownload={(i, ep) => cancelEpisodeDownload(i, ep)}
