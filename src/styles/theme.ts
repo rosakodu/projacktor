@@ -1174,6 +1174,87 @@ body:has(.projacktor-app-root.pj-mode-pointer) #Footer,
   pointer-events: none !important;
   transition: opacity 0.2s ease !important;
 }
+
+/* ───── Search Filters ───── */
+.projacktor-search-view {
+  padding-bottom: 72px !important;
+  scroll-padding-bottom: 72px !important;
+}
+
+.projacktor-search-filters {
+  padding: 0 52px !important;
+  margin-bottom: 10px !important;
+}
+
+.projacktor-filter-row {
+  position: relative !important;
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  gap: 8px !important;
+  margin-bottom: 4px !important;
+  padding: 1px 0 !important;
+  align-items: center !important;
+  overflow-x: auto !important;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+.projacktor-filter-row::-webkit-scrollbar {
+  display: none !important;
+}
+
+.projacktor-filter-label {
+  font-size: 11px !important;
+  color: var(--ds-text-dim) !important;
+  min-width: 70px !important;
+  flex-shrink: 0 !important;
+  user-select: none !important;
+}
+
+.projacktor-filter-chip {
+  padding: 4px 12px !important;
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
+  color: rgba(255, 255, 255, 0.75) !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 4px !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  user-select: none !important;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease !important;
+  outline: none !important;
+}
+.projacktor-filter-chip:hover {
+  background: rgba(255, 255, 255, 0.12) !important;
+  border-color: rgba(255, 255, 255, 0.25) !important;
+  color: #ffffff !important;
+}
+.projacktor-filter-chip.active {
+  background: var(--ds-accent) !important;
+  color: #fff !important;
+  border-color: var(--ds-accent) !important;
+}
+.projacktor-filter-chip:focus,
+.projacktor-filter-chip.gpfocus {
+  background: rgba(255, 255, 255, 0.18) !important;
+  color: #ffffff !important;
+  outline: 2px solid var(--ds-border-focus) !important;
+  outline-offset: -2px !important;
+}
+.projacktor-filter-chip.active:focus,
+.projacktor-filter-chip.active.gpfocus {
+  background: var(--ds-accent) !important;
+  color: #fff !important;
+  outline: 2px solid #fff !important;
+  outline-offset: -2px !important;
+}
+
+.projacktor-filter-toggle-btn.active {
+  background: var(--ds-accent) !important;
+  border-color: var(--ds-accent) !important;
+  color: #ffffff !important;
+}
 `;
 
 

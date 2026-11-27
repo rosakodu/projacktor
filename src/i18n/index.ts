@@ -167,6 +167,26 @@ export const translations = {
     parserNotConnected: "Парсер Jackett не подключен",
     parserNotConnectedDesc: "Для поиска, просмотра каталога и торрентов укажите действующий адрес парсера Jackett в Настройках.",
     goToSettings: "Перейти в Настройки",
+
+    // Фильтры поиска
+    filterType: "Тип",
+    filterGenre: "Жанр",
+    filterYear: "Год",
+    filterRating: "Рейтинг",
+    filterCountry: "Страна",
+    filterSort: "Сортировка",
+    filterAll: "Все",
+    filterMovies: "Фильмы",
+    filterTvShows: "Сериалы",
+    filterAnyRating: "Любой",
+    filterClassic: "Классика",
+    filterByPopularity: "По популярности",
+    filterByRating: "По рейтингу",
+    filterByDate: "По дате",
+    filterByRevenue: "По сборам",
+    filterApply: "Показать",
+    filterReset: "Сбросить",
+    filterToggle: "Фильтры",
   },
   en: {
     // Tabs
@@ -330,6 +350,26 @@ export const translations = {
     parserNotConnected: "Jackett Parser Disconnected",
     parserNotConnectedDesc: "To search, browse catalog, and stream torrents, specify a valid Jackett parser address in Settings.",
     goToSettings: "Go to Settings",
+
+    // Search filters
+    filterType: "Type",
+    filterGenre: "Genre",
+    filterYear: "Year",
+    filterRating: "Rating",
+    filterCountry: "Country",
+    filterSort: "Sort",
+    filterAll: "All",
+    filterMovies: "Movies",
+    filterTvShows: "TV Shows",
+    filterAnyRating: "Any",
+    filterClassic: "Classic",
+    filterByPopularity: "By popularity",
+    filterByRating: "By rating",
+    filterByDate: "By date",
+    filterByRevenue: "By revenue",
+    filterApply: "Show",
+    filterReset: "Reset",
+    filterToggle: "Filters",
   },
 } as const;
 

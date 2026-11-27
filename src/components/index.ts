@@ -10,4 +10,5 @@ export * from "./GlobalMagicBlackOverlay";
 export * from "./EpisodesModal";
 export * from "./HeroBackdrop";
 export * from "./GamepadTextField";
+export * from "./SearchFilters";
 

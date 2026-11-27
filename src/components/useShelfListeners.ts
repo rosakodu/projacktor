@@ -54,7 +54,7 @@ export function useShelfListeners({
     return subscribeControllerInput((e) => {
       if (!e.pressed || isModalOpen() || isPlayerActive()) return;
       const active = getActiveDocument(rowRef.current)?.activeElement;
-      if (!rowRef.current?.contains(active as Node) && active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || (active as HTMLElement).closest?.(".projacktor-modal-root"))) return;
+      if (!rowRef.current?.contains(active as Node) && active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || (active as HTMLElement).closest?.(".projacktor-modal-root, .projacktor-search-bar-row, .projacktor-search-filters, .projacktor-search-history-section"))) return;
       if (e.button === RawButton.DPAD_UP || e.button === RawButton.LEFTSTICK_UP || e.button === 4 || e.button === 20) triggerPrevSection();
       else if (e.button === RawButton.DPAD_DOWN || e.button === RawButton.LEFTSTICK_DOWN || e.button === 6 || e.button === 21) triggerNextSection();
       else if (e.button === RawButton.DPAD_LEFT || e.button === RawButton.LEFTSTICK_LEFT || e.button === 7 || e.button === 22) stepCard(-1);

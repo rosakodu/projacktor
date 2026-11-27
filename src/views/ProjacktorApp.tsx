@@ -63,6 +63,7 @@ export const ProjacktorApp: FC = () => {
   const lastTabSwitchAtRef = useRef<number>(0);
   const lastPlayerCloseTimeRef = useRef<number>(0);
   const [activeTab, setActiveTab] = useState<string>("home");
+  const [searchHasResults, setSearchHasResults] = useState<boolean>(false);
   const [ready, setReady] = useState(false);
   const [isPlayerOpen, setIsPlayerOpen] = useState<boolean>(false);
   const [playerConfig, setPlayerConfig] = useState<PlayerConfig | null>(null);
@@ -508,6 +509,9 @@ export const ProjacktorApp: FC = () => {
   // Сброс бэкдропа при любом переключении вкладки
   useEffect(() => {
     setBackdropMovie(null, true);
+    if (activeTab !== "search") {
+      setSearchHasResults(false);
+    }
   }, [activeTab]);
 
 
@@ -744,8 +748,10 @@ export const ProjacktorApp: FC = () => {
         <span />
       </Focusable>
 
-      {/* Динамический кинематографичный бэкдроп выбранного фильма в стиле Steam Deck (кроме настроек и режима плеера) */}
-      {activeTab !== "settings" && !isPlayerOpen && <HeroBackdrop />}
+      {/* Динамический кинематографичный бэкдроп выбранного фильма в стиле Steam Deck (кроме настроек, пустого поиска и режима плеера) */}
+      {activeTab !== "settings" && (activeTab !== "search" || searchHasResults) && !isPlayerOpen && (
+        <HeroBackdrop key={activeTab === "search" ? "search" : "catalog"} />
+      )}
 
       {/* Шапка: Заголовок Projacktor и панель вкладок (скрыта в режиме плеера) */}
       {!isPlayerOpen && (
@@ -795,7 +801,12 @@ export const ProjacktorApp: FC = () => {
           <CatalogView key={`anime_${catalogScope}`} category="anime" onSelectMovie={handleOpenMovie} onNavigateUp={focusActiveTab} />
         )}
         {activeTab === "search" && (
-          <SearchView key={catalogScope} onSelectMovie={handleOpenMovie} onNavigateUp={focusActiveTab} />
+          <SearchView
+            key={catalogScope}
+            onSelectMovie={handleOpenMovie}
+            onNavigateUp={focusActiveTab}
+            onHasResultsChange={setSearchHasResults}
+          />
         )}
         {activeTab === "watchlist" && (
           <WatchlistView onSelectMovie={handleOpenMovie} onNavigateToCatalog={() => handleSelectTab("movies")} onNavigateUp={focusActiveTab} />
